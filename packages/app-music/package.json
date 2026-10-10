@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     "./core": "./src/core.ts",
-    "./ui": "./src/Music.svelte"
+    "./ui": "./src/Music.svelte",
+    "./player": "./src/Player.svelte"
   },
   "scripts": { "typecheck": "tsc -p ." },
   "dependencies": { "@stanley/app-sdk": "workspace:*" },

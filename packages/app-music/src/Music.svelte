@@ -1,39 +1,18 @@
 <script lang="ts">
   import type { AppUiProps } from '@stanley/app-sdk'
   import type { MusicState } from './core'
-
-  // Literal URLs so Vite bundles each asset.
-  const urls: Record<string, string> = {
-    sunrise: new URL('../assets/sunrise.wav', import.meta.url).href,
-    drift: new URL('../assets/drift.wav', import.meta.url).href,
-    pulse: new URL('../assets/pulse.wav', import.meta.url).href,
-  }
+  import { playback } from './Player.svelte'
 
   let { data, perform }: AppUiProps<MusicState> = $props()
-  let audio: HTMLAudioElement | undefined = $state()
-  let elapsed = $state(0)
 
   let track = $derived(data.tracks.find((t) => t.id === data.currentId))
-  let src = $derived(track ? urls[track.src] : undefined)
-
-  // Core only owns state; the <audio> element follows it.
-  $effect(() => {
-    if (!audio) return
-    void src
-    if (data.playing) audio.play().catch(() => {})
-    else audio.pause()
-  })
-
-  $effect(() => {
-    if (audio) audio.volume = data.volume
-  })
+  let elapsed = $derived(playback.elapsed)
 
   const time = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`
 </script>
 
 <section class="app">
   <h1>Music</h1>
-  <audio bind:this={audio} {src} ontimeupdate={() => (elapsed = audio?.currentTime ?? 0)} onended={() => perform('next')}></audio>
 
   {#if track}
     <div class="now">

@@ -100,7 +100,7 @@ Identical loop control (halt until new words / utterance end). Different meaning
 | --- | --- |
 | Confidence gate: below → treat as `wait` | 0.3 |
 | Max actions per utterance → force stop ("got stuck") | 15 |
-| Oscillation: same node N times in last M steps → force stop | 3 in 6 |
+| Oscillation: same option from the same screen N times in last M steps → force stop | 3 in 6 |
 | Destructive actions require confidence ≥ | 0.6 |
 | Stale-result execute threshold (navigation only) | 0.8 |
 
@@ -250,7 +250,7 @@ packages/stt          sherpa-onnx + Parakeet + Silero VAD → partial/final even
 packages/app-todo     ./core (headless) + ./ui (Svelte)
 packages/app-email    ″
 packages/app-weather  ″
-packages/app-music    ″
+packages/app-music    ″ + ./player (headless <audio>, mounted while the surface exists)
 packages/app-web      ″ (Parallel search; page view = WebContentsView later)
 evals                 headless scenario evals (real models)
 ```

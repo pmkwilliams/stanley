@@ -22,6 +22,11 @@ let ptt: string | null = null
 let win: BrowserWindow | null = null
 let debugWin: BrowserWindow | null = null
 let listening = false
+/** The transcriber is fed between a start and a stop transition; audio arriving before the start runs is held. */
+let accepting = false
+const held: Float32Array[] = []
+/** Start/stop transitions run in order, so a quick re-press waits for the previous flush instead of interleaving with it. */
+let transitions = Promise.resolve()
 let status: AgentStatus = 'idle'
 let stt: Snapshot['stt'] = 'loading'
 let transcriber: Transcriber | null = null
@@ -84,31 +89,44 @@ function broadcast(channel: string, payload: unknown) {
 
 type Via = Extract<AppDebugEvent, { type: 'listening' }>['via']
 
+function transition(step: () => void | Promise<void>) {
+  transitions = transitions.then(step).catch((err) => console.error('Listening transition failed', err))
+}
+
 function startListening(via: Via) {
   if (listening) return
   listening = true
   appEvent({ type: 'listening', on: true, via })
-  transcript.finalized = []
-  transcript.partial = ''
-  transcriber?.reset()
-  agent.utteranceStart()
   win?.webContents.send('listening', true)
   sendSnapshot()
+  transition(() => {
+    transcript.finalized = []
+    transcript.partial = ''
+    transcriber?.reset()
+    agent.utteranceStart()
+    accepting = true
+    for (const chunk of held.splice(0)) transcriber?.accept(chunk)
+    sendSnapshot()
+  })
 }
 
-async function stopListening(via: Via) {
+function stopListening(via: Via) {
   if (!listening) return
   listening = false
   appEvent({ type: 'listening', on: false, via })
   win?.webContents.send('listening', false)
-  await transcriber?.flush()
-  transcript.partial = ''
-  agent.utteranceEnd()
   sendSnapshot()
+  transition(async () => {
+    accepting = false
+    await transcriber?.flush()
+    transcript.partial = ''
+    agent.utteranceEnd()
+    sendSnapshot()
+  })
 }
 
 function toggleListening(via: Via) {
-  if (listening) void stopListening(via)
+  if (listening) stopListening(via)
   else startListening(via)
 }
 
@@ -136,7 +154,7 @@ async function loadStt() {
           agent.segment(text)
           sendSnapshot()
         },
-        silence: () => void stopListening('silence'),
+        silence: () => stopListening('silence'),
         debug: (event) => debug.record({ source: 'stt', event }),
       },
     )
@@ -204,7 +222,9 @@ function setMenu() {
 }
 
 ipcMain.on('audio', (_, chunk: Float32Array) => {
-  if (listening) transcriber?.accept(chunk)
+  if (!listening) return
+  if (accepting) transcriber?.accept(chunk)
+  else held.push(chunk)
 })
 ipcMain.on('toggle-listening', () => toggleListening('button'))
 ipcMain.on('open', async (_, appId: string | null) => {
@@ -222,9 +242,11 @@ ipcMain.on('perform', async (_, appId: string, nodeId: string, args) => {
 ipcMain.on('say', (_, text: string) => {
   startListening('typed')
   appEvent({ type: 'typed', text })
-  transcript.finalized.push(text)
-  agent.segment(text)
-  void stopListening('typed')
+  transition(() => {
+    transcript.finalized.push(text)
+    agent.segment(text)
+  })
+  stopListening('typed')
 })
 
 ipcMain.handle('debug:history', () => debug.events)
@@ -234,7 +256,11 @@ ipcMain.handle('debug:replay', (_, req: ReplayRequest) => jev.choose(req))
 ipcMain.on('debug:copy', (_, text: string) => clipboard.writeText(text))
 
 app.whenReady().then(() => {
-  session.defaultSession.setPermissionRequestHandler((_, permission, cb) => cb(permission === 'media'))
+  // Only our own renderer gets the mic. Pages in the Web app's <webview> share this session and get nothing.
+  session.defaultSession.setPermissionRequestHandler((contents, permission, cb, details) => {
+    const audioOnly = 'mediaTypes' in details && !!details.mediaTypes?.length && details.mediaTypes.every((t) => t === 'audio')
+    cb(contents === win?.webContents && permission === 'media' && audioOnly)
+  })
   setMenu()
   createWindow()
   // ⌥Space is often taken (Raycast, ChatGPT); fall back rather than silently failing.

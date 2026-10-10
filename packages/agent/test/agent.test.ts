@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { AgentNode } from '@stanley/app-sdk'
 import type { ChoiceRequest, ChoiceResult, DecisionClient } from '@stanley/jev'
-import { Agent, type TickReport, type World } from '../src/agent'
+import { Agent, type AgentStatus, type TickReport, type World } from '../src/agent'
 import type { AgentDebugEvent } from '../src/debug'
 
 const tree: AgentNode = {
@@ -9,18 +9,27 @@ const tree: AgentNode = {
   kind: 'location',
   label: 'home',
   children: [
-    { id: 'todo', kind: 'location', label: 'To-do', children: [{ id: 'todo:add', kind: 'input', label: 'add task', input: { instructions: 'title' } }] },
+    {
+      id: 'todo',
+      kind: 'location',
+      label: 'To-do',
+      children: [
+        { id: 'todo:add', kind: 'input', label: 'add task', input: { instructions: 'title' } },
+        { id: 'todo:sort', kind: 'action', label: 'sort' },
+      ],
+    },
     { id: 'email', kind: 'location', label: 'Email', children: [{ id: 'email:delete', kind: 'action', label: 'delete', destructive: true }] },
   ],
 }
 
-function fakeWorld() {
+function fakeWorld(opts: { screenChanges?: boolean; failOn?: string } = {}) {
   const performed: string[] = []
   const world: World = {
     tree: () => tree,
     currentNodeId: () => 'home',
-    now: () => ({ surfaceTitle: 'Home', surfaceMarkdown: '', visible: true }),
+    now: () => ({ surfaceTitle: 'Home', surfaceMarkdown: opts.screenChanges ? `${performed.length} done` : '', visible: true }),
     perform: async (node, args) => {
+      if (node.id === opts.failOn) throw new Error(`${node.id} broke`)
       performed.push(args.text ? `${node.id}=${args.text}` : node.id)
       return { summary: `did ${node.id}` }
     },
@@ -46,12 +55,13 @@ function scripted(script: Script): DecisionClient & { calls: number } {
 const textGen = { fill: async () => 'Buy eggs' }
 const settle = () => new Promise((r) => setTimeout(r, 20))
 
-function setup(script: Script) {
-  const { world, performed } = fakeWorld()
+function setup(script: Script, worldOpts?: Parameters<typeof fakeWorld>[0]) {
+  const { world, performed } = fakeWorld(worldOpts)
   const jev = scripted(script)
   const ticks: TickReport[] = []
-  const agent = new Agent(world, jev, textGen, { tick: (t) => ticks.push(t) })
-  return { agent, jev, performed, ticks }
+  const statuses: AgentStatus[] = []
+  const agent = new Agent(world, jev, textGen, { tick: (t) => ticks.push(t), status: (s) => statuses.push(s) })
+  return { agent, jev, performed, ticks, statuses }
 }
 
 describe('Agent loop', () => {
@@ -132,6 +142,63 @@ describe('Agent loop', () => {
     expect(ticks.at(-1)!.outcome).toBe('forced-stop')
     expect(performed.filter((p) => p === 'todo')).toHaveLength(2)
     expect(performed.at(-1)).toBe('show')
+  })
+
+  it('repeats an action that keeps changing the screen', async () => {
+    const { agent, performed, ticks } = setup((_, i) => ({ choice: i < 4 ? 'To-do › sort' : 'stop' }), { screenChanges: true })
+    agent.utteranceStart()
+    agent.partial('sort it four times please')
+    await settle()
+    expect(performed).toEqual(['todo:sort', 'todo:sort', 'todo:sort', 'todo:sort', 'show'])
+    expect(ticks.map((t) => t.outcome)).not.toContain('forced-stop')
+  })
+
+  it('discards a decision when the user barges in with new words', async () => {
+    let release!: () => void
+    const { agent, performed, ticks } = setup(async (req, i) => {
+      if (i === 0) {
+        await new Promise<void>((r) => (release = r))
+        return { choice: 'Email', confidence: 0.5 }
+      }
+      return { choice: req.state.includes('to-do') ? 'stop' : 'wait' }
+    })
+    agent.utteranceStart()
+    agent.segment('open my email please')
+    await settle()
+    agent.utteranceStart()
+    agent.partial('no the to-do list') // no more words than the first utterance
+    release()
+    await settle()
+    expect(ticks[0]!.outcome).toBe('stale-discarded')
+    expect(performed).not.toContain('email')
+  })
+
+  it('reports an action that throws, logs its result, and keeps working', async () => {
+    const { agent, performed, ticks, statuses } = setup((_, i) => ({ choice: i === 0 ? 'Email' : 'stop' }), { failOn: 'email' })
+    agent.utteranceStart()
+    agent.partial('open my email please')
+    await settle()
+    expect(ticks.map((t) => t.outcome)).toEqual(['error'])
+    expect(statuses.at(-1)).toBe('idle')
+    const results = agent.log.entries.filter((e) => e.role === 'tool')
+    expect(results).toMatchObject([{ toolCallId: 'call-1', summary: 'Failed: email broke' }])
+    agent.partial('open my email please now')
+    await settle()
+    expect(performed).toEqual(['show'])
+  })
+
+  it('retries a failed decision when the utterance ends', async () => {
+    const { agent, jev, performed } = setup((_, i) => {
+      if (i === 0) throw new Error('gateway down')
+      return { choice: 'stop' }
+    })
+    agent.utteranceStart()
+    agent.partial('open my email please')
+    await settle()
+    agent.utteranceEnd()
+    await settle()
+    expect(jev.calls).toBe(2)
+    expect(performed).toEqual(['show'])
   })
 
   it('logs every decision, including stop, as an assistant message', async () => {

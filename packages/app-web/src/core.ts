@@ -134,9 +134,10 @@ export const webApp = defineApp<WebState>({
     if (nodeId === 'search') {
       const query = args.text?.trim()
       if (!query) return { state: s, summary: 'No query given; nothing searched' }
+      // On failure keep the previous query with its results, so they are never labelled with the new one.
       if (!key) {
         const error = 'Web search unavailable: PARALLEL_API_KEY is not set'
-        return { state: { ...s, query, error }, summary: error }
+        return { state: { ...s, error }, summary: error }
       }
       try {
         const results = await search(ctx, key, query)
@@ -144,7 +145,7 @@ export const webApp = defineApp<WebState>({
         return { state: next, summary: `Searched "${query}": ${results.length} results`, observation: `# Results for "${query}"\n${resultsMarkdown(next)}` }
       } catch (err) {
         const error = `Web search failed: ${errorText(err)}`
-        return { state: { ...s, query, error }, summary: error }
+        return { state: { ...s, error }, summary: error }
       }
     }
 

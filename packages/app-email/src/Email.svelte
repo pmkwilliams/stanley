@@ -3,7 +3,8 @@
   import { formatDate, type EmailState } from './core'
 
   let { data, perform }: AppUiProps<EmailState> = $props()
-  let draft = $state('')
+  /** Reply drafts per message, so switching emails never sends one message's draft to another. */
+  let drafts = $state<Record<string, string>>({})
 
   let inbox = $derived(data.emails.filter((e) => !e.archived))
   let open = $derived(data.emails.find((e) => `email/${e.id}` === data.route))
@@ -14,9 +15,10 @@
 
   function reply(e: SubmitEvent) {
     e.preventDefault()
-    if (!open || !draft.trim()) return
+    const draft = open && drafts[open.id]
+    if (!open || !draft?.trim()) return
     perform(`email/${open.id}/reply`, { text: draft })
-    draft = ''
+    drafts[open.id] = ''
   }
 </script>
 
@@ -65,7 +67,7 @@
           <button onclick={() => act('delete')}>Delete</button>
         </div>
         <form onsubmit={reply}>
-          <textarea rows="3" placeholder="Reply to {open.from}" bind:value={draft}></textarea>
+          <textarea rows="3" placeholder="Reply to {open.from}" bind:value={drafts[open.id]}></textarea>
           <button type="submit">Send reply</button>
         </form>
       </article>

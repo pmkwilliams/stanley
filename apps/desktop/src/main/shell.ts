@@ -13,6 +13,8 @@ export class Shell implements World {
   /** Surface the agent is working on; may be hidden. `null` = home screen. */
   focus: string | null = null
   private history: string[] = []
+  /** Per-surface queue: each read-perform-write finishes before the next starts, so none is lost. */
+  private queues = new Map<string, Promise<unknown>>()
 
   constructor(
     private apps: AppModule<any>[],
@@ -81,20 +83,34 @@ export class Shell implements World {
       return { summary: 'Went home' }
     }
     const app = this.app(appId)
-    if (!this.surfaces.has(appId)) this.surfaces.set(appId, await app.init(this.ctx))
-    this.navigate(appId)
-    this.onChange()
-    return { summary: `Opened ${app.title}`, observation: app.toMarkdown(this.surfaces.get(appId)) }
+    return this.serial(appId, async () => {
+      await this.ensure(app)
+      this.navigate(appId)
+      this.onChange()
+      return { summary: `Opened ${app.title}`, observation: app.toMarkdown(this.surfaces.get(appId)) }
+    })
   }
 
   async performIn(appId: string, nodeId: string, args: ActionArgs) {
-    if (!this.surfaces.has(appId)) await this.open(appId)
     const app = this.app(appId)
-    const result = await app.perform(this.surfaces.get(appId), nodeId, args, this.ctx)
-    this.surfaces.set(appId, result.state)
-    this.navigate(appId)
-    this.onChange()
-    return { summary: result.summary, observation: result.observation }
+    return this.serial(appId, async () => {
+      await this.ensure(app)
+      const result = await app.perform(this.surfaces.get(appId), nodeId, args, this.ctx)
+      this.surfaces.set(appId, result.state)
+      this.navigate(appId)
+      this.onChange()
+      return { summary: result.summary, observation: result.observation }
+    })
+  }
+
+  private async ensure(app: AppModule<any>) {
+    if (!this.surfaces.has(app.id)) this.surfaces.set(app.id, await app.init(this.ctx))
+  }
+
+  private serial<T>(appId: string, fn: () => Promise<T>): Promise<T> {
+    const run = (this.queues.get(appId) ?? Promise.resolve()).then(fn)
+    this.queues.set(appId, run.catch(() => {}))
+    return run
   }
 
   private navigate(appId: string | null) {

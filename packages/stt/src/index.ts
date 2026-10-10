@@ -18,7 +18,7 @@ export interface TranscriberEvents {
 export type SttDebugEvent =
   | { type: 'speech-start' }
   | { type: 'speech-end' }
-  /** `emitted` is false when a partial finished after the speaker paused, so it was dropped. */
+  /** `emitted` is false when a partial finished after the speaker paused or a new segment began, so it was dropped. */
   | { type: 'decode'; kind: 'partial' | 'segment'; audioMs: number; decodeMs: number; text: string; emitted: boolean }
   | { type: 'silence'; afterMs: number }
 
@@ -45,6 +45,10 @@ export class Transcriber {
   private lastSpeechAt = 0
   private lastPartialAt = 0
   private decodingPartial = false
+  /** Bumped when a new speech segment starts, so a slow partial decode can't land on the next one. */
+  private segmentId = 0
+  /** Segments decode one at a time so they are emitted in order. */
+  private draining: Promise<void> = Promise.resolve()
   private silenceSent = false
   private readonly partialIntervalMs: number
   private readonly silenceMs: number
@@ -123,9 +127,9 @@ export class Transcriber {
   /** End of an utterance: finalize whatever is still being spoken. */
   async flush(): Promise<void> {
     this.vad.flush()
-    await this.drainSegments()
     this.speaking = false
     this.speech = []
+    await this.drainSegments()
   }
 
   private track(window: Float32Array): void {
@@ -134,6 +138,7 @@ export class Transcriber {
       if (!this.speaking) {
         this.speaking = true
         this.speech = [this.recent.slice(-PREROLL)]
+        this.segmentId++
         this.events.debug?.({ type: 'speech-start' })
       }
       this.speech.push(window.slice())
@@ -148,13 +153,18 @@ export class Transcriber {
     this.recent = concat([this.recent, window]).slice(-PREROLL)
   }
 
-  private async drainSegments(): Promise<void> {
-    while (!this.vad.isEmpty()) {
-      const { samples } = this.vad.front(false)
-      this.vad.pop()
-      const text = await this.decode(samples, 'segment', (text) => !!text)
-      if (text) this.events.segment(text)
-    }
+  /** Resolves once every queued segment, including ones queued by earlier calls, is emitted. */
+  private drainSegments(): Promise<void> {
+    const run = this.draining.then(async () => {
+      while (!this.vad.isEmpty()) {
+        const { samples } = this.vad.front(false)
+        this.vad.pop()
+        const text = await this.decode(samples, 'segment', (text) => !!text)
+        if (text) this.events.segment(text)
+      }
+    })
+    this.draining = run.catch(() => {})
+    return run
   }
 
   private maybePartial(): void {
@@ -162,9 +172,11 @@ export class Transcriber {
     if (!this.speaking || this.decodingPartial || now - this.lastPartialAt < this.partialIntervalMs) return
     this.lastPartialAt = now
     this.decodingPartial = true
-    this.decode(concat(this.speech), 'partial', (text) => this.speaking && !!text)
+    const segment = this.segmentId
+    const current = (text: string) => this.speaking && segment === this.segmentId && !!text
+    this.decode(concat(this.speech), 'partial', current)
       .then((text) => {
-        if (this.speaking && text) this.events.partial(text)
+        if (current(text)) this.events.partial(text)
       })
       .finally(() => (this.decodingPartial = false))
   }
