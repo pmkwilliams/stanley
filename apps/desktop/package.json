@@ -1,0 +1,35 @@
+{
+  "name": "@stanley/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc -p tsconfig.node.json && svelte-check --tsconfig tsconfig.web.json"
+  },
+  "dependencies": {
+    "@stanley/agent": "workspace:*",
+    "@stanley/app-email": "workspace:*",
+    "@stanley/app-music": "workspace:*",
+    "@stanley/app-sdk": "workspace:*",
+    "@stanley/app-todo": "workspace:*",
+    "@stanley/app-weather": "workspace:*",
+    "@stanley/app-web": "workspace:*",
+    "@stanley/jev": "workspace:*",
+    "@stanley/stt": "workspace:*",
+    "ai": "7.0.137",
+    "sherpa-onnx-node": "1.13.8"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "6.2.4",
+    "@tsconfig/svelte": "^5.0.5",
+    "electron": "44.7.0",
+    "electron-vite": "5.0.0",
+    "svelte": "5.57.2",
+    "svelte-check": "4.7.6",
+    "vite": "7.3.7"
+  }
+}

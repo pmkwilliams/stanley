@@ -1,0 +1,18 @@
+{
+  "name": "@stanley/evals",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "eval": "tsx run.mts" },
+  "dependencies": {
+    "@stanley/agent": "workspace:*",
+    "@stanley/app-email": "workspace:*",
+    "@stanley/app-music": "workspace:*",
+    "@stanley/app-sdk": "workspace:*",
+    "@stanley/app-todo": "workspace:*",
+    "@stanley/app-weather": "workspace:*",
+    "@stanley/app-web": "workspace:*",
+    "@stanley/jev": "workspace:*"
+  },
+  "devDependencies": { "tsx": "^4.20.6" }
+}

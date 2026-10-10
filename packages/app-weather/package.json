@@ -1,0 +1,13 @@
+{
+  "name": "@stanley/app-weather",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./core": "./src/core.ts",
+    "./ui": "./src/Weather.svelte"
+  },
+  "scripts": { "typecheck": "tsc -p ." },
+  "dependencies": { "@stanley/app-sdk": "workspace:*" },
+  "peerDependencies": { "svelte": "^5.0.0" }
+}

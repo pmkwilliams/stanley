@@ -1,0 +1,25 @@
+{
+  "name": "stanley",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.7.0",
+  "scripts": {
+    "dev": "pnpm --filter @stanley/desktop dev",
+    "build": "pnpm --filter @stanley/desktop build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "vitest run",
+    "models": "node scripts/download-models.mjs",
+    "eval": "pnpm --filter @stanley/evals eval"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "typescript": "5.9.3",
+    "vitest": "^3.2.4"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "esbuild"
+    ]
+  }
+}

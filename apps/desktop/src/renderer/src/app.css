@@ -1,0 +1,18 @@
+:root {
+  --bg: #0f1115;
+  --panel: #161921;
+  --border: #262a35;
+  --text: #e6e8ee;
+  --muted: #8a90a0;
+  --accent: #e11d48;
+  --focus: rgba(225, 29, 72, 0.14);
+  color-scheme: dark;
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--bg);
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+input, button { font: inherit; color: inherit; }
+input { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; }
