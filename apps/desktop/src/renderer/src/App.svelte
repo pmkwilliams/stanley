@@ -1,5 +1,7 @@
 <script lang="ts">
   import type { Snapshot } from '../../shared/ipc'
+  import { cubicIn, cubicOut } from 'svelte/easing'
+  import { scale } from 'svelte/transition'
   import { startMic } from './mic'
   import { backgrounds, surfaces } from './surfaces'
 
@@ -28,7 +30,6 @@
   })
 
   const visible = $derived(snapshot?.layout.visible ?? null)
-  const Surface = $derived(visible ? surfaces[visible] : null)
   const background = $derived(!!snapshot && snapshot.focus !== visible && snapshot.status === 'acting')
 
   const KEYS: Record<string, string> = { CommandOrControl: '⌘', Command: '⌘', Control: '⌃', Alt: '⌥', Option: '⌥', Shift: '⇧' }
@@ -51,10 +52,14 @@
   </header>
 
   <main>
-    {#if snapshot && Surface && visible}
-      <div class="window">
-        <Surface data={snapshot.surfaces[visible]} perform={(nodeId: string, args?: { text?: string }) => window.stanley.perform(visible, nodeId, args)} />
-      </div>
+    {#if snapshot}
+      <!-- Keyed on the app, so switching plays the old window's outro while the new one pops in over it. -->
+      {#each visible && surfaces[visible] ? [visible] : [] as id (id)}
+        {@const Surface = surfaces[id]}
+        <div class="window" in:scale={{ start: 0.96, duration: 180, easing: cubicOut }} out:scale={{ start: 0.94, duration: 140, easing: cubicIn }}>
+          <Surface data={snapshot.surfaces[id]} perform={(nodeId: string, args?: { text?: string }) => window.stanley.perform(id, nodeId, args)} />
+        </div>
+      {/each}
     {/if}
   </main>
 </div>
@@ -100,9 +105,13 @@
   main { overflow: auto; position: relative; }
   main:has(> .window) { display: grid; place-items: center; overflow: hidden; }
   .window {
+    /* Share one cell so an outgoing window sinks behind the incoming one instead of pushing it aside. */
+    grid-area: 1 / 1; z-index: 1;
     display: flex; flex-direction: column; max-width: var(--window-max-width); max-height: var(--window-max-height); overflow: auto;
     background: var(--window); backdrop-filter: blur(40px) saturate(1.6);
     border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 14px;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 0 0 0.5px rgba(0, 0, 0, 0.8), 0 24px 80px rgba(0, 0, 0, 0.55);
   }
+  /* Svelte marks an outroing element inert; keep it underneath the incoming window. */
+  .window:global([inert]) { z-index: 0; }
 </style>
