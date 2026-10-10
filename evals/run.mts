@@ -33,7 +33,7 @@ for (const scenario of selected) {
   const agent = new Agent(shell, createJevClient(), createTextGen(), {
     tick: (t) => ticks.push(t),
     status: (s) => {
-      busy = s === 'thinking' || s === 'acting'
+      busy = s === 'guessing' || s === 'thinking' || s === 'writing' || s === 'acting'
       changedAt = Date.now()
     },
   })

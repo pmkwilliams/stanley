@@ -11,6 +11,10 @@ export interface Snapshot {
   focus: string | null
   apps: { id: string; title: string; description: string }[]
   listening: boolean
+  /** The VAD hears speech right now. */
+  speaking: boolean
+  /** An utterance is in progress: speech started and neither the toggle nor ~2 s of silence has ended it. */
+  utteranceOpen: boolean
   transcript: { finalized: string[]; partial: string }
   status: AgentStatus
   stt: 'ready' | 'loading' | 'missing-models' | 'error'

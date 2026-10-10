@@ -76,7 +76,7 @@ export function buildOptions(root: AgentNode, currentId: string, limit: number):
     const path = idx.get(node.id)!.path
     let name = path.join(' › ')
     for (let n = 2; name in criteria; n++) name = `${path.join(' › ')} (${n})`
-    const verb = node.kind === 'location' ? 'Go to' : node.kind === 'input' ? 'Fill in and submit' : 'Do'
+    const verb = node.kind === 'location' ? 'Go to' : node.kind === 'input' ? 'Fill in and submit, once the user has said what to fill in' : 'Do'
     criteria[name] = [verb, node.description].filter(Boolean).join(': ')
     nodes.set(name, node)
   }

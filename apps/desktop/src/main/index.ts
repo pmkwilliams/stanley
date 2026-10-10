@@ -27,6 +27,8 @@ let accepting = false
 const held: Float32Array[] = []
 /** The mic stays on across pauses: silence ends the utterance, and the next words start a new one. */
 let utteranceOpen = false
+/** The VAD hears speech right now. */
+let speaking = false
 /** Start/stop transitions run in order, so a quick re-press waits for the previous flush instead of interleaving with it. */
 let transitions = Promise.resolve()
 let status: AgentStatus = 'idle'
@@ -76,6 +78,8 @@ function sendSnapshot() {
     focus: shell.focus,
     apps: apps.map(({ id, title, description }) => ({ id, title, description })),
     listening,
+    speaking,
+    utteranceOpen,
     transcript,
     status,
     stt,
@@ -136,6 +140,7 @@ function endUtterance() {
   if (!utteranceOpen) return
   utteranceOpen = false
   agent.utteranceEnd()
+  sendSnapshot()
 }
 
 function toggleListening(via: Via) {
@@ -167,6 +172,10 @@ async function loadStt() {
           transcript.finalized.push(text)
           transcript.partial = ''
           agent.segment(text)
+          sendSnapshot()
+        },
+        speaking: (on) => {
+          speaking = on
           sendSnapshot()
         },
         silence: () =>

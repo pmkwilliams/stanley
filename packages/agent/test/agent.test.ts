@@ -64,14 +64,96 @@ function setup(script: Script, worldOpts?: Parameters<typeof fakeWorld>[0]) {
   return { agent, jev, performed, ticks, statuses }
 }
 
+describe('Agent status', () => {
+  it('guesses until it acts, then thinks, writes and acts until done', async () => {
+    const plan = ['To-do', 'To-do › add task', 'stop']
+    const { agent, statuses } = setup((_, i) => ({ choice: plan[i]! }))
+    agent.utteranceStart()
+    agent.segment('add buy eggs to my list')
+    await settle()
+    expect(statuses).toEqual(['guessing', 'acting', 'thinking', 'writing', 'acting', 'thinking', 'done'])
+  })
+
+  it('listens for more while the utterance is open, and did not get it once it ended', async () => {
+    const { agent, statuses } = setup(() => ({ choice: 'wait' }))
+    agent.utteranceStart()
+    agent.segment('hmm')
+    await settle()
+    expect(statuses).toEqual(['guessing', 'listening'])
+    agent.utteranceEnd()
+    await settle()
+    expect(statuses.slice(2)).toEqual(['thinking', 'didnt-get-that'])
+  })
+})
+
 describe('Agent loop', () => {
   it('keeps acting mid-utterance until stop, filling inputs via text_gen', async () => {
     const plan = ['To-do', 'To-do › add task', 'stop']
     const { agent, performed } = setup((_, i) => ({ choice: plan[i]! }))
     agent.utteranceStart()
-    agent.partial('add buy eggs to my list') // still speaking: no utteranceEnd
+    agent.segment('add buy eggs to my list') // paused, but the utterance has not ended
     await settle()
     expect(performed).toEqual(['todo', 'todo:add=Buy eggs', 'show'])
+  })
+
+  it('navigates mid-word but holds a data change until the user pauses', async () => {
+    const plan = ['To-do', 'To-do › add task', 'To-do › add task', 'stop']
+    const { agent, performed, ticks } = setup((_, i) => ({ choice: plan[i]! }))
+    agent.utteranceStart()
+    agent.partial('add new to do called')
+    await settle()
+    expect(performed).toEqual(['todo'])
+    expect(ticks.map((t) => t.outcome)).toEqual(['executed', 'gated'])
+    agent.segment('add new to do called get eggs')
+    await settle()
+    expect(performed).toEqual(['todo', 'todo:add=Buy eggs', 'show'])
+  })
+
+  it('waits through a long pause until the user says the value', async () => {
+    const { world, performed } = fakeWorld()
+    const ticks: TickReport[] = []
+    const statuses: AgentStatus[] = []
+    const jev = scripted(() => ({ choice: performed.some((p) => p.startsWith('todo:add')) ? 'stop' : 'To-do › add task' }))
+    const gen = { fill: async ({ context }: { context: string }) => (context.includes('get eggs') ? 'Get eggs' : '') }
+    const agent = new Agent(world, jev, gen, { tick: (t) => ticks.push(t), status: (s) => statuses.push(s) })
+    agent.utteranceStart()
+    agent.segment('create a new to-do called')
+    await settle()
+    agent.segment('um')
+    await settle()
+    agent.utteranceEnd() // the pause outlasts the silence timeout
+    await settle()
+    expect(performed).toEqual([])
+    expect(statuses.at(-1)).toBe('idle')
+    agent.utteranceStart()
+    agent.segment('get eggs')
+    await settle()
+    expect(performed).toEqual(['todo:add=Get eggs', 'show'])
+    expect(ticks.map((t) => t.outcome)).not.toContain('forced-stop')
+  })
+
+  it('discards filled text when the user keeps talking during the fill', async () => {
+    let release!: (text: string) => void
+    const fills = ['New to-do item', 'Get eggs']
+    const { world, performed } = fakeWorld()
+    // Discarded, held while "get eggs" is still a partial, then committed at the pause.
+    const plan = ['To-do › add task', 'To-do › add task', 'To-do › add task', 'stop']
+    const ticks: TickReport[] = []
+    const gen = { fill: () => new Promise<string>((r) => (release = r)) }
+    const agent = new Agent(world, scripted((_, i) => ({ choice: plan[i]! })), gen, { tick: (t) => ticks.push(t) })
+    agent.utteranceStart()
+    agent.segment('add new to do called')
+    await settle()
+    agent.partial('get eggs please')
+    release(fills[0]!)
+    await settle()
+    expect(ticks.map((t) => t.outcome)).toEqual(['stale-discarded', 'gated'])
+    expect(performed).toEqual([])
+    agent.segment('get eggs please')
+    await settle()
+    release(fills[1]!)
+    await settle()
+    expect(performed).toEqual(['todo:add=Get eggs', 'show'])
   })
 
   it('does not call again after wait until new words arrive', async () => {
@@ -147,7 +229,7 @@ describe('Agent loop', () => {
   it('repeats an action that keeps changing the screen', async () => {
     const { agent, performed, ticks } = setup((_, i) => ({ choice: i < 4 ? 'To-do › sort' : 'stop' }), { screenChanges: true })
     agent.utteranceStart()
-    agent.partial('sort it four times please')
+    agent.segment('sort it four times please')
     await settle()
     expect(performed).toEqual(['todo:sort', 'todo:sort', 'todo:sort', 'todo:sort', 'show'])
     expect(ticks.map((t) => t.outcome)).not.toContain('forced-stop')
@@ -179,7 +261,7 @@ describe('Agent loop', () => {
     agent.partial('open my email please')
     await settle()
     expect(ticks.map((t) => t.outcome)).toEqual(['error'])
-    expect(statuses.at(-1)).toBe('idle')
+    expect(statuses.at(-1)).toBe('error')
     const results = agent.log.entries.filter((e) => e.role === 'tool')
     expect(results).toMatchObject([{ toolCallId: 'call-1', summary: 'Failed: email broke' }])
     agent.partial('open my email please now')
@@ -252,7 +334,7 @@ describe('Agent debug trace', () => {
     const plan = ['To-do › add task', 'stop']
     const { agent, of } = traced((_, i) => ({ choice: plan[i]! }))
     agent.utteranceStart()
-    agent.partial('add buy eggs to my list')
+    agent.segment('add buy eggs to my list')
     await settle()
 
     const start = of('tick-start')[0]!
@@ -287,7 +369,7 @@ describe('Agent debug trace', () => {
     expect(of('tick-end')[0]).toMatchObject({ outcome: 'gated', effective: 'wait' })
   })
 
-  it('ends the tick as an error and goes idle when an action throws', async () => {
+  it('ends the tick as an error and reports it when an action throws', async () => {
     const world = { ...fakeWorld().world, perform: async () => Promise.reject(new Error('boom')) }
     const statuses: string[] = []
     const events: AgentDebugEvent[] = []
@@ -296,6 +378,6 @@ describe('Agent debug trace', () => {
     agent.partial('open email')
     await settle()
     expect(events.find((e) => e.type === 'tick-end')).toMatchObject({ outcome: 'error', detail: 'Error: boom' })
-    expect(statuses.at(-1)).toBe('idle')
+    expect(statuses.at(-1)).toBe('error')
   })
 })

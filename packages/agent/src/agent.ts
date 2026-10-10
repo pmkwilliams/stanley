@@ -30,7 +30,30 @@ export interface TickReport {
   detail?: string
 }
 
-export type AgentStatus = 'idle' | 'thinking' | 'acting' | 'didnt-get-that' | 'stuck'
+/**
+ * What the agent is doing, for the presence indicator.
+ * - `idle`: no open task.
+ * - `guessing`: deciding mid-utterance before anything has been done for it.
+ * - `thinking`: deciding with intent: the utterance ended, or the agent is already acting on it.
+ * - `writing`: generating the text for an input.
+ * - `acting`: performing an action.
+ * - `listening`: chose `wait` while the utterance is open; the task waits for more words.
+ * - `done`: the task finished (`stop`).
+ * - `didnt-get-that`: chose `wait` after the utterance ended.
+ * - `stuck`: a guardrail forced a stop.
+ * - `error`: a Jev call, fill or action failed.
+ */
+export type AgentStatus =
+  | 'idle'
+  | 'guessing'
+  | 'thinking'
+  | 'writing'
+  | 'acting'
+  | 'listening'
+  | 'done'
+  | 'didnt-get-that'
+  | 'stuck'
+  | 'error'
 
 export interface AgentEvents {
   tick(report: TickReport): void
@@ -167,7 +190,8 @@ export class Agent {
     let effective = 'error'
     let stale = false
     try {
-      this.events.status?.('thinking')
+      // A decision is a guess until the person finishes or the agent has started acting on it.
+      this.events.status?.(!seenEnded && this.actions === 0 ? 'guessing' : 'thinking')
       const current = this.world.currentNodeId()
       const now = this.world.now()
       const options = buildOptions(this.world.tree(), current, this.config.maxNodes)
@@ -201,14 +225,15 @@ export class Agent {
       // Only new words make a decision stale, including words of an utterance
       // that started mid-call (barge-in). The utterance ending mid-call does not
       // invalidate an action; a `wait` gets re-asked via the deferred `end`.
-      stale = hasNewWords(this.transcript, this.utteranceId === utterance ? seen : null)
+      const changed = () => hasNewWords(this.transcript, this.utteranceId === utterance ? seen : null)
+      stale = changed()
       const endedDuringCall = this.utteranceEnded && !seenEnded
       this.events.debug?.({ type: 'decision', tickId: id, result, stale, endedDuringCall })
       const screen = JSON.stringify([current, now])
-      effective = await this.handle(id, result, options.nodes.get(result.choice), stale, screen)
+      effective = await this.handle(id, result, options.nodes.get(result.choice), stale, screen, changed)
       this.events.debug?.({ type: 'tick-end', tickId: id, effective, ...(this.outcome ?? { outcome: 'executed' }) })
     } catch (err) {
-      // A failed Jev call, fill or action must not leave the loop stuck in `thinking`/`acting`.
+      // A failed Jev call, fill or action must not leave the loop stuck in `thinking`/`writing`/`acting`.
       this.fail(id, result, err)
     } finally {
       this.inFlight = false
@@ -223,8 +248,16 @@ export class Agent {
   /**
    * Returns the choice that actually took effect (after gating).
    * `screen` identifies what the agent saw when deciding, for the oscillation guard.
+   * `changed` reports whether new words have arrived since the decision's transcript.
    */
-  private async handle(id: number, r: ChoiceResult, node: AgentNode | undefined, stale: boolean, screen: string): Promise<string> {
+  private async handle(
+    id: number,
+    r: ChoiceResult,
+    node: AgentNode | undefined,
+    stale: boolean,
+    screen: string,
+    changed: () => boolean,
+  ): Promise<string> {
     const c = this.config
     let choice = r.choice
 
@@ -248,6 +281,14 @@ export class Agent {
       this.log.push({ role: 'event', kind: 'gated', detail: `destructive ${choice} @ ${r.confidence.toFixed(2)}` })
       this.report(id, r, 'gated')
       choice = 'wait'
+    } else if (node && node.kind !== 'location' && this.midWord()) {
+      // Navigate while the user speaks, but only change things at a pause:
+      // "add a to-do called…" must not commit before the title is said.
+      // The segment that finalizes at the pause re-asks.
+      this.gate(id, 'mid-speech', `"${choice}" changes data; held until the user pauses`)
+      this.log.push({ role: 'event', kind: 'gated', detail: `mid-speech ${choice}` })
+      this.report(id, r, 'gated')
+      choice = 'wait'
     }
 
     if (choice === 'wait') {
@@ -255,14 +296,14 @@ export class Agent {
         this.logDecision(id, 'wait', r)
         this.report(id, r, 'executed')
       }
-      this.halt(this.utteranceEnded ? 'didnt-get-that' : 'idle')
+      this.halt(this.utteranceEnded ? 'didnt-get-that' : 'listening')
       return 'wait'
     }
 
     if (choice === 'stop' || choice === 'handoff') {
       this.logDecision(id, choice, r)
       this.report(id, r, 'executed', choice === 'handoff' ? 'handoff not implemented' : undefined)
-      await this.finishTask()
+      await this.finishTask('done')
       return choice
     }
 
@@ -283,7 +324,8 @@ export class Agent {
       return 'stop'
     }
 
-    this.events.status?.('acting')
+    const fills = !(choice in GLOBALS) && node?.kind === 'input' && !!node.input
+    this.events.status?.(fills ? 'writing' : 'acting')
     const callId = `call-${id}`
     if (choice in GLOBALS) {
       this.log.push({ role: 'assistant', origin: 'agent', toolCall: { id: callId, option: choice }, decision: meta(r) })
@@ -302,6 +344,26 @@ export class Agent {
         const started = performance.now()
         args.text = await this.textGen.fill({ context, instructions })
         this.events.debug?.({ type: 'fill', tickId: id, option: choice, instructions, context, text: args.text, latencyMs: performance.now() - started })
+        // The user kept talking while the field was filled, so the text may be missing words.
+        // The deferred `words` request re-decides with them.
+        if (changed()) {
+          this.gate(id, 'stale', 'new words arrived during the fill; discarding the filled text')
+          this.log.push({ role: 'event', kind: 'stale', detail: choice })
+          this.report(id, r, 'stale-discarded')
+          return 'stale'
+        }
+        // The user wants this but has not said the value yet ("called… um…"): wait for it.
+        // Not a step, so a long pause cannot trip the oscillation guard.
+        if (!args.text.trim()) {
+          this.actions--
+          this.recent = this.recent.slice(0, -1)
+          this.gate(id, 'no-value', 'text_gen found no value in what the user said yet → wait')
+          this.log.push({ role: 'event', kind: 'gated', detail: `no value for ${choice}` })
+          this.report(id, r, 'gated')
+          this.halt('idle')
+          return 'wait'
+        }
+        this.events.status?.('acting')
       }
       this.log.push({ role: 'assistant', origin: 'agent', toolCall: { id: callId, option: choice, nodeId: node.id, args }, decision: meta(r) })
       const started = performance.now()
@@ -329,11 +391,16 @@ export class Agent {
     this.log.push({ role: 'assistant', origin: 'agent', toolCall: { id: `call-${id}`, option }, decision: meta(r) })
   }
 
-  private async finishTask(status: AgentStatus = 'idle'): Promise<void> {
+  private async finishTask(status: AgentStatus): Promise<void> {
     await this.world.global('show')
     if (this.taskOpen) this.log.push({ role: 'event', kind: 'task-end' })
     this.taskOpen = false
     this.halt(status)
+  }
+
+  /** The user is mid-sentence: words are still being decoded and no pause has finalized them. */
+  private midWord(): boolean {
+    return !this.utteranceEnded && this.transcript.partial.trim() !== ''
   }
 
   private gate(tickId: number, rule: Extract<AgentDebugEvent, { type: 'gate' }>['rule'], detail: string): void {
@@ -343,7 +410,7 @@ export class Agent {
   private fail(id: number, result: ChoiceResult | null, err: unknown): void {
     this.report(id, result, 'error', String(err))
     this.events.debug?.({ type: 'tick-end', tickId: id, outcome: 'error', effective: 'error', detail: String(err) })
-    this.halt('idle')
+    this.halt('error')
   }
 
   private halt(status: AgentStatus): void {

@@ -11,6 +11,8 @@ export interface TranscriberEvents {
   segment(text: string): void
   /** No speech for `silenceMs` after some speech — used to auto-end the utterance. */
   silence(): void
+  /** The VAD started or stopped hearing speech. */
+  speaking?(speaking: boolean): void
   /** Timing trace for the debug window. */
   debug?(event: SttDebugEvent): void
 }
@@ -105,7 +107,7 @@ export class Transcriber {
     this.pending = new Float32Array(0)
     this.recent = new Float32Array(0)
     this.speech = []
-    this.speaking = false
+    this.setSpeaking(false)
     this.heardSpeech = false
     this.silenceSent = false
   }
@@ -127,7 +129,7 @@ export class Transcriber {
   /** End of an utterance: finalize whatever is still being spoken. */
   async flush(): Promise<void> {
     this.vad.flush()
-    this.speaking = false
+    this.setSpeaking(false)
     this.speech = []
     await this.drainSegments()
   }
@@ -136,7 +138,7 @@ export class Transcriber {
     const now = Date.now()
     if (this.vad.isDetected()) {
       if (!this.speaking) {
-        this.speaking = true
+        this.setSpeaking(true)
         this.speech = [this.recent.slice(-PREROLL)]
         this.segmentId++
         this.events.debug?.({ type: 'speech-start' })
@@ -146,11 +148,17 @@ export class Transcriber {
       this.heardSpeech = true
       this.silenceSent = false
     } else if (this.speaking) {
-      this.speaking = false
+      this.setSpeaking(false)
       this.speech = []
       this.events.debug?.({ type: 'speech-end' })
     }
     this.recent = concat([this.recent, window]).slice(-PREROLL)
+  }
+
+  private setSpeaking(speaking: boolean): void {
+    if (speaking === this.speaking) return
+    this.speaking = speaking
+    this.events.speaking?.(speaking)
   }
 
   /** Resolves once every queued segment, including ones queued by earlier calls, is emitted. */

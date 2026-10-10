@@ -160,6 +160,19 @@ The system prompt's "How to decide" section was tuned against the evals; without
   ~400 ms for partials; finalize at VAD pause. Accuracy over true streaming.
 - Mic capture in the renderer (`getUserMedia`, 16 kHz mono PCM via AudioWorklet) → IPC → main.
 
+## Presence
+
+The system shows itself as a glowing wave, not an avatar: across the centre with no window open,
+docked to the bottom edge under one. It combines two tracks that run at once:
+- **Ear** (main → snapshot): `listening`, `speaking` (VAD), `utteranceOpen`.
+- **Brain** (`AgentStatus`): `guessing` (deciding mid-utterance before acting on it), `thinking`,
+  `writing` (fill), `acting`, `listening` (`wait` mid-utterance), `done`, `didnt-get-that`, `stuck`, `error`.
+
+`presence()` (renderer) picks one: work wins over the ear, so it reads as working while you talk; the
+mic level is layered on every state. Shape = focus (diffuse → gathered), color = whose turn (cool = on
+you, violet/spectrum = on the task, amber = trouble), motion = energy (breathing, voice-reactive,
+scanning, pulsing, flowing). Guesses are held ~1.5 s through gaps between ticks; outcomes fade to armed.
+
 ## Models
 
 All via **Vercel AI Gateway** with the AI SDK (`ai`, pinned exactly), one `AI_GATEWAY_API_KEY`.

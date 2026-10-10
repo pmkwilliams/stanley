@@ -29,7 +29,7 @@ export type AgentDebugEvent =
       options: Record<string, string | null>
     }
   | { type: 'decision'; tickId: number; result: ChoiceResult; stale: boolean; endedDuringCall: boolean }
-  | { type: 'gate'; tickId: number; rule: 'stale' | 'min-confidence' | 'destructive' | 'oscillation' | 'step-cap'; detail: string }
+  | { type: 'gate'; tickId: number; rule: 'stale' | 'min-confidence' | 'destructive' | 'mid-speech' | 'no-value' | 'oscillation' | 'step-cap'; detail: string }
   | { type: 'fill'; tickId: number; option: string; instructions: string; context: string; text: string; latencyMs: number }
   | {
       type: 'act'

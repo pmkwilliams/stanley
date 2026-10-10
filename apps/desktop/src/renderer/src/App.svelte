@@ -3,6 +3,8 @@
   import { cubicIn, cubicOut } from 'svelte/easing'
   import { scale } from 'svelte/transition'
   import { startMic } from './mic'
+  import Presence from './Presence.svelte'
+  import { loudness, mic } from './presence'
   import { backgrounds, surfaces } from './surfaces'
 
   let snapshot = $state<Snapshot | null>(null)
@@ -20,8 +22,12 @@
         stopMic?.()
         stopMic = null
         // Dev: localStorage['stanley.noMic'] lets tests inject audio without the real mic mixing in.
+        mic.level = 0
         if (!on || localStorage.getItem('stanley.noMic')) return
-        const stop = await startMic((c) => window.stanley.audio(c))
+        const stop = await startMic((c) => {
+          mic.level = loudness(c)
+          window.stanley.audio(c)
+        })
         if (request === micRequest) stopMic = stop
         else stop()
       }),
@@ -30,7 +36,7 @@
   })
 
   const visible = $derived(snapshot?.layout.visible ?? null)
-  const background = $derived(!!snapshot && snapshot.focus !== visible && snapshot.status === 'acting')
+  const background = $derived(!!snapshot && snapshot.focus !== visible && (snapshot.status === 'writing' || snapshot.status === 'acting'))
 
   const KEYS: Record<string, string> = { CommandOrControl: '⌘', Command: '⌘', Control: '⌃', Alt: '⌥', Option: '⌥', Shift: '⇧' }
   function keys(accel: string) {
@@ -39,6 +45,7 @@
 </script>
 
 <div class="shell">
+  {#if snapshot}<Presence {snapshot} docked={!!visible} />{/if}
   <header>
     <button class="crumb" onclick={() => window.stanley.open(null)}>Stanley</button>
     {#if visible}<span class="muted">›</span><span>{snapshot?.apps.find((a) => a.id === visible)?.title}</span>{/if}
@@ -84,6 +91,7 @@
     --window-max-height: calc(100vh - 44px - 64px);
   }
   header {
+    position: relative; z-index: 1;
     grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; padding: 0 10px 0 84px;
     -webkit-app-region: drag;
   }

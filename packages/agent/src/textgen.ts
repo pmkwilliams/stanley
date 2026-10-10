@@ -1,6 +1,7 @@
 import { generateText } from 'ai'
 
 export interface TextGen {
+  /** Returns '' when the user has not said the value yet. */
   fill(req: { context: string; instructions: string; signal?: AbortSignal }): Promise<string>
 }
 
@@ -13,7 +14,8 @@ export function createTextGen(opts: { model?: string } = {}): TextGen {
         model,
         abortSignal: signal,
         system:
-          'You fill a single input field for a voice assistant. Reply with only the text to type into the field. No quotes, no explanation.',
+          'You fill a single input field for a voice assistant. Reply with only the text to type into the field. No quotes, no explanation. ' +
+          'If the user has not yet said what goes in the field (for example they stopped at "called…" or "um"), reply with nothing. Never invent a placeholder.',
         prompt: `${context}\n\n## Field\n${instructions}`,
       })
       return text.trim()
