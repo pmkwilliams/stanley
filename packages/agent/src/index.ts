@@ -1,5 +1,6 @@
 export * from './agent'
 export * from './config'
+export * from './debug'
 export * from './log'
 export * from './options'
 export * from './serialize'

@@ -11,7 +11,16 @@ export interface TranscriberEvents {
   segment(text: string): void
   /** No speech for `silenceMs` after some speech — used to auto-end the utterance. */
   silence(): void
+  /** Timing trace for the debug window. */
+  debug?(event: SttDebugEvent): void
 }
+
+export type SttDebugEvent =
+  | { type: 'speech-start' }
+  | { type: 'speech-end' }
+  /** `emitted` is false when a partial finished after the speaker paused, so it was dropped. */
+  | { type: 'decode'; kind: 'partial' | 'segment'; audioMs: number; decodeMs: number; text: string; emitted: boolean }
+  | { type: 'silence'; afterMs: number }
 
 export interface TranscriberOptions {
   modelsDir: string
@@ -125,6 +134,7 @@ export class Transcriber {
       if (!this.speaking) {
         this.speaking = true
         this.speech = [this.recent.slice(-PREROLL)]
+        this.events.debug?.({ type: 'speech-start' })
       }
       this.speech.push(window.slice())
       this.lastSpeechAt = now
@@ -133,6 +143,7 @@ export class Transcriber {
     } else if (this.speaking) {
       this.speaking = false
       this.speech = []
+      this.events.debug?.({ type: 'speech-end' })
     }
     this.recent = concat([this.recent, window]).slice(-PREROLL)
   }
@@ -141,7 +152,7 @@ export class Transcriber {
     while (!this.vad.isEmpty()) {
       const { samples } = this.vad.front(false)
       this.vad.pop()
-      const text = await this.decode(samples)
+      const text = await this.decode(samples, 'segment', (text) => !!text)
       if (text) this.events.segment(text)
     }
   }
@@ -151,7 +162,7 @@ export class Transcriber {
     if (!this.speaking || this.decodingPartial || now - this.lastPartialAt < this.partialIntervalMs) return
     this.lastPartialAt = now
     this.decodingPartial = true
-    this.decode(concat(this.speech))
+    this.decode(concat(this.speech), 'partial', (text) => this.speaking && !!text)
       .then((text) => {
         if (this.speaking && text) this.events.partial(text)
       })
@@ -161,15 +172,25 @@ export class Transcriber {
   private maybeSilence(): void {
     if (this.heardSpeech && !this.speaking && !this.silenceSent && Date.now() - this.lastSpeechAt >= this.silenceMs) {
       this.silenceSent = true
+      this.events.debug?.({ type: 'silence', afterMs: Date.now() - this.lastSpeechAt })
       this.events.silence()
     }
   }
 
-  private async decode(samples: Float32Array): Promise<string> {
+  private async decode(samples: Float32Array, kind: 'partial' | 'segment', emits: (text: string) => boolean): Promise<string> {
+    const started = performance.now()
     const stream = this.recognizer.createStream()
     stream.acceptWaveform({ samples, sampleRate: SAMPLE_RATE })
-    const { text } = await this.recognizer.decodeAsync(stream)
-    return text.trim()
+    const text = (await this.recognizer.decodeAsync(stream)).text.trim()
+    this.events.debug?.({
+      type: 'decode',
+      kind,
+      audioMs: Math.round((samples.length / SAMPLE_RATE) * 1000),
+      decodeMs: performance.now() - started,
+      text,
+      emitted: emits(text),
+    })
+    return text
   }
 }
 

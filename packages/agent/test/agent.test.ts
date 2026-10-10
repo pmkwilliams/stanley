@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { AgentNode } from '@stanley/app-sdk'
 import type { ChoiceRequest, ChoiceResult, DecisionClient } from '@stanley/jev'
 import { Agent, type TickReport, type World } from '../src/agent'
+import type { AgentDebugEvent } from '../src/debug'
 
 const tree: AgentNode = {
   id: 'home',
@@ -170,5 +171,64 @@ describe('Agent task boundaries', () => {
     agent.utteranceEnd()
     await settle()
     expect(jev.calls).toBe(2)
+  })
+})
+
+describe('Agent debug trace', () => {
+  function traced(script: Script, world = fakeWorld().world) {
+    const events: AgentDebugEvent[] = []
+    const agent = new Agent(world, scripted(script), textGen, { debug: (e) => events.push(e) })
+    return { agent, events, of: <T extends AgentDebugEvent['type']>(type: T) => events.filter((e): e is Extract<AgentDebugEvent, { type: T }> => e.type === type) }
+  }
+
+  it('records the exact Jev input, the fill, the action and the outcome of a tick', async () => {
+    const plan = ['To-do › add task', 'stop']
+    const { agent, of } = traced((_, i) => ({ choice: plan[i]! }))
+    agent.utteranceStart()
+    agent.partial('add buy eggs to my list')
+    await settle()
+
+    const start = of('tick-start')[0]!
+    expect(start).toMatchObject({ tickId: 1, reason: 'words', currentNodeId: 'home', utteranceEnded: false })
+    expect(start.state).toContain('add buy eggs to my list')
+    expect(Object.keys(start.options)).toContain('To-do › add task')
+    expect(of('fill')[0]).toMatchObject({ tickId: 1, instructions: 'title', text: 'Buy eggs' })
+    expect(of('act')[0]).toMatchObject({ tickId: 1, nodeId: 'todo:add', args: { text: 'Buy eggs' }, summary: 'did todo:add' })
+    expect(of('tick-end').map((e) => [e.tickId, e.outcome, e.effective])).toEqual([
+      [1, 'executed', 'To-do › add task'],
+      [2, 'executed', 'stop'],
+    ])
+  })
+
+  it('records requests that did not become a tick', async () => {
+    const { agent, of } = traced(() => ({ choice: 'wait' }))
+    agent.utteranceStart()
+    agent.partial('hmm let')
+    await settle()
+    agent.partial('hmm let') // re-decoded, nothing new
+    await settle()
+    expect(of('request').map((e) => e.result)).toEqual(['tick', 'no-new-words'])
+  })
+
+  it('explains gating with the threshold that applied', async () => {
+    const { agent, of } = traced((_, i) => (i === 0 ? { choice: 'Email', confidence: 0.2 } : { choice: 'wait' }))
+    agent.utteranceStart()
+    agent.partial('maybe email')
+    await settle()
+    expect(of('gate')[0]).toMatchObject({ tickId: 1, rule: 'min-confidence' })
+    expect(of('gate')[0]!.detail).toContain('0.2')
+    expect(of('tick-end')[0]).toMatchObject({ outcome: 'gated', effective: 'wait' })
+  })
+
+  it('ends the tick as an error and goes idle when an action throws', async () => {
+    const world = { ...fakeWorld().world, perform: async () => Promise.reject(new Error('boom')) }
+    const statuses: string[] = []
+    const events: AgentDebugEvent[] = []
+    const agent = new Agent(world, scripted(() => ({ choice: 'Email' })), textGen, { debug: (e) => events.push(e), status: (s) => statuses.push(s) })
+    agent.utteranceStart()
+    agent.partial('open email')
+    await settle()
+    expect(events.find((e) => e.type === 'tick-end')).toMatchObject({ outcome: 'error', detail: 'Error: boom' })
+    expect(statuses.at(-1)).toBe('idle')
   })
 })

@@ -11,7 +11,7 @@ list. v1 is a demo of live transcription + the basic agent loop over a few toy a
 - Agent loop driven by Jev choosing from: navigation/action nodes + global options.
 - Background work: the agent can operate on surfaces the user can't see and reveal the result.
 - Toy apps: To-do, Email, Weather, Music, Web (search + webview).
-- A HUD that explains every decision.
+- A debug window that explains every decision.
 
 **Not in v1**: wake phrase, real handoff to a frontier LLM (stubbed), multi-window layouts,
 spoken responses, persistence across launches.
@@ -90,7 +90,7 @@ count grew, or a segment finalized.
 Identical loop control (halt until new words / utterance end). Different meaning:
 - `stop` closes the task: marks the turn complete in the log, performs a final `show`, allows
   older tool results to be collapsed.
-- `wait` leaves the task open. `wait` *after the utterance ended* = dead end → HUD shows
+- `wait` leaves the task open. `wait` *after the utterance ended* = dead end → status shows
   "didn't get that" (later: handoff to clarify).
 - P(wait)+P(stop) can be read as "idle probability".
 
@@ -183,17 +183,25 @@ All via **Vercel AI Gateway** with the AI SDK (`ai`, pinned exactly), one `AI_GA
 Seeded data resets each launch. The user can also click/type in apps directly; those go through
 the same action handlers.
 
-## HUD
+## Debug window
 
-Collapsible side panel (toggle off for clean demos):
-- live transcript (partial words greyed)
-- tick timeline: top-5 options with probability bars, confidence, latency, outcome
-  (executed / discarded-stale / gated / forced-stop)
-- background activity indicator
+The main window stays clean; **Debug → Open Debug Window** (⌘⇧D) opens a separate window for
+diagnosing agent behaviour. It is driven by one structured stream (`DebugEvent`): the agent's trace
+(`AgentDebugEvent`: every tick request including ones that never ran, exact Jev input, decision,
+guardrail gates with thresholds, text fill, action result), STT timing (VAD, decode latency, dropped
+partials, silence), app events (mic, status, typed/manual input) and the message log. Each session's
+stream is written to `userData/sessions/<session>.debug.jsonl` next to the message-log JSONL.
+
+- **Timeline** grouped by task; optional rows for partials, VAD, skipped requests, status.
+- **Tick inspector**: what was heard and why the tick ran, raw vs effective choice, gating, every
+  option ranked by probability, fill and observation, full Jev state.
+- **Replay**: re-run a tick against Jev as recorded or with edited state/instructions/options.
+- **Copy as eval** turns a task into a scenario literal for `evals/scenarios.mts`.
+- **Past sessions** load from disk via the session picker.
 
 ## Development and evaluation
 
-- **Typed utterances**: the HUD text box (and `window.stanley.say`) injects an utterance as if spoken.
+- **Typed utterances**: the debug window's text box (and `window.stanley.say`) injects an utterance as if spoken.
 - **Headless evals**: `pnpm eval [filter…]` runs scenarios with the real Shell, apps, Jev and Haiku —
   no Electron. Utterances are fed word by word to exercise live ticking. Scenarios live in
   `evals/scenarios.mts` with state-based checks (visible surface, route, app data, decision count).
@@ -212,19 +220,19 @@ Working, verified end to end:
   Open-Meteo.
 - Parakeet + Silero live transcription: partials every ~430 ms, segments at pauses, silence
   auto-end at 2 s; model loads in ~1.3 s. Verified by streaming synthesized speech through the app.
-- All five apps; background work with a single reveal; HUD decision timeline.
+- All five apps; background work with a single reveal; debug window decision timeline.
 - Evals 8/8 on repeated runs.
 
 Not yet verified / known gaps:
 - Real microphone capture (needs macOS mic permission for the dev Electron binary; a packaged app
   needs `NSMicrophoneUsageDescription`).
-- `handoff` is a stub that behaves like `stop`. "Didn't get that" is only a HUD status.
+- `handoff` is a stub that behaves like `stop`. "Didn't get that" is only a status.
 - Web pages render in a `<webview>` from the app UI; page markdown comes from Parallel Extract rather
   than from the rendered page. Moving to offscreen `WebContentsView` surfaces is the next step for
   real web views and multi-window layouts.
 - `back` is approximate (surface-level history, not per-route).
 - Option names are full paths (`Web › web search page › …`), which are long; fine for Jev, noisy in
-  the HUD.
+  the debug window.
 
 ## Architecture
 
@@ -234,7 +242,7 @@ surfaces need no DOM. The Svelte renderer is a thin view of the surfaces in the 
 IPC.
 
 ```
-apps/desktop          Electron shell: main, preload, Svelte renderer, layout, HUD
+apps/desktop          Electron shell: main, preload, Svelte renderer, layout, debug window
 packages/app-sdk      AppModule / Node / Surface / Action types
 packages/agent        loop, tick scheduler, message log, serializers, guardrails, option builder
 packages/jev          Jev client (AI SDK decide) + mock

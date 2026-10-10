@@ -1,6 +1,7 @@
 import type { ActionArgs, AgentNode } from '@stanley/app-sdk'
 import type { ChoiceResult, DecisionClient } from '@stanley/jev'
 import { defaultConfig, type AgentConfig } from './config'
+import type { AgentDebugEvent, RequestResult, TickReason } from './debug'
 import { MessageLog } from './log'
 import { buildOptions, GLOBALS, type GlobalOption } from './options'
 import { toJevState, type NowBlock } from './serialize'
@@ -34,6 +35,7 @@ export type AgentStatus = 'idle' | 'thinking' | 'acting' | 'didnt-get-that' | 's
 export interface AgentEvents {
   tick(report: TickReport): void
   status(status: AgentStatus): void
+  debug(event: AgentDebugEvent): void
 }
 
 export const SYSTEM_PROMPT = `# Stanley
@@ -49,8 +51,6 @@ How to decide:
 
 const INSTRUCTIONS = 'Which single option best moves toward what the user wants right now?'
 
-type Reason = 'words' | 'action' | 'end'
-
 export class Agent {
   readonly log: MessageLog
   private transcript: TranscriptSnapshot = { finalized: [], partial: '' }
@@ -58,7 +58,7 @@ export class Agent {
   private utteranceEnded = false
   private inFlight = false
   /** Tick requested while a call was in flight; replayed when it settles. */
-  private deferred: Reason | null = null
+  private deferred: TickReason | null = null
   private halted = true
   private taskOpen = false
   private lastEffective = ''
@@ -67,13 +67,15 @@ export class Agent {
   private tickId = 0
   private utteranceId = 0
   private abort?: AbortController
+  /** Last report of the current tick; its outcome is the tick's outcome. */
+  private outcome: { outcome: TickOutcome; detail?: string } | null = null
 
   constructor(
     private world: World,
     private jev: DecisionClient,
     private textGen: TextGen,
     private events: Partial<AgentEvents> = {},
-    private config: AgentConfig = defaultConfig,
+    readonly config: AgentConfig = defaultConfig,
     sink?: ConstructorParameters<typeof MessageLog>[0],
   ) {
     this.log = new MessageLog(sink)
@@ -130,22 +132,24 @@ export class Agent {
 
   // ── Scheduling ──────────────────────────────────────────────────────────
 
-  private request(reason: Reason): void {
+  private request(reason: TickReason): void {
+    const trace = (result: RequestResult) => this.events.debug?.({ type: 'request', reason, result })
     if (this.inFlight) {
       // An action-driven tick must not be lost behind a words/end check.
       if (reason === 'action' || !this.deferred) this.deferred = reason
-      return
+      return trace('deferred')
     }
     const fresh = hasNewWords(this.transcript, this.seen)
-    if (reason === 'words' && !fresh) return
-    if (reason === 'action' && this.halted) return
+    if (reason === 'words' && !fresh) return trace('no-new-words')
+    if (reason === 'action' && this.halted) return trace('halted')
     // Ending the utterance only matters if the agent was waiting on the user.
-    if (reason === 'end' && !fresh && this.halted && this.lastEffective !== 'wait') return
+    if (reason === 'end' && !fresh && this.halted && this.lastEffective !== 'wait') return trace('nothing-to-re-ask')
+    trace('tick')
     if (fresh) this.openTask()
-    void this.tick()
+    void this.tick(reason)
   }
 
-  private async tick(): Promise<void> {
+  private async tick(reason: TickReason): Promise<void> {
     this.inFlight = true
     this.deferred = null
     this.halted = false
@@ -153,13 +157,27 @@ export class Agent {
     const seenEnded = this.utteranceEnded
     this.seen = seen
     const id = ++this.tickId
+    this.outcome = null
     this.events.status?.('thinking')
 
-    const options = buildOptions(this.world.tree(), this.world.currentNodeId(), this.config.maxNodes)
+    const currentNodeId = this.world.currentNodeId()
+    const options = buildOptions(this.world.tree(), currentNodeId, this.config.maxNodes)
     const state = toJevState(SYSTEM_PROMPT, this.log.entries, {
       ...this.world.now(),
       liveUtterance: this.transcript.partial,
       utteranceFinal: this.utteranceEnded,
+    })
+    this.events.debug?.({
+      type: 'tick-start',
+      tickId: id,
+      reason,
+      utteranceId: this.utteranceId,
+      transcript: seen,
+      utteranceEnded: seenEnded,
+      currentNodeId,
+      state,
+      instructions: INSTRUCTIONS,
+      options: options.criteria,
     })
 
     let result: ChoiceResult
@@ -168,8 +186,7 @@ export class Agent {
       result = await this.jev.choose({ state, instructions: INSTRUCTIONS, options: options.criteria, signal: this.abort.signal })
     } catch (err) {
       this.inFlight = false
-      this.report(id, null, 'error', String(err))
-      this.halt('idle')
+      this.fail(id, err)
       return
     }
 
@@ -178,13 +195,19 @@ export class Agent {
     const stale = hasNewWords(this.transcript, seen)
     const endedDuringCall = this.utteranceEnded && !seenEnded
     const node = options.nodes.get(result.choice)
+    this.events.debug?.({ type: 'decision', tickId: id, result, stale, endedDuringCall })
 
     let effective: string
     try {
       effective = await this.handle(id, result, node, stale)
+    } catch (err) {
+      // A failed fill or action must not leave the loop stuck in `acting`.
+      this.fail(id, err)
+      return
     } finally {
       this.inFlight = false
     }
+    this.events.debug?.({ type: 'tick-end', tickId: id, effective, ...(this.outcome ?? { outcome: 'executed' }) })
     this.lastEffective = effective
     const deferred = this.deferred
     this.deferred = null
@@ -201,6 +224,7 @@ export class Agent {
     if (stale) {
       const confidentNav = node?.kind === 'location' && r.confidence >= c.staleNavConfidence
       if (choice !== 'wait' && !confidentNav) {
+        this.gate(id, 'stale', `new words arrived during the call; only a navigation at ≥ ${c.staleNavConfidence} survives`)
         this.log.push({ role: 'event', kind: 'stale', detail: choice })
         this.report(id, r, 'stale-discarded')
         return 'stale'
@@ -208,10 +232,12 @@ export class Agent {
     }
 
     if (r.confidence < c.minConfidence && choice !== 'wait' && choice !== 'stop') {
+      this.gate(id, 'min-confidence', `confidence ${r.confidence.toFixed(2)} < minConfidence ${c.minConfidence} → wait`)
       this.log.push({ role: 'event', kind: 'gated', detail: `${choice} @ ${r.confidence.toFixed(2)}` })
       this.report(id, r, 'gated')
       choice = 'wait'
     } else if (node?.destructive && r.confidence < c.destructiveConfidence) {
+      this.gate(id, 'destructive', `destructive action at ${r.confidence.toFixed(2)} < destructiveConfidence ${c.destructiveConfidence} → wait`)
       this.log.push({ role: 'event', kind: 'gated', detail: `destructive ${choice} @ ${r.confidence.toFixed(2)}` })
       this.report(id, r, 'gated')
       choice = 'wait'
@@ -236,6 +262,11 @@ export class Agent {
     this.recent = [...this.recent, choice].slice(-c.oscillation.window)
     const repeats = this.recent.filter((x) => x === choice).length
     if (++this.actions > c.maxActionsPerUtterance || repeats >= c.oscillation.repeats) {
+      if (repeats >= c.oscillation.repeats) {
+        this.gate(id, 'oscillation', `"${choice}" chosen ${repeats}× in the last ${c.oscillation.window} actions`)
+      } else {
+        this.gate(id, 'step-cap', `more than ${c.maxActionsPerUtterance} actions this utterance`)
+      }
       this.log.push({ role: 'event', kind: 'forced-stop', detail: repeats >= c.oscillation.repeats ? 'oscillation' : 'step cap' })
       this.report(id, r, 'forced-stop')
       await this.finishTask('stuck')
@@ -246,7 +277,9 @@ export class Agent {
     const callId = `call-${id}`
     if (choice in GLOBALS) {
       this.log.push({ role: 'assistant', origin: 'agent', toolCall: { id: callId, option: choice }, decision: meta(r) })
+      const started = performance.now()
       await this.world.global(choice as Exclude<GlobalOption, 'wait' | 'stop' | 'handoff'>)
+      this.events.debug?.({ type: 'act', tickId: id, option: choice, latencyMs: performance.now() - started })
     } else if (node) {
       const args: ActionArgs = {}
       if (node.kind === 'input' && node.input) {
@@ -255,10 +288,15 @@ export class Agent {
           liveUtterance: fullText(this.transcript),
           utteranceFinal: this.utteranceEnded,
         })
-        args.text = await this.textGen.fill({ context, instructions: node.input.instructions })
+        const { instructions } = node.input
+        const started = performance.now()
+        args.text = await this.textGen.fill({ context, instructions })
+        this.events.debug?.({ type: 'fill', tickId: id, option: choice, instructions, context, text: args.text, latencyMs: performance.now() - started })
       }
       this.log.push({ role: 'assistant', origin: 'agent', toolCall: { id: callId, option: choice, nodeId: node.id, args }, decision: meta(r) })
+      const started = performance.now()
       const out = await this.world.perform(node, args)
+      this.events.debug?.({ type: 'act', tickId: id, option: choice, nodeId: node.id, args, ...out, latencyMs: performance.now() - started })
       this.log.push({ role: 'tool', toolCallId: callId, content: out.observation ?? out.summary, summary: out.summary })
     }
     this.report(id, r, 'executed')
@@ -277,6 +315,16 @@ export class Agent {
     this.halt(status)
   }
 
+  private gate(tickId: number, rule: Extract<AgentDebugEvent, { type: 'gate' }>['rule'], detail: string): void {
+    this.events.debug?.({ type: 'gate', tickId, rule, detail })
+  }
+
+  private fail(id: number, err: unknown): void {
+    this.report(id, null, 'error', String(err))
+    this.events.debug?.({ type: 'tick-end', tickId: id, outcome: 'error', effective: 'error', detail: String(err) })
+    this.halt('idle')
+  }
+
   private halt(status: AgentStatus): void {
     this.halted = true
     this.events.status?.(status)
@@ -289,6 +337,7 @@ export class Agent {
           .slice(0, 5)
           .map(([option, p]) => ({ option, p }))
       : []
+    this.outcome = { outcome, detail }
     this.events.tick?.({
       id,
       top,
