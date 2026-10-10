@@ -19,18 +19,22 @@ if (!process.env.AI_GATEWAY_API_KEY) throw new Error('AI_GATEWAY_API_KEY not set
 
 const filters = process.argv.slice(2)
 const WORD_MS = 180
+/** The agent counts as settled once it has been idle (not thinking/acting) this long. */
+const QUIET_MS = 500
+const MAX_SETTLE_MS = 120_000
 
 let passed = 0
 const selected = scenarios.filter((s) => !filters.length || filters.some((f) => s.name.includes(f)))
 for (const scenario of selected) {
   const shell = new Shell(apps, { env: process.env, fetch }, () => {})
   const ticks: TickReport[] = []
-  let idle!: () => void
-  let settled = new Promise<void>((r) => (idle = r))
+  let busy = false
+  let changedAt = 0
   const agent = new Agent(shell, createJevClient(), createTextGen(), {
     tick: (t) => ticks.push(t),
     status: (s) => {
-      if (s !== 'thinking' && s !== 'acting') idle()
+      busy = s === 'thinking' || s === 'acting'
+      changedAt = Date.now()
     },
   })
 
@@ -43,12 +47,10 @@ for (const scenario of selected) {
     }
     agent.segment(utterance)
     agent.utteranceEnd()
-    // Wait for the loop to go quiet.
-    for (;;) {
-      settled = new Promise<void>((r) => (idle = r))
-      const quiet = await Promise.race([settled.then(() => false), sleep(4000).then(() => true)])
-      if (quiet) break
-    }
+    // Wait for the loop to go idle, however long a step takes.
+    const deadline = Date.now() + MAX_SETTLE_MS
+    while ((busy || Date.now() - changedAt < QUIET_MS) && Date.now() < deadline) await sleep(100)
+    if (busy) console.warn(`   ${scenario.name}: still busy after ${MAX_SETTLE_MS / 1000}s`)
   }
 
   const failures = scenario.checks.map((c: Check) => c(shell, agent)).filter((r): r is string => typeof r === 'string')

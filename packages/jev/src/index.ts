@@ -43,11 +43,12 @@ export function createJevClient(opts: { model?: string } = {}): DecisionClient {
       })
       const answer = result.answers[QUESTION_ID] as { choice: string; probabilities?: Record<string, number> }
       // TypeSafe reports confidence per question in provider metadata, not on the answer.
+      // Fall back to the choice's probability so missing metadata doesn't gate every action.
       const meta = result.providerMetadata as { typesafe?: { confidence?: Record<string, number> } } | undefined
       return {
         choice: answer.choice,
         probabilities: answer.probabilities ?? { [answer.choice]: 1 },
-        confidence: meta?.typesafe?.confidence?.[QUESTION_ID] ?? 0,
+        confidence: meta?.typesafe?.confidence?.[QUESTION_ID] ?? answer.probabilities?.[answer.choice] ?? 0,
         latencyMs: performance.now() - started,
         usage: result.usage as ChoiceResult['usage'],
       }

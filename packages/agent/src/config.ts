@@ -6,6 +6,7 @@ export interface AgentConfig {
   /** A navigation computed from a stale transcript still runs at or above this confidence. */
   staleNavConfidence: number
   maxActionsPerUtterance: number
+  /** Force stop when the same option is chosen from the same screen `repeats` times in the last `window` steps. */
   oscillation: { repeats: number; window: number }
   maxNodes: number
 }

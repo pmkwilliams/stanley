@@ -4,22 +4,28 @@
   import Home from './Home.svelte'
   import Hud from './Hud.svelte'
   import { startMic } from './mic'
-  import { surfaces } from './surfaces'
+  import { backgrounds, surfaces } from './surfaces'
 
   let snapshot = $state<Snapshot | null>(null)
   let ticks = $state<TickReport[]>([])
   let hud = $state(true)
   let stopMic: (() => void) | null = null
+  /** Bumped on every listening change, so a mic that finishes starting after a newer change is stopped. */
+  let micRequest = 0
 
   $effect(() => {
     const offs = [
       window.stanley.onSnapshot((s) => (snapshot = s)),
       window.stanley.onTick((t) => (ticks = [t, ...ticks].slice(0, 50))),
       window.stanley.onListening(async (on) => {
+        const request = ++micRequest
         stopMic?.()
+        stopMic = null
         // Dev: localStorage['stanley.noMic'] lets tests inject audio without the real mic mixing in.
-        const useMic = on && !localStorage.getItem('stanley.noMic')
-        stopMic = useMic ? await startMic((c) => window.stanley.audio(c)) : null
+        if (!on || localStorage.getItem('stanley.noMic')) return
+        const stop = await startMic((c) => window.stanley.audio(c))
+        if (request === micRequest) stopMic = stop
+        else stop()
       }),
     ]
     return () => offs.forEach((off) => off())
@@ -64,6 +70,14 @@
     <Hud {snapshot} {ticks} />
   {/if}
 </div>
+
+{#if snapshot}
+  {#each Object.entries(backgrounds) as [appId, Background] (appId)}
+    {#if snapshot.surfaces[appId] !== undefined}
+      <Background data={snapshot.surfaces[appId]} perform={(nodeId: string, args?: { text?: string }) => window.stanley.perform(appId, nodeId, args)} />
+    {/if}
+  {/each}
+{/if}
 
 <style>
   .shell { display: grid; grid-template-columns: 1fr; grid-template-rows: 44px 1fr; height: 100vh; }

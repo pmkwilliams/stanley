@@ -50,6 +50,8 @@ How to decide:
 const INSTRUCTIONS = 'Which single option best moves toward what the user wants right now?'
 
 type Reason = 'words' | 'action' | 'end'
+/** A deferred tick keeps the strongest reason: an action must not be lost, and `end` also covers new words. */
+const PRIORITY: Record<Reason, number> = { words: 0, end: 1, action: 2 }
 
 export class Agent {
   readonly log: MessageLog
@@ -132,8 +134,7 @@ export class Agent {
 
   private request(reason: Reason): void {
     if (this.inFlight) {
-      // An action-driven tick must not be lost behind a words/end check.
-      if (reason === 'action' || !this.deferred) this.deferred = reason
+      if (!this.deferred || PRIORITY[reason] > PRIORITY[this.deferred]) this.deferred = reason
       return
     }
     const fresh = hasNewWords(this.transcript, this.seen)
@@ -149,39 +150,44 @@ export class Agent {
     this.inFlight = true
     this.deferred = null
     this.halted = false
+    const before = this.seen
     const seen = structuredClone(this.transcript)
-    const seenEnded = this.utteranceEnded
+    const utterance = this.utteranceId
     this.seen = seen
     const id = ++this.tickId
-    this.events.status?.('thinking')
 
-    const options = buildOptions(this.world.tree(), this.world.currentNodeId(), this.config.maxNodes)
-    const state = toJevState(SYSTEM_PROMPT, this.log.entries, {
-      ...this.world.now(),
-      liveUtterance: this.transcript.partial,
-      utteranceFinal: this.utteranceEnded,
-    })
-
-    let result: ChoiceResult
-    this.abort = new AbortController()
+    let result: ChoiceResult | null = null
+    let effective = 'error'
+    let stale = false
     try {
-      result = await this.jev.choose({ state, instructions: INSTRUCTIONS, options: options.criteria, signal: this.abort.signal })
+      this.events.status?.('thinking')
+      const current = this.world.currentNodeId()
+      const now = this.world.now()
+      const options = buildOptions(this.world.tree(), current, this.config.maxNodes)
+      const state = toJevState(SYSTEM_PROMPT, this.log.entries, {
+        ...now,
+        liveUtterance: this.transcript.partial,
+        utteranceFinal: this.utteranceEnded,
+      })
+
+      this.abort = new AbortController()
+      try {
+        result = await this.jev.choose({ state, instructions: INSTRUCTIONS, options: options.criteria, signal: this.abort.signal })
+      } catch (err) {
+        // Nothing was decided, so the words stay unseen and the next trigger retries.
+        if (this.seen === seen) this.seen = before
+        throw err
+      }
+
+      // Only new words make a decision stale, including words of an utterance
+      // that started mid-call (barge-in). The utterance ending mid-call does not
+      // invalidate an action; a `wait` gets re-asked via the deferred `end`.
+      stale = hasNewWords(this.transcript, this.utteranceId === utterance ? seen : null)
+      const screen = JSON.stringify([current, now])
+      effective = await this.handle(id, result, options.nodes.get(result.choice), stale, screen)
     } catch (err) {
-      this.inFlight = false
-      this.report(id, null, 'error', String(err))
+      this.report(id, result, 'error', String(err))
       this.halt('idle')
-      return
-    }
-
-    // Only new words make a decision stale. The utterance ending mid-call does
-    // not invalidate an action; a `wait` gets re-asked below instead.
-    const stale = hasNewWords(this.transcript, seen)
-    const endedDuringCall = this.utteranceEnded && !seenEnded
-    const node = options.nodes.get(result.choice)
-
-    let effective: string
-    try {
-      effective = await this.handle(id, result, node, stale)
     } finally {
       this.inFlight = false
     }
@@ -189,12 +195,14 @@ export class Agent {
     const deferred = this.deferred
     this.deferred = null
     if (stale) this.request('words')
-    else if (deferred === 'action') this.request('action')
-    else if (endedDuringCall && effective === 'wait') this.request('end')
+    else if (deferred) this.request(deferred)
   }
 
-  /** Returns the choice that actually took effect (after gating). */
-  private async handle(id: number, r: ChoiceResult, node: AgentNode | undefined, stale: boolean): Promise<string> {
+  /**
+   * Returns the choice that actually took effect (after gating).
+   * `screen` identifies what the agent saw when deciding, for the oscillation guard.
+   */
+  private async handle(id: number, r: ChoiceResult, node: AgentNode | undefined, stale: boolean, screen: string): Promise<string> {
     const c = this.config
     let choice = r.choice
 
@@ -233,8 +241,11 @@ export class Agent {
       return choice
     }
 
-    this.recent = [...this.recent, choice].slice(-c.oscillation.window)
-    const repeats = this.recent.filter((x) => x === choice).length
+    // Repeating an option only counts when it is chosen from the same screen:
+    // "volume up" four times is progress, bouncing between two screens is not.
+    const step = `${choice}\n${screen}`
+    this.recent = [...this.recent, step].slice(-c.oscillation.window)
+    const repeats = this.recent.filter((x) => x === step).length
     if (++this.actions > c.maxActionsPerUtterance || repeats >= c.oscillation.repeats) {
       this.log.push({ role: 'event', kind: 'forced-stop', detail: repeats >= c.oscillation.repeats ? 'oscillation' : 'step cap' })
       this.report(id, r, 'forced-stop')
@@ -246,7 +257,7 @@ export class Agent {
     const callId = `call-${id}`
     if (choice in GLOBALS) {
       this.log.push({ role: 'assistant', origin: 'agent', toolCall: { id: callId, option: choice }, decision: meta(r) })
-      await this.world.global(choice as Exclude<GlobalOption, 'wait' | 'stop' | 'handoff'>)
+      await this.run(callId, () => this.world.global(choice as Exclude<GlobalOption, 'wait' | 'stop' | 'handoff'>))
     } else if (node) {
       const args: ActionArgs = {}
       if (node.kind === 'input' && node.input) {
@@ -258,12 +269,23 @@ export class Agent {
         args.text = await this.textGen.fill({ context, instructions: node.input.instructions })
       }
       this.log.push({ role: 'assistant', origin: 'agent', toolCall: { id: callId, option: choice, nodeId: node.id, args }, decision: meta(r) })
-      const out = await this.world.perform(node, args)
+      const out = await this.run(callId, () => this.world.perform(node, args))
       this.log.push({ role: 'tool', toolCallId: callId, content: out.observation ?? out.summary, summary: out.summary })
     }
     this.report(id, r, 'executed')
     this.request('action')
     return choice
+  }
+
+  /** Runs a logged tool call. A failure is logged as its result, so the call never dangles. */
+  private async run<T>(callId: string, fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      this.log.push({ role: 'tool', toolCallId: callId, content: `Error: ${message}`, summary: `Failed: ${message}` })
+      throw err
+    }
   }
 
   private logDecision(id: number, option: string, r: ChoiceResult): void {
