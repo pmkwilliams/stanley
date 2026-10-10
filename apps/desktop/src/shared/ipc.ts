@@ -57,6 +57,10 @@ export interface DebugApi {
   copy(text: string): void
 }
 
+/**
+ * Callbacks passed to `on…` cross the context bridge, which clones their return value.
+ * Return nothing: an expression body like `(s) => (state = s)` returns a Svelte proxy, which can't be cloned.
+ */
 export interface StanleyApi {
   onSnapshot(cb: (s: Snapshot) => void): () => void
   onListening(cb: (listening: boolean) => void): () => void

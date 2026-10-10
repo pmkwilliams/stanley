@@ -11,7 +11,9 @@
 
   $effect(() => {
     const offs = [
-      window.stanley.onSnapshot((s) => (snapshot = s)),
+      window.stanley.onSnapshot((s) => {
+        snapshot = s
+      }),
       window.stanley.onListening(async (on) => {
         const request = ++micRequest
         stopMic?.()

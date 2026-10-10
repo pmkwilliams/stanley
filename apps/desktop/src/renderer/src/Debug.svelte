@@ -22,7 +22,9 @@
     let ready = false
     const early: DebugEvent[] = []
     const offs = [
-      window.stanley.onSnapshot((s) => (snapshot = s)),
+      window.stanley.onSnapshot((s) => {
+        snapshot = s
+      }),
       window.stanley.debug.onEvent((e) => {
         if (ready) live = [...live, e]
         else early.push(e)
