@@ -189,7 +189,7 @@ function createWindow() {
     width: 1280,
     height: 820,
     title: 'Stanley',
-    backgroundColor: '#0f1115',
+    backgroundColor: '#0a0a0b',
     titleBarStyle: 'hiddenInset',
     webPreferences: {
       preload: join(import.meta.dirname, '../preload/index.mjs'),

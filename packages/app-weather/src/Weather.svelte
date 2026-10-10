@@ -72,4 +72,5 @@
   .cond { flex: 1; opacity: 0.7; }
   .muted { opacity: 0.5; }
   .error { font-style: italic; opacity: 0.8; }
+  li button:hover, .now:hover { background: var(--hover); border-radius: 8px; }
 </style>

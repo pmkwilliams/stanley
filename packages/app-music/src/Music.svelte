@@ -63,4 +63,5 @@
   .name { flex: 1; }
   .muted { opacity: 0.5; }
   .small { font-size: 0.85em; }
+  li button:hover { background: var(--hover); border-radius: 8px; }
 </style>

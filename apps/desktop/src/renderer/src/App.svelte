@@ -1,6 +1,5 @@
 <script lang="ts">
   import type { Snapshot } from '../../shared/ipc'
-  import Home from './Home.svelte'
   import { startMic } from './mic'
   import { backgrounds, surfaces } from './surfaces'
 
@@ -32,27 +31,30 @@
   const Surface = $derived(visible ? surfaces[visible] : null)
   const background = $derived(!!snapshot && snapshot.focus !== visible && snapshot.status === 'acting')
 
-  function pttLabel(accel: string) {
-    return accel.replace('CommandOrControl', '⌘').replace('Alt', '⌥').replace('Shift', '⇧').replaceAll('+', '')
+  const KEYS: Record<string, string> = { CommandOrControl: '⌘', Command: '⌘', Control: '⌃', Alt: '⌥', Option: '⌥', Shift: '⇧' }
+  function keys(accel: string) {
+    return accel.split('+').map((k) => KEYS[k] ?? k)
   }
 </script>
 
 <div class="shell">
   <header>
     <button class="crumb" onclick={() => window.stanley.open(null)}>Stanley</button>
-    {#if visible}<span class="muted">› {snapshot?.apps.find((a) => a.id === visible)?.title}</span>{/if}
+    {#if visible}<span class="muted">›</span><span>{snapshot?.apps.find((a) => a.id === visible)?.title}</span>{/if}
     <span class="spacer"></span>
     {#if background}<span class="pill working">Working in background…</span>{/if}
     <button class="pill" class:live={snapshot?.listening} onclick={() => window.stanley.toggleListening()}>
-      {snapshot?.listening ? '● Listening' : snapshot?.ptt ? `${pttLabel(snapshot.ptt)} to talk` : 'Click to talk'}
+      {#if snapshot?.listening}<span class="dot"></span>Listening
+      {:else if snapshot?.ptt}{#each keys(snapshot.ptt) as key, i (i)}<kbd>{key}</kbd>{/each} to talk
+      {:else}Click to talk{/if}
     </button>
   </header>
 
   <main>
     {#if snapshot && Surface && visible}
-      <Surface data={snapshot.surfaces[visible]} perform={(nodeId: string, args?: { text?: string }) => window.stanley.perform(visible, nodeId, args)} />
-    {:else if snapshot}
-      <Home apps={snapshot.apps} />
+      <div class="window">
+        <Surface data={snapshot.surfaces[visible]} perform={(nodeId: string, args?: { text?: string }) => window.stanley.perform(visible, nodeId, args)} />
+      </div>
     {/if}
   </main>
 </div>
@@ -66,17 +68,41 @@
 {/if}
 
 <style>
-  .shell { display: grid; grid-template-columns: 1fr; grid-template-rows: 44px 1fr; height: 100vh; }
+  .shell {
+    display: grid; grid-template-columns: 1fr; grid-template-rows: 44px minmax(0, 1fr); height: 100vh;
+    background:
+      radial-gradient(1200px 600px at 15% -10%, rgba(255, 255, 255, 0.07), transparent 60%),
+      radial-gradient(900px 500px at 110% 110%, rgba(255, 99, 99, 0.06), transparent 60%),
+      var(--bg);
+    /* Largest a window may grow; surfaces that have no natural size (e.g. a web page) fill it. */
+    --window-max-width: calc(100vw - 64px);
+    --window-max-height: calc(100vh - 44px - 64px);
+  }
   header {
-    grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; padding: 0 12px 0 84px;
-    border-bottom: 1px solid var(--border); -webkit-app-region: drag;
+    grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; padding: 0 10px 0 84px;
+    -webkit-app-region: drag;
   }
   header button { -webkit-app-region: no-drag; }
-  .crumb { background: none; border: 0; font-weight: 600; cursor: pointer; }
+  .crumb { background: none; border: 0; font-weight: 600; padding: 4px 6px; }
+  .crumb:hover { background: var(--hover); }
   .muted { color: var(--muted); }
   .spacer { flex: 1; }
-  .pill { background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
-  .pill.live { border-color: var(--accent); color: var(--accent); }
+  .pill {
+    display: flex; align-items: center; gap: 4px; height: 28px; padding: 0 10px; font-size: 12px;
+    background: var(--window); border: 1px solid var(--border); border-radius: 8px; backdrop-filter: blur(20px);
+  }
+  .pill.live { border-color: rgba(255, 99, 99, 0.5); }
   .pill.working { color: var(--muted); cursor: default; }
+  .pill :global(kbd:last-of-type) { margin-right: 2px; }
+  .dot { width: 7px; height: 7px; margin-right: 4px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: 0.35; } }
+
   main { overflow: auto; position: relative; }
+  main:has(> .window) { display: grid; place-items: center; overflow: hidden; }
+  .window {
+    display: flex; flex-direction: column; max-width: var(--window-max-width); max-height: var(--window-max-height); overflow: auto;
+    background: var(--window); backdrop-filter: blur(40px) saturate(1.6);
+    border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 14px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 0 0 0.5px rgba(0, 0, 0, 0.8), 0 24px 80px rgba(0, 0, 0, 0.55);
+  }
 </style>

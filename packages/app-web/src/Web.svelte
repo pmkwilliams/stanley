@@ -22,7 +22,7 @@
   }
 </script>
 
-<section class="app">
+<section class="app" class:browsing={!!open}>
   {#if open}
     <header>
       <button aria-label="Back to results" onclick={() => perform('results')}>←</button>
@@ -63,7 +63,9 @@
 </section>
 
 <style>
-  .app { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+  .app { display: flex; flex-direction: column; min-height: 0; }
+  /* A page has no natural size, so take all the room the shell allows. */
+  .app.browsing { width: var(--window-max-width, 100%); height: var(--window-max-height, 100%); }
   .search { padding: 24px; max-width: 680px; overflow-y: auto; }
   form input { width: 100%; padding: 10px 12px; margin-bottom: 12px; }
   button { background: none; border: 0; color: inherit; font: inherit; cursor: pointer; text-align: left; }
@@ -80,4 +82,5 @@
   .muted { opacity: 0.5; }
   .small { font-size: 0.85em; }
   .error { font-style: italic; opacity: 0.8; }
+  li button:hover { background: var(--hover); border-radius: 8px; }
 </style>

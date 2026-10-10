@@ -97,4 +97,5 @@
   .body { white-space: pre-wrap; line-height: 1.5; }
   .actions { display: flex; gap: 8px; margin-bottom: 12px; }
   textarea { width: 100%; padding: 10px 12px; margin-bottom: 8px; font: inherit; }
+  .item:hover { background: var(--hover); border-radius: 8px; }
 </style>

@@ -1,18 +1,45 @@
 :root {
-  --bg: #0f1115;
-  --panel: #161921;
-  --border: #262a35;
-  --text: #e6e8ee;
-  --muted: #8a90a0;
-  --accent: #e11d48;
-  --focus: rgba(225, 29, 72, 0.14);
+  --bg: #0a0a0b;
+  /* Window surface: translucent so the backdrop glows through, macOS/Raycast style. */
+  --window: rgba(26, 26, 28, 0.82);
+  --panel: rgba(255, 255, 255, 0.05);
+  --hover: rgba(255, 255, 255, 0.06);
+  --border: rgba(255, 255, 255, 0.09);
+  --text: #ececee;
+  --muted: #8e8e93;
+  --accent: #ff6363;
+  /** Selected/focused row. */
+  --focus: rgba(255, 255, 255, 0.09);
   color-scheme: dark;
-  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
-  font-size: 14px;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', ui-sans-serif, system-ui, sans-serif;
+  font-size: 13px;
+  letter-spacing: 0.01em;
   color: var(--text);
   background: var(--bg);
+  -webkit-font-smoothing: antialiased;
 }
 * { box-sizing: border-box; }
 body { margin: 0; }
-input, button { font: inherit; color: inherit; }
-input { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; }
+h1, h2, h3 { font-weight: 600; letter-spacing: -0.01em; }
+h1 { font-size: 20px; margin: 0 0 16px; }
+input, textarea, button { font: inherit; color: inherit; }
+input:not([type='checkbox']), textarea {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px; outline: none;
+  transition: border-color 0.12s;
+}
+input:not([type='checkbox']):focus, textarea:focus { border-color: rgba(255, 255, 255, 0.28); }
+::placeholder { color: var(--muted); }
+input[type='checkbox'] { accent-color: var(--accent); }
+button {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; cursor: pointer;
+  transition: background 0.12s;
+}
+button:hover { background: var(--hover); }
+kbd {
+  display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px;
+  font-size: 11px; font-weight: 500; line-height: 1; color: var(--muted);
+  background: rgba(255, 255, 255, 0.07); border: 1px solid var(--border); border-radius: 5px;
+}
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 999px; border: 3px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-track { background: transparent; }

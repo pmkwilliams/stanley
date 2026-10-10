@@ -38,4 +38,5 @@
   li.done .title { text-decoration: line-through; opacity: 0.5; }
   .title { flex: 1; text-align: left; background: none; border: 0; color: inherit; font: inherit; cursor: pointer; }
   .delete { background: none; border: 0; color: inherit; opacity: 0.4; cursor: pointer; font-size: 18px; }
+  li:hover { background: var(--hover); }
 </style>
