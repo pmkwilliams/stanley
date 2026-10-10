@@ -16,7 +16,7 @@ pnpm dev
 
 Without `AI_GATEWAY_API_KEY` the app runs with a mock decision model.
 
-- `⌥Space` toggles listening (also ends after ~2 s of silence).
+- `⌥Space` toggles listening. The mic stays on until you toggle it; a ~2 s pause ends the current request.
 - `⌘.` toggles the HUD. The HUD also has a text box to type utterances.
 
 ```sh

@@ -152,8 +152,9 @@ The system prompt's "How to decide" section was tuned against the evals; without
 
 ## Voice
 
-- **Push-to-talk**: global toggle `⌥Space` (Electron `globalShortcut`). Second press or ~2 s
-  silence ends the utterance. Pressing mid-task = barge-in: new utterance in the same task.
+- **Push-to-talk**: global toggle `⌥Space` (Electron `globalShortcut`). The mic stays on until the
+  second press. ~2 s of silence ends the utterance without turning the mic off; the next words start
+  a new one. Pressing mid-task = barge-in: new utterance in the same task.
 - **STT**: NVIDIA Parakeet TDT 0.6B **v2** (English) via **sherpa-onnx** (`sherpa-onnx-node`) in main.
   Parakeet is offline-only, so live = **Silero VAD** segments + re-decode the current segment every
   ~400 ms for partials; finalize at VAD pause. Accuracy over true streaming.

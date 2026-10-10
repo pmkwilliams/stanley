@@ -25,6 +25,8 @@ let listening = false
 /** The transcriber is fed between a start and a stop transition; audio arriving before the start runs is held. */
 let accepting = false
 const held: Float32Array[] = []
+/** The mic stays on across pauses: silence ends the utterance, and the next words start a new one. */
+let utteranceOpen = false
 /** Start/stop transitions run in order, so a quick re-press waits for the previous flush instead of interleaving with it. */
 let transitions = Promise.resolve()
 let status: AgentStatus = 'idle'
@@ -100,10 +102,8 @@ function startListening(via: Via) {
   win?.webContents.send('listening', true)
   sendSnapshot()
   transition(() => {
-    transcript.finalized = []
-    transcript.partial = ''
     transcriber?.reset()
-    agent.utteranceStart()
+    beginUtterance()
     accepting = true
     for (const chunk of held.splice(0)) transcriber?.accept(chunk)
     sendSnapshot()
@@ -119,10 +119,23 @@ function stopListening(via: Via) {
   transition(async () => {
     accepting = false
     await transcriber?.flush()
-    transcript.partial = ''
-    agent.utteranceEnd()
+    endUtterance()
     sendSnapshot()
   })
+}
+
+function beginUtterance() {
+  transcript.finalized = []
+  transcript.partial = ''
+  agent.utteranceStart()
+  utteranceOpen = true
+}
+
+function endUtterance() {
+  transcript.partial = ''
+  if (!utteranceOpen) return
+  utteranceOpen = false
+  agent.utteranceEnd()
 }
 
 function toggleListening(via: Via) {
@@ -144,17 +157,23 @@ async function loadStt() {
       { modelsDir },
       {
         partial: (text) => {
+          if (!utteranceOpen) beginUtterance()
           transcript.partial = text
           agent.partial(text)
           sendSnapshot()
         },
         segment: (text) => {
+          if (!utteranceOpen) beginUtterance()
           transcript.finalized.push(text)
           transcript.partial = ''
           agent.segment(text)
           sendSnapshot()
         },
-        silence: () => stopListening('silence'),
+        silence: () =>
+          transition(() => {
+            endUtterance()
+            sendSnapshot()
+          }),
         debug: (event) => debug.record({ source: 'stt', event }),
       },
     )
@@ -240,8 +259,19 @@ ipcMain.on('perform', async (_, appId: string, nodeId: string, args) => {
   agent.recordManual(`${appId} › ${nodeId}`, `${appId}:${nodeId}`, result, args)
 })
 ipcMain.on('say', (_, text: string) => {
-  startListening('typed')
   appEvent({ type: 'typed', text })
+  // With the mic on, typed text is its own utterance and the mic stays on.
+  if (listening) {
+    return transition(() => {
+      endUtterance()
+      beginUtterance()
+      transcript.finalized.push(text)
+      agent.segment(text)
+      endUtterance()
+      sendSnapshot()
+    })
+  }
+  startListening('typed')
   transition(() => {
     transcript.finalized.push(text)
     agent.segment(text)
