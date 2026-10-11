@@ -2,7 +2,9 @@
 
 # Stanley
 
-Voice-controlled desktop assistant driven by a System One decision model (TypeSafe Jev).
+Voice-controlled desktop assistant. A fast decision model (TypeSafe Jev) takes each step from what is
+on screen; a language model (Claude Haiku) takes whatever needs words or judgement. It works from the
+screen's elements as an accessibility tree describes them, so it carries over to any app or website.
 See [docs/DESIGN.md](docs/DESIGN.md).
 
 ## Setup
@@ -20,10 +22,12 @@ Without `AI_GATEWAY_API_KEY` the app runs with a mock decision model.
 - `⌘.` toggles the HUD. The HUD also has a text box to type utterances.
 
 ```sh
-pnpm test            # unit tests (agent loop, options, transcript)
-pnpm eval [filter]   # headless scenario evals against real Jev/Haiku (needs .env, costs money)
+pnpm test            # unit tests (agent loop, conversation, options, shell, page extraction)
+pnpm eval [filter]   # demo-app scenario evals against real Jev/Haiku (needs .env, costs money)
+pnpm eval:web        # the same agent on websites in headless Chromium (--live for real sites)
 pnpm eval:stt        # transcription accuracy on your recorded clips (local, free)
 pnpm eval:voice      # scenario evals driven by recorded clips (costs money)
+pnpm smoke:desktop   # build, launch the app, type two utterances, screenshot both windows
 pnpm typecheck
 ```
 
@@ -32,8 +36,9 @@ pnpm typecheck
 ```
 apps/desktop       Electron shell (main, preload, Svelte renderer)
 packages/app-sdk   App / node / surface contracts
-packages/agent     Decision loop, context log, serializers, guardrails
+packages/agent     Agent loop, conversation, options, thinking, guardrails
 packages/jev       Jev via Vercel AI Gateway + mock
+packages/browser   Any web page as a screen (generic extractor + Playwright world)
 packages/stt       sherpa-onnx Parakeet + Silero VAD
 packages/app-*     Demo apps: ./core (headless) + ./ui (Svelte)
 evals              Headless scenario + speech evals (see evals/README.md)

@@ -373,6 +373,21 @@ export class Agent {
       latencyMs: d.latencyMs,
     }
 
+    // Repeating a step only counts when it is chosen from the same screen:
+    // "volume up" four times is progress, bouncing between two screens is not.
+    const key = `${option}\n${screen.id}\n${screen.markdown}`
+    this.recent = [...this.recent, key].slice(-c.oscillation.window)
+    const repeats = this.recent.filter((x) => x === key).length
+    if (++this.steps > c.maxStepsPerUtterance || repeats >= c.oscillation.repeats) {
+      const looping = repeats >= c.oscillation.repeats
+      if (looping) this.gate(id, 'oscillation', `"${option}" chosen ${repeats}× from the same screen in the last ${c.oscillation.window} steps`)
+      else this.gate(id, 'step-cap', `more than ${c.maxStepsPerUtterance} steps this utterance`)
+      this.log.push({ role: 'event', kind: 'stuck', detail: looping ? 'it kept repeating the same step' : 'it took too many steps' })
+      this.report(id, d, 'stuck', 'forced-stop')
+      await this.finishTask('stuck')
+      return 'stuck'
+    }
+
     // Words are thinking's: it knows whether they are the user's or its own.
     if (target.kind === 'element' && target.node.kind === 'input') {
       this.report(id, d, option, 'executed')
@@ -391,21 +406,6 @@ export class Agent {
         this.report(id, d, option, 'executed')
         return this.confirm(id, option, target, decision)
       }
-    }
-
-    // Repeating a step only counts when it is chosen from the same screen:
-    // "volume up" four times is progress, bouncing between two screens is not.
-    const key = `${option}\n${screen.id}\n${screen.markdown}`
-    this.recent = [...this.recent, key].slice(-c.oscillation.window)
-    const repeats = this.recent.filter((x) => x === key).length
-    if (++this.steps > c.maxStepsPerUtterance || repeats >= c.oscillation.repeats) {
-      const looping = repeats >= c.oscillation.repeats
-      if (looping) this.gate(id, 'oscillation', `"${option}" chosen ${repeats}× from the same screen in the last ${c.oscillation.window} steps`)
-      else this.gate(id, 'step-cap', `more than ${c.maxStepsPerUtterance} steps this utterance`)
-      this.log.push({ role: 'event', kind: 'stuck', detail: looping ? 'it kept repeating the same step' : 'it took too many steps' })
-      this.report(id, d, 'stuck', 'forced-stop')
-      await this.finishTask('stuck')
-      return 'stuck'
     }
 
     this.report(id, d, option, 'executed')
@@ -432,7 +432,6 @@ export class Agent {
       const text = w.source === 'missing' ? '' : w.text.trim()
       const say = w.say.trim()
       if (text) {
-        this.steps++
         this.events.status?.('acting')
         await this.step(id, option, target, { text }, 'thinking', decision, w.source === 'stanley' ? 'stanley' : 'user')
       }
@@ -443,6 +442,9 @@ export class Agent {
         return option
       }
       if (!text) {
+        // Not a step, so a long pause can't trip the loop guard.
+        this.steps--
+        this.recent = this.recent.slice(0, -1)
         // "Add one called… um": nothing to type yet while they're still talking.
         if (!this.utteranceEnded) {
           this.halt('listening')
@@ -478,7 +480,6 @@ export class Agent {
       const c = await this.thinker.confirm({ context, option, signal: controller.signal })
       this.events.debug?.({ type: 'confirm', tickId: id, option, context, ...c, latencyMs: performance.now() - started, aborted: false })
       if (c.press) {
-        this.steps++
         this.events.status?.('acting')
         await this.step(id, option, target, {}, 'thinking', decision)
         this.request('action')

@@ -355,6 +355,23 @@ describe('Agent writing', () => {
     expect(statuses.at(-1)).toBe('listening')
   })
 
+  it('waits through a long pause on a field without counting it as a step', async () => {
+    let typed = false
+    const { agent, performed, statuses } = setup(() => ({ next: 'act', step: 'Add a task' }), {
+      thinker: { write: async () => (typed ? { source: 'user', text: 'Avocado', say: '' } : { source: 'missing', text: '', say: '' }) },
+    })
+    agent.utteranceStart()
+    for (const words of ['add one called', 'um', 'uh', 'hmm']) {
+      agent.segment(words)
+      await settle()
+    }
+    expect(statuses).not.toContain('stuck')
+    typed = true
+    agent.segment('avocado')
+    await settle()
+    expect(performed[0]).toBe('todo:title=Avocado')
+  })
+
   it('asks through thinking when the user finished without saying what to type', async () => {
     const { agent, thinker } = setup(plan({ next: 'act', step: 'Add a task' }), { thinker: { write: async () => ({ source: 'missing', text: '', say: '' }) } })
     agent.utteranceStart()
