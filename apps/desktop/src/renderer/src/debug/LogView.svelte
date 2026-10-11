@@ -1,23 +1,19 @@
 <script lang="ts">
-  import type { LogEntry } from '@stanley/agent'
+  import { targetOf, type LogEntry } from '@stanley/agent'
   import { offset, type DebugModel } from './model'
 
   let { model }: { model: DebugModel } = $props()
 
   function line(e: LogEntry): string {
     switch (e.role) {
-      case 'system':
-        return 'system prompt'
       case 'user':
         return e.content
-      case 'assistant': {
-        const who = e.origin === 'user' ? 'user clicked' : e.via === 'escalation' ? 'escalation chose' : 'agent chose'
-        const text = e.toolCall.args?.text ? ` ("${e.toolCall.args.text}")` : ''
-        const conf = e.decision ? ` · ${e.decision.confidence.toFixed(2)}` : ''
-        return `${who} ${e.toolCall.option}${text}${conf}`
+      case 'step': {
+        const who = e.by === 'user' ? 'user' : e.by === 'thinking' ? 'thinking' : 'fast'
+        const text = e.text !== undefined ? ` ("${e.text}")` : ''
+        const conf = e.decision?.step ? ` · ${e.decision.step.confidence.toFixed(2)}` : ''
+        return `${who}: ${targetOf(e.target)}${text}${conf} → ${e.result.summary}`
       }
-      case 'tool':
-        return e.summary
       case 'said':
         return `Stanley said: "${e.content}"`
       case 'event':
@@ -26,6 +22,7 @@
   }
 </script>
 
+<p class="note">The raw log. The models read it rendered as a conversation; see a tick's Jev input.</p>
 <ol>
   {#each model.log as e, i (i)}
     <li class={e.role}>
@@ -33,8 +30,8 @@
       <span class="role">{e.role}</span>
       <div class="body">
         {line(e)}
-        {#if e.role === 'system' || (e.role === 'tool' && e.content !== e.summary)}
-          <details><summary>full text</summary><pre>{e.content}</pre></details>
+        {#if e.role === 'step' && e.result.observation}
+          <details><summary>full result</summary><pre>{e.result.observation}</pre></details>
         {/if}
       </div>
     </li>
@@ -42,6 +39,7 @@
 </ol>
 
 <style>
+  .note { margin: 4px 10px; font-size: 11px; color: var(--muted); }
   ol { list-style: none; margin: 0; padding: 4px 0; overflow: auto; font-size: 12px; min-height: 0; }
   li { display: flex; gap: 6px; padding: 3px 10px; }
   .time { color: var(--muted); font-variant-numeric: tabular-nums; width: 64px; flex: none; }

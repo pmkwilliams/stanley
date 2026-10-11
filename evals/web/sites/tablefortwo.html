@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Table for Two — book restaurants near you</title>
+<style>
+  body { font: 15px "Helvetica Neue", Arial, sans-serif; margin: 0; color: #222; }
+  header { padding: 16px 32px; border-bottom: 1px solid #eee; display: flex; gap: 24px; align-items: center; }
+  header a.brand { font-weight: 700; color: #b0302a; text-decoration: none; font-size: 20px; }
+  main { padding: 24px 32px; max-width: 760px; }
+  .card { display: block; border: 1px solid #eee; border-radius: 8px; padding: 14px; margin: 12px 0; color: inherit; text-decoration: none; }
+  .slots { display: flex; gap: 8px; flex-wrap: wrap; }
+  .slots label { border: 1px solid #ccc; border-radius: 16px; padding: 6px 12px; }
+  .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: flex-end; justify-content: center; }
+  .banner { background: #fff; width: 100%; padding: 20px 32px; display: flex; gap: 12px; align-items: center; }
+  .banner p { flex: 1; margin: 0; }
+  .confirm { background: #eef7ee; padding: 12px; border-radius: 8px; }
+</style>
+</head>
+<body>
+<header><a class="brand" href="#/">Table for Two</a><span>Brooklyn · Tonight</span></header>
+<main id="app"></main>
+<div id="cookies"></div>
+<script>
+const restaurants = [
+  { id: 'luca', name: 'Osteria Luca', kind: 'Italian · $$', blurb: 'Handmade pasta and a wood oven.', slots: ['6:00 PM', '7:00 PM', '8:30 PM'] },
+  { id: 'kin', name: 'Kin Ramen', kind: 'Japanese · $', blurb: 'Tonkotsu and small plates.', slots: ['5:30 PM', '6:15 PM', '9:00 PM'] },
+  { id: 'verde', name: 'Casa Verde', kind: 'Mexican · $$', blurb: 'Mole, mezcal and a patio.', slots: ['7:00 PM', '7:45 PM'] },
+]
+const seed = { cookies: null, bookings: [], form: {} }
+let state = JSON.parse(localStorage.getItem('state') || 'null') || structuredClone(seed)
+const save = () => localStorage.setItem('state', JSON.stringify(state))
+save()
+function cookies() {
+  const el = document.getElementById('cookies')
+  el.innerHTML = state.cookies ? '' : `
+    <div class="overlay"><div class="banner" role="dialog" aria-label="Cookie preferences">
+      <p>We use cookies to remember your preferences and to measure how the site is used.</p>
+      <button data-cookies="all">Accept all</button><button data-cookies="essential">Only essential</button>
+    </div></div>`
+}
+document.getElementById('cookies').onclick = (e) => {
+  const v = e.target.closest('[data-cookies]')?.dataset.cookies
+  if (v) { state.cookies = v; save(); cookies() }
+}
+function render() {
+  const route = location.hash.replace(/^#/, '') || '/'
+  const app = document.getElementById('app')
+  const m = /^\/r\/(\w+)/.exec(route)
+  if (m) {
+    const r = restaurants.find((x) => x.id === m[1])
+    document.title = `${r.name} — Table for Two`
+    const booked = state.bookings.find((b) => b.restaurant === r.id)
+    app.innerHTML = `
+      <p><a href="#/">← All restaurants</a></p>
+      <h1>${r.name}</h1><p>${r.kind} · ${r.blurb}</p>
+      ${booked ? `<p class="confirm" role="status">You're booked: ${booked.size} ${booked.size === 1 ? 'person' : 'people'} at ${booked.time} under ${booked.name}.</p>` : `
+      <form id="book" aria-label="Reserve a table">
+        <p><label for="size">Party size</label>
+        <select id="size">${[1, 2, 3, 4, 5, 6, 7, 8].map((n) => `<option ${n === 2 ? 'selected' : ''}>${n} ${n === 1 ? 'person' : 'people'}</option>`).join('')}</select></p>
+        <fieldset><legend>Time tonight</legend><div class="slots">
+          ${r.slots.map((s) => `<label><input type="radio" name="slot" value="${s}"> ${s}</label>`).join('')}
+        </div></fieldset>
+        <p><label for="name">Name for the reservation</label> <input id="name" autocomplete="name"></p>
+        <p><button type="submit">Book table</button></p>
+        <p id="error" role="alert"></p>
+      </form>`}`
+    const form = document.getElementById('book')
+    if (form) form.onsubmit = (e) => {
+      e.preventDefault()
+      const slot = form.querySelector('input[name=slot]:checked')?.value
+      const name = document.getElementById('name').value.trim()
+      if (!slot || !name) { document.getElementById('error').textContent = !slot ? 'Choose a time.' : 'Enter a name.'; return }
+      state.bookings.push({ restaurant: r.id, size: parseInt(document.getElementById('size').value), time: slot, name })
+      save(); render()
+    }
+    return
+  }
+  document.title = 'Table for Two — book restaurants near you'
+  app.innerHTML = `<h1>Open tonight</h1>` + restaurants.map((r) => `<a class="card" href="#/r/${r.id}"><strong>${r.name}</strong><div>${r.kind}</div><div>${r.blurb}</div><div>Tables at ${r.slots.join(', ')}</div></a>`).join('')
+}
+window.addEventListener('hashchange', render)
+render(); cookies()
+</script>
+</body>
+</html>

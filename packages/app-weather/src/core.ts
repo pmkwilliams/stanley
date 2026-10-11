@@ -142,32 +142,31 @@ export const weatherApp = defineApp<WeatherState>({
   current: (s) => s.route,
 
   nodes(s) {
+    // As on screen: the city box (Enter looks it up), then current conditions and the days.
     const r = s.result
-    const days: AgentNode[] = (r?.days ?? []).map((d, i) => ({
+    const field: AgentNode = {
+      id: 'city',
+      kind: 'input',
+      label: 'Search a city',
+      value: s.box,
+      children: s.box ? [{ id: 'location', kind: 'action', role: 'key', label: 'press Enter' }] : [],
+    }
+    if (!r) return [field]
+    const days: AgentNode[] = r.days.map((d, i) => ({
       id: `day/${i}`,
       kind: 'location',
-      label: `${dayName(d.date)} forecast for ${r?.place}`,
-      description: `${describeCode(d.code)}, high ${deg(d.high)}, low ${deg(d.low)}`,
+      role: 'button',
+      label: i === 0 ? 'Today' : dayName(d.date).split(' ')[0]!,
+      description: `${describeCode(d.code)}, ${Math.round(d.high)}° / ${Math.round(d.low)}°${s.route === `day/${i}` ? ', selected' : ''}`,
     }))
-    return [
-      {
-        id: 'home',
-        kind: 'location',
-        label: r ? `current weather in ${r.place}` : 'weather overview',
-        description: r ? `${deg(r.temperature)}, ${describeCode(r.code)}` : 'no city looked up yet',
-        children: [
-          {
-            id: 'city',
-            kind: 'input',
-            label: 'type a city',
-            description: 'type a city or place name into the search box',
-            input: { instructions: 'The city name to look up, e.g. "Denver" or "Paris". Just the place name, nothing else.', placeholder: 'City name' },
-          },
-          ...(s.box ? [{ id: 'location', kind: 'action' as const, label: 'look up the typed city', description: `get the weather for "${s.box}"` }] : []),
-          ...days,
-        ],
-      },
-    ]
+    const now: AgentNode = {
+      id: 'home',
+      kind: 'location',
+      role: 'button',
+      label: r.place,
+      description: `${Math.round(r.temperature)}°, ${describeCode(r.code)}${s.route === 'home' ? ', selected' : ''}`,
+    }
+    return [field, now, ...days]
   },
 
   async perform(s, nodeId, args, ctx) {
@@ -207,8 +206,8 @@ export const weatherApp = defineApp<WeatherState>({
   },
 
   toMarkdown(s) {
-    const notice = (s.error ? `\n\n_${s.error}_` : '') + (s.box ? `\n\nTyped in the city box (not looked up yet): ${s.box}` : '')
-    if (!s.result) return `# Weather\n_No city looked up yet_${notice}`
+    const notice = `\n\n[Search a city: ${s.box || 'empty'}]` + (s.error ? `\n\n_${s.error}_` : '')
+    if (!s.result) return `# Weather\n_Search a city to see the forecast._${notice}`
     const day = s.route.startsWith('day/') ? s.result.days[Number(s.route.split('/')[1])] : undefined
     if (day) return `# Weather › ${s.result.place} › ${dayName(day.date)}\n${dayLine(day)}${notice}`
     return `${resultMarkdown(s.result)}${notice}`

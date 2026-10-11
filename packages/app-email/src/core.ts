@@ -142,52 +142,37 @@ export const emailApp = defineApp<EmailState>({
   current: (s) => s.route,
 
   nodes(s) {
+    // As on screen: Inbox / Sent tabs, the inbox list (also beside an open email), and the open
+    // email with its buttons and reply box.
     const inbox = s.emails.filter((e) => !e.archived)
     const unread = inbox.filter((e) => !e.read).length
-    const items: AgentNode[] = inbox.map((e) => {
-      const draft = s.drafts[e.id]
-      const send: AgentNode[] = draft
-        ? [{ id: `email/${e.id}/send`, kind: 'action', label: `send the reply to ${e.from}`, description: `send the drafted reply: "${draft}"` }]
-        : []
-      return {
-        id: `email/${e.id}`,
-        kind: 'location',
-        label: `"${e.subject}" from ${e.from}`,
-        description: `${e.read ? 'read' : 'unread'} email, ${formatDate(e.date)}${draft ? ', reply drafted' : ''}`,
-        children: [
-          {
-            id: `email/${e.id}/reply`,
-            kind: 'input',
-            label: draft ? `rewrite the reply to ${e.from}` : `write a reply to ${e.from}`,
-            description: `type the reply to "${e.subject}" into the reply box`,
-            input: {
-              instructions: `The reply to ${e.from} about "${e.subject}", as the user said it: keep their words. If they only described it ("say I'm in"), write it briefly in the first person. No greeting line or signature, and nothing they didn't say.`,
-              placeholder: `Reply to ${e.from}`,
-            },
-          },
-          ...send,
-          { id: `email/${e.id}/unread`, kind: 'action', label: `mark "${e.subject}" unread` },
-          {
-            id: `email/${e.id}/archive`,
-            kind: 'action',
-            label: `archive "${e.subject}"`,
-            description: 'remove from the inbox',
-            destructive: true,
-          },
-          {
-            id: `email/${e.id}/delete`,
-            kind: 'action',
-            label: `delete "${e.subject}"`,
-            description: 'permanently delete the email',
-            destructive: true,
-          },
-        ],
-      }
-    })
-    return [
-      { id: 'inbox', kind: 'location', label: 'inbox', description: `${unread} unread of ${inbox.length} emails`, children: items },
-      { id: 'sent', kind: 'location', label: 'sent mail', description: `${s.sent.length} sent replies` },
+    const tabs: AgentNode[] = [
+      { id: 'inbox', kind: 'location', role: 'tab', label: `Inbox (${unread})`, description: s.route === 'sent' ? undefined : 'selected' },
+      { id: 'sent', kind: 'location', role: 'tab', label: `Sent (${s.sent.length})`, description: s.route === 'sent' ? 'selected' : undefined },
     ]
+    if (s.route === 'sent') return tabs
+    const rows: AgentNode[] = inbox.map((e) => ({
+      id: `email/${e.id}`,
+      kind: 'location',
+      label: `${e.from}: ${e.subject}`,
+      description: [e.read ? undefined : 'unread', formatDate(e.date), s.route === `email/${e.id}` ? 'open' : undefined].filter(Boolean).join(', '),
+    }))
+    const open = s.route.startsWith('email/') ? inbox.find((e) => `email/${e.id}` === s.route) : undefined
+    if (!open) return [...tabs, ...rows]
+    const article: AgentNode = {
+      id: `email/${open.id}/article`,
+      kind: 'group',
+      role: 'article',
+      label: `"${open.subject}"`,
+      children: [
+        { id: `email/${open.id}/unread`, kind: 'action', label: 'Mark unread' },
+        { id: `email/${open.id}/archive`, kind: 'action', label: 'Archive' },
+        { id: `email/${open.id}/delete`, kind: 'action', label: 'Delete' },
+        { id: `email/${open.id}/reply`, kind: 'input', label: `Reply to ${open.from}`, value: s.drafts[open.id] ?? '' },
+        { id: `email/${open.id}/send`, kind: 'action', label: 'Send reply' },
+      ],
+    }
+    return [...tabs, ...rows, article]
   },
 
   async perform(s, nodeId, args) {
@@ -242,8 +227,7 @@ export const emailApp = defineApp<EmailState>({
     }
     const open = s.route.startsWith('email/') ? s.emails.find((e) => `email/${e.id}` === s.route) : undefined
     if (open) {
-      const draft = s.drafts[open.id]
-      const reply = draft ? `\n\n## Reply draft (not sent)\n${draft}` : ''
+      const reply = `\n\n[Reply to ${open.from}: ${s.drafts[open.id] || 'empty'}] [Send reply]`
       return `# Email › ${open.subject}\nFrom: ${open.from} <${open.address}>\nDate: ${formatDate(open.date)}\n\n${open.body}${reply}`
     }
     const list = s.emails

@@ -106,26 +106,20 @@ export const webApp = defineApp<WebState>({
   current: (s) => s.route,
 
   nodes(s) {
-    const results: AgentNode[] = s.results.map((r, i) => ({
-      id: `page/${i}`,
-      kind: 'location',
-      label: r.title,
-      description: r.excerpt ? `${r.domain}: ${clip(r.excerpt, 120)}` : r.domain,
-    }))
-    const children: AgentNode[] = [
-      {
-        id: 'box',
-        kind: 'input',
-        label: 'type a web search',
-        description: s.query ? `type a new query into the search box (last search: "${s.query}")` : 'type a query into the search box',
-        input: { instructions: 'A concise web search query (3-8 words) for what the user wants to find.', placeholder: 'Search the web' },
-      },
-    ]
-    if (s.box) children.push({ id: 'search', kind: 'action', label: 'run the typed search', description: `search the web for "${s.box}"` })
-    if (s.results.length || s.route === 'results') {
-      children.push({ id: 'results', kind: 'location', label: `search results for "${s.query}"`, description: `${s.results.length} results`, children: results })
+    // As on screen: an open page shows only a back button over the page; otherwise the search box
+    // (Enter searches) and any results.
+    if (s.route.startsWith('page/') && s.page) return [{ id: 'results', kind: 'location', role: 'button', label: 'Back to results' }]
+    const field: AgentNode = {
+      id: 'box',
+      kind: 'input',
+      label: 'Search the web',
+      value: s.box,
+      children: s.box ? [{ id: 'search', kind: 'action', role: 'key', label: 'press Enter' }] : [],
     }
-    return [{ id: 'home', kind: 'location', label: 'web search page', description: 'search box', children }]
+    const results: AgentNode[] = s.route === 'results'
+      ? s.results.map((r, i) => ({ id: `page/${i}`, kind: 'location', label: r.title, description: r.excerpt ? `${r.domain}: ${clip(r.excerpt, 120)}` : r.domain }))
+      : []
+    return [field, ...results]
   },
 
   async perform(s, nodeId, args, ctx) {
@@ -186,9 +180,9 @@ export const webApp = defineApp<WebState>({
   toMarkdown(s) {
     const notice = s.error ? `\n\n_${s.error}_` : ''
     if (s.route.startsWith('page/') && s.page) return `# Web › ${s.page.title}\n${s.page.url}\n\n${clip(s.page.markdown, 1500)}${notice}`
-    const box = s.box ? `\nTyped in the search box (not searched yet): ${s.box}` : ''
+    const box = `\n[Search the web: ${s.box || 'empty'}]`
     if (s.route === 'results') return `# Web › Results for "${s.query}"${box}\n${resultsMarkdown(s)}${notice}`
-    return `# Web\nSearch box${s.query ? ` (last search: "${s.query}")` : ''}${box}${notice}`
+    return `# Web${box}${notice}`
   },
 })
 

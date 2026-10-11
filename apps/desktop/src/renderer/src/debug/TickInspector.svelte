@@ -1,19 +1,19 @@
 <script lang="ts">
-  import { ms, offset, rankedOptions, tickLabel, type DebugModel, type TickView } from './model'
+  import { decided, ms, offset, rankedOptions, tickLabel, type DebugModel, type TickView } from './model'
   import Replay from './Replay.svelte'
 
   let { tick, model, oncopy }: { tick: TickView; model: DebugModel; oncopy: (text: string, what: string) => void } = $props()
 
+  const answers = $derived(tick.decision?.result.answers)
   const result = $derived(tick.decision?.result)
-  const options = $derived(rankedOptions(tick))
-  const raw = $derived(result?.choice)
-  const effective = $derived(tick.end?.effective)
   const heard = $derived(tick.start.transcript)
   const usage = $derived(result?.usage)
+  const nextOptions = $derived(rankedOptions(tick, 'next'))
+  const stepOptions = $derived(rankedOptions(tick, 'step'))
 
   const reasons = {
     words: 'new words in the transcript',
-    action: 'the previous action finished',
+    action: 'the previous step finished',
     end: 'the utterance ended',
   }
 </script>
@@ -37,11 +37,12 @@
       <span class="muted">({tick.start.utteranceEnded ? 'finished' : 'still speaking'})</span>
     </dd>
     <dt>Screen</dt>
-    <dd><code>{tick.start.currentNodeId}</code></dd>
-    <dt>Jev chose</dt>
+    <dd><code>{tick.start.screenId}</code></dd>
+    <dt>Jev decided</dt>
     <dd>
-      {#if result}
-        <strong>{raw}</strong> · confidence {result.confidence.toFixed(2)} · {ms(result.latencyMs)}
+      {#if answers}
+        <strong>{decided(tick)}</strong>
+        · next {answers.next?.confidence.toFixed(2)} · step {answers.step?.confidence.toFixed(2)} · {ms(result?.latencyMs)}
         {#if usage}<span class="muted"> · {usage.inputTokens ?? '?'} in / {usage.outputTokens ?? '?'} out tokens</span>{/if}
         {#if tick.decision?.stale}<span class="warn"> · transcript changed during the call</span>{/if}
         {#if tick.decision?.endedDuringCall}<span class="muted"> · utterance ended during the call</span>{/if}
@@ -64,81 +65,111 @@
     <p class="muted">Passed all guardrails.</p>
   {/if}
 
-  {#if tick.fill || tick.act}
-    <h2>Action</h2>
-    {#if tick.fill}
-      <p>Filled <strong>{tick.fill.option}</strong> with <code>{tick.fill.text}</code> <span class="muted">· {ms(tick.fill.latencyMs)} · field: {tick.fill.instructions}</span></p>
-      <details><summary>Fill context sent to the text model</summary><pre>{tick.fill.context}</pre></details>
-    {/if}
-    {#if tick.act}
-      <p>
-        Ran <strong>{tick.act.option}</strong>{#if tick.act.nodeId} <code>{tick.act.nodeId}</code>{/if}
-        {#if tick.act.summary}→ {tick.act.summary}{/if}
-        <span class="muted">· {ms(tick.act.latencyMs)}</span>
-      </p>
-      {#if tick.act.observation}<details><summary>Observation</summary><pre>{tick.act.observation}</pre></details>{/if}
-    {/if}
-  {/if}
-
-  {#if tick.checks.length}
-    <h2>Consequence checks</h2>
+  {#if tick.effects.length}
+    <h2>What the button does</h2>
     <ul class="gates">
-      {#each tick.checks as c, i (i)}
+      {#each tick.effects as e, i (i)}
         <li>
-          <strong>{c.option}</strong> → {c.effect}{c.cached ? ' (cached)' : ''}
-          {#if c.consequential} · P(user asked) {(c.asked ?? 0).toFixed(2)} · <span class={c.allowed ? '' : 'warn'}>{c.allowed ? 'allowed' : 'needs the user'}</span>{/if}
-          <span class="muted">· {ms(c.latencyMs)} · {Object.entries(c.effects).map(([k, p]) => `${k} ${(p * 100).toFixed(0)}%`).join(', ')}</span>
+          <strong>{e.option}</strong> → <span class={e.effect === 'commits' ? 'warn' : ''}>{e.effect}</span>{e.cached ? ' (cached)' : ''}
+          <span class="muted">· {ms(e.latencyMs)} · {Object.entries(e.probabilities).map(([k, p]) => `${k} ${(p * 100).toFixed(0)}%`).join(', ')}</span>
         </li>
       {/each}
     </ul>
   {/if}
 
-  {#if tick.escalation}
-    {@const esc = tick.escalation}
-    <h2>Escalation</h2>
-    <p>{esc.start.reason}</p>
+  {#if tick.write}
+    {@const w = tick.write}
+    <h2>Writing</h2>
+    {#if w.aborted}
+      <p class="warn">Dropped: the user said more. <span class="muted">· {ms(w.latencyMs)}</span></p>
+    {:else}
+      <p>
+        <strong>{w.option}</strong>: {w.source} <code>{w.text || '—'}</code>
+        {#if w.say}· said <strong>"{w.say}"</strong>{/if}
+        <span class="muted">· {ms(w.latencyMs)}</span>
+      </p>
+    {/if}
+    <details><summary>Context sent to thinking</summary><pre>{w.context}</pre></details>
+  {/if}
+
+  {#if tick.confirm}
+    {@const c = tick.confirm}
+    <h2>Go-ahead</h2>
+    {#if c.aborted}
+      <p class="warn">Dropped: the user said more. <span class="muted">· {ms(c.latencyMs)}</span></p>
+    {:else}
+      <p>
+        <strong>{c.option}</strong>: {c.press ? 'pressed it' : 'asked first'}
+        {#if c.say}· said <strong>"{c.say}"</strong>{/if}
+        <span class="muted">· {ms(c.latencyMs)}</span>
+      </p>
+    {/if}
+    <details><summary>Context sent to thinking</summary><pre>{c.context}</pre></details>
+  {/if}
+
+  {#if tick.acts.length}
+    <h2>Steps</h2>
+    {#each tick.acts as act, i (i)}
+      <p>
+        <strong>{act.option}</strong>{#if act.args?.text !== undefined} <code>{act.args.text}</code>{/if}
+        {#if act.summary}→ {act.summary}{/if}
+        <span class="muted">· {ms(act.latencyMs)}</span>
+      </p>
+      {#if act.observation}<details><summary>Observation</summary><pre>{act.observation}</pre></details>{/if}
+    {/each}
+  {/if}
+
+  {#if tick.thinking}
+    {@const t = tick.thinking}
+    <h2>Thinking</h2>
+    <p>{t.start.reason}</p>
     <ol class="gates">
-      {#each esc.steps as step, i (i)}
-        <li class:warn={step.blocked}>
+      {#each t.steps as step, i (i)}
+        <li>
           <strong>{step.option}</strong>{#if step.text} <code>{step.text}</code>{/if}
-          <details><summary>{step.blocked ? 'blocked' : 'result'}</summary><pre>{step.result}</pre></details>
+          <details><summary>result</summary><pre>{step.result}</pre></details>
         </li>
       {/each}
     </ol>
-    {#if esc.end}
+    {#if t.end}
       <p>
-        {#if esc.end.aborted}<span class="warn">Dropped: the user said more.</span>
-        {:else if esc.end.text}Said <strong>"{esc.end.text}"</strong>
+        {#if t.end.aborted}<span class="warn">Dropped: the user said more.</span>
+        {:else if t.end.text}Said <strong>"{t.end.text}"</strong>
         {:else}<span class="muted">Said nothing.</span>{/if}
-        <span class="muted">· {esc.end.steps} steps · {ms(esc.end.latencyMs)}</span>
+        <span class="muted">· {t.end.steps} steps · {ms(t.end.latencyMs)}</span>
       </p>
     {:else}
       <p class="muted">working…</p>
     {/if}
-    <details><summary>Context sent to the escalation model</summary><pre>{esc.start.context}</pre></details>
-    <details><summary>Options it had</summary><pre>{esc.start.options}</pre></details>
+    <details><summary>Context sent to thinking</summary><pre>{t.start.context}</pre></details>
+    <details><summary>Options it had</summary><pre>{t.start.options}</pre></details>
   {/if}
 
-  <h2>Options <span class="muted">({options.length}, ranked by probability)</span></h2>
-  <table>
-    <tbody>
-      {#each options as o (o.option)}
-        <tr class:raw={o.option === raw} class:effective={o.option === effective && effective !== raw}>
-          <td class="p">
-            <div class="bar"><span style:width="{(o.p ?? 0) * 100}%"></span></div>
-            {o.p === null ? '—' : `${(o.p * 100).toFixed(1)}%`}
-          </td>
-          <td>
-            <div class="name">{o.option}{#if o.option === raw} <em>chosen</em>{/if}{#if o.option === effective && effective !== raw} <em>took effect</em>{/if}</div>
-            {#if o.description}<div class="desc">{o.description}</div>{/if}
-          </td>
-        </tr>
-      {/each}
-    </tbody>
-  </table>
+  {#each [{ title: 'What now', options: nextOptions, question: 'next' }, { title: 'Which step', options: stepOptions, question: 'step' }] as q (q.question)}
+    {@const chosen = answers?.[q.question]?.choice}
+    <h2>{q.title} <span class="muted">({q.options.length}, ranked by probability)</span></h2>
+    <table>
+      <tbody>
+        {#each q.options as o (o.option)}
+          <tr class:raw={o.option === chosen}>
+            <td class="p">
+              <div class="bar"><span style:width="{(o.p ?? 0) * 100}%"></span></div>
+              {o.p === null ? '—' : `${(o.p * 100).toFixed(1)}%`}
+            </td>
+            <td>
+              <div class="name">{o.option}{#if o.option === chosen} <em>chosen</em>{/if}</div>
+              {#if o.description}<div class="desc">{o.description}</div>{/if}
+            </td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  {/each}
 
   <h2>Jev input</h2>
-  <p class="muted">Instructions: {tick.start.instructions}</p>
+  {#each Object.entries(tick.start.questions) as [id, q] (id)}
+    <p class="muted">{id}: {q.instructions}</p>
+  {/each}
   <details>
     <summary>State ({tick.start.state.length.toLocaleString()} chars)</summary>
     <pre>{tick.start.state}</pre>
@@ -176,8 +207,6 @@
   .bar { height: 4px; background: var(--panel); border-radius: 2px; margin-bottom: 3px; }
   .bar span { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
   tr.raw { background: var(--focus); }
-  tr.effective { background: #f59e0b1a; }
   .name em { font-style: normal; font-size: 10px; color: var(--accent); margin-left: 4px; }
-  tr.effective .name em { color: #f59e0b; }
   .desc { color: var(--muted); font-size: 11px; }
 </style>

@@ -1,4 +1,4 @@
-import type { World } from '@stanley/agent'
+import type { AppEntry, Screen, StepResult, World } from '@stanley/agent'
 import type { ActionArgs, AgentNode, AppContext, AppModule, Layout } from '@stanley/app-sdk'
 
 const SEP = ':'
@@ -12,7 +12,8 @@ export class Shell implements World {
   layout: Layout = { visible: null }
   /** Surface the agent is working on; may be hidden. `null` = home screen. */
   focus: string | null = null
-  private history: string[] = []
+  /** Screens visited, as `appId:route` (`home` for the home screen), like a browser's history. */
+  private history: string[] = ['home']
   /** Per-surface queue: each read-perform-write finishes before the next starts, so none is lost. */
   private queues = new Map<string, Promise<unknown>>()
 
@@ -22,61 +23,52 @@ export class Shell implements World {
     private onChange: () => void,
   ) {}
 
-  tree(): AgentNode {
-    return {
-      id: 'home',
-      kind: 'location',
-      label: 'home',
-      children: this.apps.map((app) => {
-        const state = this.surfaces.get(app.id)
-        return {
-          id: app.id,
-          kind: 'location',
-          label: app.title,
-          description: `Open the ${app.description}`,
-          children: state === undefined ? [] : prefix(app.id, app.nodes(state)),
-        }
-      }),
-    }
+  /** The surface Stanley is working on (which may be hidden): what it reads and its elements. */
+  async screen(): Promise<Screen> {
+    return this.screenNow()
   }
 
-  currentNodeId(): string {
-    if (!this.focus) return 'home'
-    const app = this.app(this.focus)
-    return `${app.id}${SEP}${app.current(this.surfaces.get(app.id))}`
-  }
-
-  now() {
+  /** `screen()`, synchronously: the shell's surfaces are in memory. */
+  screenNow(): Screen {
     if (!this.focus) {
       const list = this.apps.map((a) => `- ${a.title}: ${a.description}`).join('\n')
-      return { surfaceTitle: 'Home', surfaceMarkdown: `# Home\n${list}`, visible: this.layout.visible === null }
+      return { id: 'home', title: 'Home', visible: this.layout.visible === null, markdown: `# Home\n${list}`, elements: [] }
     }
-    const app = this.app(this.focus)
+    return this.screenOf(this.focus)
+  }
+
+  /** An app's surface as a screen, whether or not Stanley is working on it. */
+  screenOf(appId: string): Screen {
+    const app = this.app(appId)
+    const state = this.surfaces.get(app.id)
+    if (state === undefined) return { id: app.id, title: app.title, visible: false, markdown: '', elements: [] }
     return {
-      surfaceTitle: app.title,
-      surfaceMarkdown: app.toMarkdown(this.surfaces.get(app.id)),
-      visible: this.layout.visible === this.focus,
+      id: `${app.id}${SEP}${app.current(state)}`,
+      title: app.title,
+      visible: this.layout.visible === app.id,
+      markdown: app.toMarkdown(state),
+      elements: prefix(app.id, app.nodes(state)),
     }
+  }
+
+  appList(): AppEntry[] {
+    return this.apps.map(({ id, title, description }) => ({ id, title, description }))
   }
 
   async perform(node: AgentNode, args: ActionArgs) {
     const sep = node.id.indexOf(SEP)
-    if (sep === -1) return this.open(node.id)
     return this.performIn(node.id.slice(0, sep), node.id.slice(sep + 1), args)
   }
 
   async global(option: 'show' | 'home' | 'back') {
     if (option === 'show') this.layout = { visible: this.focus }
     if (option === 'home') this.navigate(null)
-    if (option === 'back') {
-      this.history.pop()
-      this.focus = this.history.at(-1) ?? null
-    }
+    if (option === 'back') await this.back()
     this.onChange()
   }
 
   /** Open (or switch to) an app's surface. `null` = home. */
-  async open(appId: string | null) {
+  async open(appId: string | null): Promise<StepResult> {
     if (appId === null) {
       this.navigate(null)
       this.onChange()
@@ -113,9 +105,42 @@ export class Shell implements World {
     return run
   }
 
+  /** Records the screen now in focus, unless it is the one already on top. */
   private navigate(appId: string | null) {
     this.focus = appId
-    if (appId && this.history.at(-1) !== appId) this.history.push(appId)
+    const here = this.here()
+    if (this.history.at(-1) !== here) this.history.push(here)
+  }
+
+  private here(): string {
+    if (!this.focus) return 'home'
+    const app = this.app(this.focus)
+    return `${app.id}${SEP}${app.current(this.surfaces.get(app.id))}`
+  }
+
+  /**
+   * The previous screen, as a browser's back button would go. Within an app it goes back by
+   * opening the earlier route (a route is a location node id), so the app's state stays intact.
+   */
+  private async back() {
+    if (this.history.length < 2) return
+    this.history.pop()
+    const target = this.history.at(-1)!
+    if (target === 'home') {
+      this.focus = null
+      return
+    }
+    const sep = target.indexOf(SEP)
+    const appId = target.slice(0, sep)
+    const route = target.slice(sep + 1)
+    const app = this.app(appId)
+    this.focus = appId
+    if (app.current(this.surfaces.get(appId)) !== route) {
+      await this.serial(appId, async () => {
+        const result = await app.perform(this.surfaces.get(appId), route, {}, this.ctx)
+        this.surfaces.set(appId, result.state)
+      })
+    }
   }
 
   private app(id: string): AppModule<any> {

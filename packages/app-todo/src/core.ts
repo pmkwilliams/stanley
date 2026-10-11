@@ -32,35 +32,26 @@ export const todoApp = defineApp<TodoState>({
   current: (s) => s.route,
 
   nodes(s) {
-    const items: AgentNode[] = s.todos.map((t) => ({
+    // As on screen: the "Add a task" box (Enter adds), then one row per task.
+    const field: AgentNode = {
+      id: 'title',
+      kind: 'input',
+      label: 'Add a task',
+      value: s.newTitle,
+      children: s.newTitle ? [{ id: 'add', kind: 'action', role: 'key', label: 'press Enter' }] : [],
+    }
+    const rows: AgentNode[] = s.todos.map((t) => ({
       id: `item/${t.id}`,
       kind: 'location',
-      label: `"${t.title}"`,
-      description: t.done ? 'completed task' : 'open task',
+      role: 'button',
+      label: t.title,
+      description: s.route === `item/${t.id}` ? 'selected' : undefined,
       children: [
-        { id: `item/${t.id}/toggle`, kind: 'action', label: t.done ? 'mark not done' : 'mark done' },
-        { id: `item/${t.id}/delete`, kind: 'action', label: 'delete', destructive: true },
+        { id: `item/${t.id}/toggle`, kind: 'action', role: 'checkbox', label: 'checkbox', description: t.done ? 'checked' : 'not checked' },
+        { id: `item/${t.id}/delete`, kind: 'action', label: 'Delete' },
       ],
     }))
-    return [
-      {
-        id: 'list',
-        kind: 'location',
-        label: 'list',
-        description: 'all tasks',
-        children: [
-          {
-            id: 'title',
-            kind: 'input',
-            label: 'type a new task',
-            description: 'type the title of a new task into the "add a task" box',
-            input: { instructions: 'The title of the new to-do item, short and imperative, in the words the user used.', placeholder: 'Add a task' },
-          },
-          ...(s.newTitle ? [{ id: 'add', kind: 'action' as const, label: 'add the typed task', description: `add "${s.newTitle}" to the list` }] : []),
-          ...items,
-        ],
-      },
-    ]
+    return [field, ...rows]
   },
 
   async perform(s, nodeId, args) {
@@ -68,7 +59,7 @@ export const todoApp = defineApp<TodoState>({
 
     if (nodeId === 'title') {
       const newTitle = args.text?.trim() ?? ''
-      return { state: { ...s, newTitle, route: 'list' }, summary: newTitle ? `Typed new task "${newTitle}" (not added yet)` : 'Cleared the new task box' }
+      return { state: { ...s, newTitle, route: 'list' }, summary: newTitle ? `"${newTitle}" is in the box, not added yet` : 'The box is empty' }
     }
     if (nodeId === 'add') {
       const title = s.newTitle.trim()
@@ -84,7 +75,7 @@ export const todoApp = defineApp<TodoState>({
     const todo = s.todos.find((t) => t.id === id)
     if (!todo) return { state: s, summary: `No such to-do ${id}` }
 
-    if (!verb) return { state: { ...s, route: nodeId }, summary: `Opened "${todo.title}"` }
+    if (!verb) return { state: { ...s, route: nodeId }, summary: `Selected "${todo.title}"` }
     if (verb === 'toggle') {
       const todos = s.todos.map((t) => (t.id === id ? { ...t, done: !t.done } : t))
       return { state: { ...s, todos }, summary: `Marked "${todo.title}" ${todo.done ? 'not done' : 'done'}` }
@@ -98,8 +89,8 @@ export const todoApp = defineApp<TodoState>({
   toMarkdown(s) {
     const open = s.route.startsWith('item/') ? s.todos.find((t) => `item/${t.id}` === s.route) : undefined
     const list = s.todos.map((t) => `- [${t.done ? 'x' : ' '}] ${t.title}`).join('\n') || '_No tasks_'
-    const box = s.newTitle ? `\n\nNew task box (not added yet): ${s.newTitle}` : ''
-    return open ? `# To-do › ${open.title}\nStatus: ${open.done ? 'done' : 'open'}` : `# To-do\n${list}${box}`
+    const selected = open ? `\n\nSelected: ${open.title}` : ''
+    return `# To-do\n[Add a task: ${s.newTitle || 'empty'}]\n\n${list}${selected}`
   },
 })
 

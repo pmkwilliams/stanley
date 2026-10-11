@@ -1,6 +1,6 @@
 import type { AgentConfig, AgentDebugEvent, AgentStatus, LogEntry } from '@stanley/agent'
 import type { ActionArgs, Layout } from '@stanley/app-sdk'
-import type { ChoiceRequest, ChoiceResult } from '@stanley/jev'
+import type { DecideRequest, MultiChoiceResult } from '@stanley/jev'
 import type { SttDebugEvent } from '@stanley/stt'
 
 export interface Snapshot {
@@ -50,7 +50,7 @@ export interface DebugSession {
   modified: number
 }
 
-export type ReplayRequest = Omit<ChoiceRequest, 'signal'>
+export type ReplayRequest = Omit<DecideRequest, 'signal'>
 
 export interface DebugApi {
   onEvent(cb: (e: DebugEvent) => void): () => void
@@ -59,7 +59,7 @@ export interface DebugApi {
   sessions(): Promise<DebugSession[]>
   load(file: string): Promise<DebugEvent[]>
   /** Re-run a decision against the live Jev client (mock when offline). */
-  replay(req: ReplayRequest): Promise<ChoiceResult>
+  replay(req: ReplayRequest): Promise<MultiChoiceResult>
   copy(text: string): void
 }
 

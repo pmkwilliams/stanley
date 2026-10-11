@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Inbox – Postbox</title>
+<style>
+  body { font: 14px system-ui, sans-serif; margin: 0; display: grid; grid-template-columns: 200px 1fr; grid-template-rows: 56px 1fr; height: 100vh; }
+  header { grid-column: 1 / 3; display: flex; align-items: center; gap: 16px; padding: 0 16px; border-bottom: 1px solid #ddd; }
+  .logo { font-weight: 700; color: #c33; text-decoration: none; }
+  header input { flex: 1; max-width: 480px; padding: 8px 12px; border-radius: 20px; border: 1px solid #ccc; }
+  nav a { display: block; padding: 6px 16px; color: #333; text-decoration: none; }
+  main { overflow: auto; }
+  ul.threads { list-style: none; margin: 0; padding: 0; }
+  ul.threads a { display: grid; grid-template-columns: 180px 1fr 80px; gap: 12px; padding: 10px 16px; border-bottom: 1px solid #eee; color: #222; text-decoration: none; }
+  .unread a { font-weight: 700; }
+  .snippet { color: #777; font-weight: 400; }
+  .toolbar { display: flex; gap: 4px; padding: 8px 16px; border-bottom: 1px solid #eee; }
+  .toolbar button { width: 36px; height: 36px; border: 0; background: none; border-radius: 50%; cursor: pointer; }
+  .toast { position: fixed; bottom: 16px; left: 16px; background: #333; color: #fff; padding: 10px 16px; border-radius: 6px; }
+  textarea { width: 100%; min-height: 100px; }
+</style>
+</head>
+<body>
+<header>
+  <a class="logo" href="#/">Postbox</a>
+  <input type="search" aria-label="Search mail" placeholder="Search mail">
+</header>
+<nav aria-label="Folders"></nav>
+<main id="app"></main>
+<div id="toast" class="toast" hidden></div>
+<script>
+const seed = {
+  messages: [
+    { id: '1', from: 'Dana Whitfield', email: 'dana@fieldstudio.io', subject: 'Thursday design review', body: 'Hi! Could we move the design review to 3pm on Thursday? The client asked for a later slot. Let me know if that works for you.', time: '9:41 AM', read: false },
+    { id: '2', from: 'Northwind Bank', email: 'alerts@northwind.example', subject: 'Your October statement is ready', body: 'Your statement for October is now available. Your balance on October 31 was $2,418.06. Sign in to view the full statement.', time: '8:02 AM', read: false },
+    { id: '3', from: 'Leo Martins', email: 'leo.m@mailbox.example', subject: 'Climbing on Saturday?', body: 'Anyone up for the bouldering gym on Saturday morning? I can drive.', time: 'Yesterday', read: true },
+    { id: '4', from: 'Calendar', email: 'calendar@postbox.test', subject: 'Reminder: dentist at 4pm', body: 'This is a reminder of your appointment today at 4:00 PM.', time: 'Yesterday', read: true },
+    { id: '5', from: 'Omar Haddad', email: 'omar@haddad.example', subject: 'Re: logo files', body: 'Thanks, got them! The new mark looks great.', time: 'Mon', read: true },
+  ],
+  sent: [],
+  drafts: {},
+  replying: null,
+}
+const load = () => JSON.parse(localStorage.getItem('state') || 'null') || structuredClone(seed)
+let state = load()
+const save = () => localStorage.setItem('state', JSON.stringify(state))
+save()
+const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+const toast = (text) => { const t = document.getElementById('toast'); t.textContent = text; t.hidden = false; setTimeout(() => (t.hidden = true), 4000) }
+const visible = () => state.messages.filter((m) => !m.archived && !m.deleted)
+
+function render() {
+  const route = location.hash.replace(/^#/, '') || '/'
+  const unread = visible().filter((m) => !m.read).length
+  document.querySelector('nav').innerHTML = `<a href="#/">Inbox${unread ? ` (${unread})` : ''}</a><a href="#/sent">Sent</a><a href="#/archive">Archive</a>`
+  const app = document.getElementById('app')
+  const m = /^\/m\/(\w+)/.exec(route)
+  if (m) {
+    const msg = state.messages.find((x) => x.id === m[1])
+    if (!msg || msg.deleted) { location.hash = '#/'; return }
+    if (!msg.read) { msg.read = true; save() }
+    document.title = `${msg.subject} – Postbox`
+    const replying = state.replying === msg.id
+    app.innerHTML = `
+      <div class="toolbar">
+        <button aria-label="Back to inbox" data-act="back">←</button>
+        <button aria-label="Archive" data-act="archive"><svg width="18" height="18"><rect width="18" height="18"/></svg></button>
+        <button aria-label="Delete" data-act="delete"><svg width="18" height="18"><circle cx="9" cy="9" r="9"/></svg></button>
+        <button aria-label="Mark as unread" data-act="unread">✉</button>
+      </div>
+      <article style="padding: 16px">
+        <h1>${esc(msg.subject)}</h1>
+        <div><strong>${esc(msg.from)}</strong> &lt;${esc(msg.email)}&gt; · ${esc(msg.time)}</div>
+        <p>${esc(msg.body)}</p>
+        ${replying ? `
+          <div class="reply">
+            <div>To: ${esc(msg.from)}</div>
+            <textarea aria-label="Message body" placeholder="Write your reply…">${esc(state.drafts[msg.id] || '')}</textarea>
+            <button data-act="send">Send</button>
+            <button data-act="discard">Discard</button>
+          </div>` : `<button data-act="reply">Reply</button> <button data-act="forward">Forward</button>`}
+      </article>`
+    app.querySelector('textarea')?.addEventListener('input', (e) => { state.drafts[msg.id] = e.target.value; save() })
+    app.onclick = (e) => {
+      const act = e.target.closest('[data-act]')?.dataset.act
+      if (!act) return
+      if (act === 'back') location.hash = '#/'
+      if (act === 'archive') { msg.archived = true; save(); toast('Conversation archived.'); location.hash = '#/' }
+      if (act === 'delete') { msg.deleted = true; save(); toast('Conversation moved to Trash.'); location.hash = '#/' }
+      if (act === 'unread') { msg.read = false; save(); location.hash = '#/' }
+      if (act === 'reply') { state.replying = msg.id; save(); render() }
+      if (act === 'forward') toast('Forwarding is not set up for this account.')
+      if (act === 'discard') { delete state.drafts[msg.id]; state.replying = null; save(); render() }
+      if (act === 'send') {
+        const body = (state.drafts[msg.id] || '').trim()
+        if (!body) { toast('Write a message first.'); return }
+        state.sent.push({ to: msg.from, subject: `Re: ${msg.subject}`, body })
+        delete state.drafts[msg.id]; state.replying = null; save(); toast('Message sent.'); location.hash = '#/'
+      }
+    }
+    return
+  }
+  if (route === '/sent') {
+    document.title = 'Sent – Postbox'
+    app.innerHTML = `<h2 style="padding: 0 16px">Sent</h2>` + (state.sent.length ? `<ul class="threads">${state.sent.map((s) => `<li><a href="#/sent"><span>To: ${esc(s.to)}</span><span>${esc(s.subject)} <span class="snippet">— ${esc(s.body)}</span></span><span></span></a></li>`).join('')}</ul>` : '<p style="padding: 0 16px">Nothing sent yet.</p>')
+    return
+  }
+  const archive = route === '/archive'
+  const list = archive ? state.messages.filter((x) => x.archived && !x.deleted) : visible()
+  document.title = `${archive ? 'Archive' : 'Inbox'} – Postbox`
+  app.innerHTML = `<h2 style="padding: 0 16px">${archive ? 'Archive' : 'Inbox'}</h2>` + (list.length
+    ? `<ul class="threads">${list.map((x) => `<li class="${x.read ? '' : 'unread'}"><a href="#/m/${x.id}"><span>${esc(x.from)}</span><span>${esc(x.subject)} <span class="snippet">— ${esc(x.body.slice(0, 60))}…</span></span><time>${esc(x.time)}</time></a></li>`).join('')}</ul>`
+    : '<p style="padding: 0 16px">You’re all caught up.</p>')
+}
+window.addEventListener('hashchange', render)
+render()
+</script>
+</body>
+</html>

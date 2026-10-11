@@ -11,9 +11,10 @@
     "models": "node scripts/download-models.mjs",
     "eval": "pnpm --filter @stanley/evals eval",
     "eval:voice": "pnpm --filter @stanley/evals eval:voice",
+    "eval:web": "pnpm --filter @stanley/evals eval:web",
+    "smoke:desktop": "pnpm build && pnpm --filter @stanley/evals smoke:desktop",
     "eval:stt": "pnpm --filter @stanley/evals eval:stt",
-    "clips:label": "pnpm --filter @stanley/evals clips:label",
-    "eval:replay": "pnpm --filter @stanley/evals eval:replay"
+    "clips:label": "pnpm --filter @stanley/evals clips:label"
   },
   "devDependencies": {
     "@types/node": "^22.19.0",

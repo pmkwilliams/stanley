@@ -1,7 +1,7 @@
 import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { Agent, createEscalator, createTextGen, defaultConfig, SYSTEM_PROMPT, type AgentStatus, type Escalator, type TextGen } from '@stanley/agent'
-import { createJevClient, createMockJevClient } from '@stanley/jev'
+import { Agent, createThinker, defaultConfig, findElement, SYSTEM_PROMPT, type AgentStatus, type Thinker } from '@stanley/agent'
+import { createJevClient, createMockJevClient, type DecisionClient } from '@stanley/jev'
 import { SAMPLE_RATE, Transcriber, writeWav } from '@stanley/stt'
 import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, Menu, session } from 'electron'
 import type { AppDebugEvent, ReplayRequest, Snapshot } from '../shared/ipc'
@@ -51,11 +51,14 @@ let clipCount = 0
 
 const shell = new Shell(apps, { env: process.env, fetch }, () => sendSnapshot())
 
-const textGen: TextGen = mock
-  ? { fill: async ({ context }) => context.split('\n').filter((l) => l.startsWith('User:')).at(-1)?.slice(6) ?? '' }
-  : createTextGen()
-
-const escalator: Escalator = mock ? { run: async () => ({ text: "I'm offline, so I can't help with that one." }) } : createEscalator()
+/** Offline, thinking types the user's last words and otherwise apologises. */
+const thinker: Thinker = mock
+  ? {
+      run: async () => ({ text: "I'm offline, so I can't help with that one." }),
+      write: async ({ context }) => ({ source: 'user', text: context.split('\n').filter((l) => l.startsWith('User')).at(-1)?.replace(/^[^:]*: /, '') ?? '', say: '' }),
+      confirm: async () => ({ press: false, say: "I'm offline, so I won't send or delete anything." }),
+    }
+  : createThinker()
 
 const sessionsDir = join(app.getPath('userData'), 'sessions')
 mkdirSync(sessionsDir, { recursive: true })
@@ -66,12 +69,31 @@ const debug = new DebugRecorder(sessionsDir, sessionName, (e) => debugWin?.webCo
 const appEvent = (event: AppDebugEvent) => debug.record({ source: 'app', event })
 appEvent({ type: 'session-start', session: sessionName, config: defaultConfig, systemPrompt: SYSTEM_PROMPT, mock })
 
-const jev = mock ? createMockJevClient() : createJevClient()
+const jev = mock ? offlineJev() : createJevClient()
+
+/**
+ * Offline stand-in for Jev: picks the step whose words overlap most with the conversation, takes
+ * it once the user has said something, and is done after one step per utterance.
+ */
+function offlineJev(): DecisionClient {
+  const base = createMockJevClient()
+  return {
+    choose: base.choose,
+    async decide(req) {
+      const result = await base.decide(req)
+      if (!req.questions.next) return result
+      const conversation = req.state.slice(req.state.indexOf('## Conversation'), req.state.indexOf('## Screen'))
+      const last = conversation.trim().split('\n').at(-1) ?? ''
+      const choice = last.startsWith('User:') ? 'act' : last.startsWith('User (still speaking)') ? 'listen' : 'done'
+      result.answers.next = { choice, probabilities: { [choice]: 1 }, confidence: 1 }
+      return result
+    },
+  }
+}
 const agent = new Agent({
   world: shell,
   jev,
-  textGen,
-  escalator,
+  thinker,
   events: {
     status: (s) => {
       status = s
@@ -311,12 +333,20 @@ ipcMain.on('open', async (_, appId: string | null) => {
   await shell.global('show')
   const option = appId ? `open ${appId}` : 'home'
   appEvent({ type: 'manual', option, summary: result.summary })
-  agent.recordManual(option, appId ?? 'home', result)
+  const app = appId ? apps.find((a) => a.id === appId) : undefined
+  agent.recordUserStep(app ? { kind: 'app', appId: app.id, title: app.title } : { kind: 'home' }, result)
 })
 ipcMain.on('perform', async (_, appId: string, nodeId: string, args) => {
+  // Named as the agent would see it, so the conversation reads the same whoever acted.
+  const element = findElement(shell.screenOf(appId), `${appId}:${nodeId}`)
   const result = await shell.performIn(appId, nodeId, args ?? {})
-  appEvent({ type: 'manual', option: `${appId} › ${nodeId}`, summary: result.summary })
-  agent.recordManual(`${appId} › ${nodeId}`, `${appId}:${nodeId}`, result, args)
+  appEvent({ type: 'manual', option: element?.name ?? `${appId} › ${nodeId}`, summary: result.summary })
+  const kind = element?.node.kind ?? (args?.text === undefined ? 'action' : 'input')
+  agent.recordUserStep(
+    { kind: 'element', name: element?.name ?? nodeId, role: element?.node.role ?? kind, nodeKind: kind, nodeId: `${appId}:${nodeId}` },
+    result,
+    args?.text,
+  )
 })
 ipcMain.on('say', (_, text: string) => {
   appEvent({ type: 'typed', text })
@@ -344,7 +374,7 @@ ipcMain.on('say', (_, text: string) => {
 ipcMain.handle('debug:history', () => debug.events)
 ipcMain.handle('debug:sessions', () => debug.sessions())
 ipcMain.handle('debug:load', (_, file: string) => debug.load(file))
-ipcMain.handle('debug:replay', (_, req: ReplayRequest) => jev.choose(req))
+ipcMain.handle('debug:replay', (_, req: ReplayRequest) => jev.decide(req))
 ipcMain.on('debug:copy', (_, text: string) => clipboard.writeText(text))
 
 app.whenReady().then(() => {
