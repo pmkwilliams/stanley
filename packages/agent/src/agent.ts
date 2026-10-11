@@ -128,14 +128,14 @@ export class Agent {
   }
 
   partial(text: string): void {
-    this.transcript = { ...this.transcript, partial: text }
+    this.transcript = { ...this.transcript, previous: this.transcript.partial, partial: text }
     this.request('words')
   }
 
   /** A VAD segment finalized. Logged as a user message. */
   segment(text: string): void {
     if (!text.trim()) return
-    this.transcript = { finalized: [...this.transcript.finalized, text], partial: '' }
+    this.transcript = { finalized: [...this.transcript.finalized, text], partial: '', previous: '' }
     this.log.push({ role: 'user', content: text, utteranceId: String(this.utteranceId) })
     this.request('words')
   }
@@ -271,8 +271,9 @@ export class Agent {
       }
     }
 
-    if (r.confidence < c.minConfidence && choice !== 'wait' && choice !== 'stop') {
-      this.gate(id, 'min-confidence', `confidence ${r.confidence.toFixed(2)} < minConfidence ${c.minConfidence} → wait`)
+    const [gateName, gateMin] = this.utteranceEnded ? ['minConfidence', c.minConfidence] : ['speakingConfidence', c.speakingConfidence]
+    if (r.confidence < gateMin && choice !== 'wait' && choice !== 'stop') {
+      this.gate(id, 'min-confidence', `confidence ${r.confidence.toFixed(2)} < ${gateName} ${gateMin} → wait`)
       this.log.push({ role: 'event', kind: 'gated', detail: `${choice} @ ${r.confidence.toFixed(2)}` })
       this.report(id, r, 'gated')
       choice = 'wait'

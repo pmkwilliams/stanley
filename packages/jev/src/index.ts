@@ -56,6 +56,46 @@ export function createJevClient(opts: { model?: string } = {}): DecisionClient {
   }
 }
 
+export interface Question {
+  instructions: string
+  options: Record<string, string | null>
+}
+
+export interface MultiChoiceResult {
+  answers: Record<string, Omit<ChoiceResult, 'latencyMs' | 'usage'>>
+  latencyMs: number
+  usage?: ChoiceResult['usage']
+}
+
+/** Several choice questions about one state in a single Jev call. */
+export async function chooseMany(req: {
+  state: string
+  questions: Record<string, Question>
+  model?: string
+  signal?: AbortSignal
+}): Promise<MultiChoiceResult> {
+  const started = performance.now()
+  const result = await experimental_decide({
+    model: req.model ?? 'typesafe-ai/jev',
+    state: req.state,
+    abortSignal: req.signal,
+    questions: Object.fromEntries(
+      Object.entries(req.questions).map(([id, q]) => [id, { type: 'choice' as const, instructions: q.instructions, criteria: q.options }]),
+    ),
+  })
+  const meta = result.providerMetadata as { typesafe?: { confidence?: Record<string, number> } } | undefined
+  const answers: MultiChoiceResult['answers'] = {}
+  for (const id of Object.keys(req.questions)) {
+    const answer = result.answers[id] as { choice: string; probabilities?: Record<string, number> }
+    answers[id] = {
+      choice: answer.choice,
+      probabilities: answer.probabilities ?? { [answer.choice]: 1 },
+      confidence: meta?.typesafe?.confidence?.[id] ?? answer.probabilities?.[answer.choice] ?? 0,
+    }
+  }
+  return { answers, latencyMs: performance.now() - started, usage: result.usage as ChoiceResult['usage'] }
+}
+
 /**
  * Offline stand-in: scores options by word overlap with the state.
  * Good enough to exercise the loop without network access.

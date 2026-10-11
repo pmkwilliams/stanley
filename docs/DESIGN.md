@@ -98,10 +98,11 @@ Identical loop control (halt until new words / utterance end). Different meaning
 
 | Guard | Default |
 | --- | --- |
-| Confidence gate: below → treat as `wait` | 0.3 |
+| Confidence gate while the user is speaking: below → treat as `wait` | 0.6 |
+| Confidence gate after the utterance ends: below → treat as `wait` | 0.4 |
 | Max actions per utterance → force stop ("got stuck") | 15 |
 | Oscillation: same option from the same screen N times in last M steps → force stop | 3 in 6 |
-| Destructive actions require confidence ≥ | 0.6 |
+| Destructive actions require confidence ≥ | 0.8 |
 | Stale-result execute threshold (navigation only) | 0.8 |
 
 ## Context
@@ -158,6 +159,9 @@ The system prompt's "How to decide" section was tuned against the evals; without
 - **STT**: NVIDIA Parakeet TDT 0.6B **v2** (English) via **sherpa-onnx** (`sherpa-onnx-node`) in main.
   Parakeet is offline-only, so live = **Silero VAD** segments + re-decode the current segment every
   ~400 ms for partials; finalize at VAD pause. Accuracy over true streaming.
+  Each decode includes 0.3 s of audio before the VAD's (late) speech onset, plus up to 10 s of the
+  utterance's earlier speech as context; token timestamps pick out only the new words. Earlier
+  segments are never revised — the agent has already acted on them.
 - Mic capture in the renderer (`getUserMedia`, 16 kHz mono PCM via AudioWorklet) → IPC → main.
 
 ## Presence

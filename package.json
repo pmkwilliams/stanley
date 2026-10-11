@@ -9,7 +9,11 @@
     "typecheck": "pnpm -r typecheck",
     "test": "vitest run",
     "models": "node scripts/download-models.mjs",
-    "eval": "pnpm --filter @stanley/evals eval"
+    "eval": "pnpm --filter @stanley/evals eval",
+    "eval:voice": "pnpm --filter @stanley/evals eval:voice",
+    "eval:stt": "pnpm --filter @stanley/evals eval:stt",
+    "clips:label": "pnpm --filter @stanley/evals clips:label",
+    "eval:replay": "pnpm --filter @stanley/evals eval:replay"
   },
   "devDependencies": {
     "@types/node": "^22.19.0",

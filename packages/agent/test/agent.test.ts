@@ -55,6 +55,12 @@ function scripted(script: Script): DecisionClient & { calls: number } {
 const textGen = { fill: async () => 'Buy eggs' }
 const settle = () => new Promise((r) => setTimeout(r, 20))
 
+/** A partial as the transcriber delivers it once its words have held across two decodes. */
+const say = (agent: Agent, text: string) => {
+  agent.partial(text)
+  agent.partial(text)
+}
+
 function setup(script: Script, worldOpts?: Parameters<typeof fakeWorld>[0]) {
   const { world, performed } = fakeWorld(worldOpts)
   const jev = scripted(script)
@@ -100,7 +106,7 @@ describe('Agent loop', () => {
     const plan = ['To-do', 'To-do › add task', 'To-do › add task', 'stop']
     const { agent, performed, ticks } = setup((_, i) => ({ choice: plan[i]! }))
     agent.utteranceStart()
-    agent.partial('add new to do called')
+    say(agent, 'add new to do called')
     await settle()
     expect(performed).toEqual(['todo'])
     expect(ticks.map((t) => t.outcome)).toEqual(['executed', 'gated'])
@@ -144,7 +150,7 @@ describe('Agent loop', () => {
     agent.utteranceStart()
     agent.segment('add new to do called')
     await settle()
-    agent.partial('get eggs please')
+    say(agent, 'get eggs please')
     release(fills[0]!)
     await settle()
     expect(ticks.map((t) => t.outcome)).toEqual(['stale-discarded', 'gated'])
@@ -159,14 +165,15 @@ describe('Agent loop', () => {
   it('does not call again after wait until new words arrive', async () => {
     const { agent, jev } = setup(() => ({ choice: 'wait' }))
     agent.utteranceStart()
-    agent.partial('open my')
+    say(agent, 'open my')
     await settle()
-    agent.partial('open my') // same words
+    say(agent, 'open my') // same words
     await settle()
     expect(jev.calls).toBe(1)
-    agent.partial('open my email now')
+    say(agent, 'open my email now')
     await settle()
-    expect(jev.calls).toBe(2)
+    // "my" settles on the first decode, "email" on the second.
+    expect(jev.calls).toBe(3)
   })
 
   it('discards an action computed from a stale transcript and re-decides', async () => {
@@ -179,9 +186,9 @@ describe('Agent loop', () => {
       return { choice: req.state.includes('to-do') ? 'stop' : 'wait' }
     })
     agent.utteranceStart()
-    agent.partial('open my email')
+    say(agent, 'open my email')
     await settle()
-    agent.partial('open my email no wait the to-do list')
+    say(agent, 'open my email no wait the to-do list')
     release()
     await settle()
     expect(ticks[0]!.outcome).toBe('stale-discarded')
@@ -198,7 +205,7 @@ describe('Agent loop', () => {
       return { choice: req.state.includes('(finished)') ? 'stop' : 'wait' }
     })
     agent.utteranceStart()
-    agent.partial('hello there friend')
+    say(agent, 'hello there friend')
     await settle()
     agent.utteranceEnd()
     release()
@@ -210,7 +217,7 @@ describe('Agent loop', () => {
   it('gates low confidence to wait and destructive actions below threshold', async () => {
     const { agent, performed, ticks } = setup((_, i) => (i === 0 ? { choice: 'Email', confidence: 0.2 } : { choice: 'wait' }))
     agent.utteranceStart()
-    agent.partial('maybe email something')
+    say(agent, 'maybe email something')
     await settle()
     expect(ticks[0]!.outcome).toBe('gated')
     expect(performed).toEqual([])
@@ -219,7 +226,7 @@ describe('Agent loop', () => {
   it('force-stops on oscillation', async () => {
     const { agent, performed, ticks } = setup((_, i) => ({ choice: i % 2 ? 'Email' : 'To-do' }))
     agent.utteranceStart()
-    agent.partial('do the thing please')
+    say(agent, 'do the thing please')
     await settle()
     expect(ticks.at(-1)!.outcome).toBe('forced-stop')
     expect(performed.filter((p) => p === 'todo')).toHaveLength(2)
@@ -248,7 +255,7 @@ describe('Agent loop', () => {
     agent.segment('open my email please')
     await settle()
     agent.utteranceStart()
-    agent.partial('no the to-do list') // no more words than the first utterance
+    say(agent, 'no the to-do list') // no more words than the first utterance
     release()
     await settle()
     expect(ticks[0]!.outcome).toBe('stale-discarded')
@@ -258,13 +265,13 @@ describe('Agent loop', () => {
   it('reports an action that throws, logs its result, and keeps working', async () => {
     const { agent, performed, ticks, statuses } = setup((_, i) => ({ choice: i === 0 ? 'Email' : 'stop' }), { failOn: 'email' })
     agent.utteranceStart()
-    agent.partial('open my email please')
+    say(agent, 'open my email please')
     await settle()
     expect(ticks.map((t) => t.outcome)).toEqual(['error'])
     expect(statuses.at(-1)).toBe('error')
     const results = agent.log.entries.filter((e) => e.role === 'tool')
     expect(results).toMatchObject([{ toolCallId: 'call-1', summary: 'Failed: email broke' }])
-    agent.partial('open my email please now')
+    say(agent, 'open my email please now')
     await settle()
     expect(performed).toEqual(['show'])
   })
@@ -275,7 +282,7 @@ describe('Agent loop', () => {
       return { choice: 'stop' }
     })
     agent.utteranceStart()
-    agent.partial('open my email please')
+    say(agent, 'open my email please')
     await settle()
     agent.utteranceEnd()
     await settle()
@@ -286,7 +293,7 @@ describe('Agent loop', () => {
   it('logs every decision, including stop, as an assistant message', async () => {
     const { agent } = setup(() => ({ choice: 'stop' }))
     agent.utteranceStart()
-    agent.partial('thanks that is all')
+    say(agent, 'thanks that is all')
     await settle()
     const options = agent.log.entries.flatMap((e) => (e.role === 'assistant' ? [e.toolCall.option] : []))
     expect(options).toEqual(['stop'])
@@ -299,13 +306,13 @@ describe('Agent task boundaries', () => {
   it('does not re-decide on utterance end after stop, and opens a new task on later speech', async () => {
     const { agent, jev } = setup(() => ({ choice: 'stop' }))
     agent.utteranceStart()
-    agent.partial('open my email please')
+    say(agent, 'open my email please')
     await settle()
     agent.utteranceEnd()
     await settle()
     expect(jev.calls).toBe(1)
     agent.utteranceStart()
-    agent.partial('and now the to-do list')
+    say(agent, 'and now the to-do list')
     await settle()
     const starts = agent.log.entries.filter((e) => e.role === 'event' && e.kind === 'task-start')
     expect(starts).toHaveLength(2)
@@ -315,7 +322,7 @@ describe('Agent task boundaries', () => {
   it('re-decides on utterance end after wait', async () => {
     const { agent, jev } = setup(() => ({ choice: 'wait' }))
     agent.utteranceStart()
-    agent.partial('hmm let me think')
+    say(agent, 'hmm let me think')
     await settle()
     agent.utteranceEnd()
     await settle()
@@ -352,17 +359,30 @@ describe('Agent debug trace', () => {
   it('records requests that did not become a tick', async () => {
     const { agent, of } = traced(() => ({ choice: 'wait' }))
     agent.utteranceStart()
-    agent.partial('hmm let')
+    say(agent, 'hmm let')
     await settle()
-    agent.partial('hmm let') // re-decoded, nothing new
+    say(agent, 'hmm let') // re-decoded, nothing new
     await settle()
-    expect(of('request').map((e) => e.result)).toEqual(['tick', 'no-new-words'])
+    // The first decode of a segment has nothing settled yet.
+    expect(of('request').map((e) => e.result)).toEqual(['no-new-words', 'tick', 'no-new-words', 'no-new-words'])
+  })
+
+  it('needs more confidence to act while the user is still speaking than after they finish', async () => {
+    const { agent, performed, ticks } = setup((req) => (req.state.includes('(finished)') && performed.length ? { choice: 'stop' } : { choice: 'Email', confidence: 0.5 }))
+    agent.utteranceStart()
+    agent.segment('check my email')
+    await settle()
+    expect(ticks[0]!.outcome).toBe('gated')
+    expect(performed).toEqual([])
+    agent.utteranceEnd()
+    await settle()
+    expect(performed).toContain('email')
   })
 
   it('explains gating with the threshold that applied', async () => {
     const { agent, of } = traced((_, i) => (i === 0 ? { choice: 'Email', confidence: 0.2 } : { choice: 'wait' }))
     agent.utteranceStart()
-    agent.partial('maybe email')
+    say(agent, 'maybe email')
     await settle()
     expect(of('gate')[0]).toMatchObject({ tickId: 1, rule: 'min-confidence' })
     expect(of('gate')[0]!.detail).toContain('0.2')
@@ -375,7 +395,7 @@ describe('Agent debug trace', () => {
     const events: AgentDebugEvent[] = []
     const agent = new Agent(world, scripted(() => ({ choice: 'Email' })), textGen, { debug: (e) => events.push(e), status: (s) => statuses.push(s) })
     agent.utteranceStart()
-    agent.partial('open email')
+    say(agent, 'open email')
     await settle()
     expect(events.find((e) => e.type === 'tick-end')).toMatchObject({ outcome: 'error', detail: 'Error: boom' })
     expect(statuses.at(-1)).toBe('error')

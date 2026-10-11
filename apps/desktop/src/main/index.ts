@@ -1,8 +1,8 @@
-import { appendFileSync, existsSync, mkdirSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Agent, createTextGen, defaultConfig, SYSTEM_PROMPT, type AgentStatus, type TextGen } from '@stanley/agent'
 import { createJevClient, createMockJevClient } from '@stanley/jev'
-import { Transcriber } from '@stanley/stt'
+import { SAMPLE_RATE, Transcriber, writeWav } from '@stanley/stt'
 import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, Menu, session } from 'electron'
 import type { AppDebugEvent, ReplayRequest, Snapshot } from '../shared/ipc'
 import { apps } from './apps'
@@ -35,6 +35,16 @@ let status: AgentStatus = 'idle'
 let stt: Snapshot['stt'] = 'loading'
 let transcriber: Transcriber | null = null
 const transcript = { finalized: [] as string[], partial: '' }
+
+/** Debug › Save Utterances as Eval Clips: each spoken utterance is written to evals/speech/clips. */
+const clipsDir = join(root, 'evals', 'speech', 'clips')
+let saveClips = process.env.STANLEY_SAVE_CLIPS === '1'
+/** The last ~1.5 s of audio before an utterance, since the first words arrive after speech began. */
+const LEAD_CHUNKS = 15
+let lead: Float32Array[] = []
+/** Audio of the utterance being recorded, or null when not recording one. */
+let clip: Float32Array[] | null = null
+let clipCount = 0
 
 const shell = new Shell(apps, { env: process.env, fetch }, () => sendSnapshot())
 
@@ -131,6 +141,8 @@ function stopListening(via: Via) {
 function beginUtterance() {
   transcript.finalized = []
   transcript.partial = ''
+  clip = saveClips ? lead : null
+  lead = []
   agent.utteranceStart()
   utteranceOpen = true
 }
@@ -139,8 +151,23 @@ function endUtterance() {
   transcript.partial = ''
   if (!utteranceOpen) return
   utteranceOpen = false
+  writeClip()
   agent.utteranceEnd()
   sendSnapshot()
+}
+
+function writeClip() {
+  const audio = clip
+  clip = null
+  const heard = transcript.finalized.join(' ')
+  if (!audio?.length || !heard) return
+  mkdirSync(clipsDir, { recursive: true })
+  const id = `${sessionName}-${++clipCount}`
+  const samples = new Float32Array(audio.reduce((n, c) => n + c.length, 0))
+  audio.reduce((offset, c) => (samples.set(c, offset), offset + c.length), 0)
+  writeWav(join(clipsDir, `${id}.wav`), samples, SAMPLE_RATE)
+  writeFileSync(join(clipsDir, `${id}.json`), JSON.stringify({ recordedAt: new Date().toISOString(), heard }, null, 2) + '\n')
+  console.log(`Saved clip ${id}: "${heard}"`)
 }
 
 function toggleListening(via: Via) {
@@ -242,7 +269,15 @@ function setMenu() {
       { role: 'viewMenu' },
       {
         label: 'Debug',
-        submenu: [{ label: 'Open Debug Window', accelerator: 'CommandOrControl+Shift+D', click: openDebugWindow }],
+        submenu: [
+          { label: 'Open Debug Window', accelerator: 'CommandOrControl+Shift+D', click: openDebugWindow },
+          {
+            label: 'Save Utterances as Eval Clips',
+            type: 'checkbox',
+            checked: saveClips,
+            click: (item) => (saveClips = item.checked),
+          },
+        ],
       },
       { role: 'windowMenu' },
     ]),
@@ -251,6 +286,8 @@ function setMenu() {
 
 ipcMain.on('audio', (_, chunk: Float32Array) => {
   if (!listening) return
+  if (clip && utteranceOpen) clip.push(chunk)
+  else lead = [...lead.slice(1 - LEAD_CHUNKS), chunk]
   if (accepting) transcriber?.accept(chunk)
   else held.push(chunk)
 })
@@ -274,6 +311,7 @@ ipcMain.on('say', (_, text: string) => {
     return transition(() => {
       endUtterance()
       beginUtterance()
+      clip = null
       transcript.finalized.push(text)
       agent.segment(text)
       endUtterance()
@@ -282,6 +320,7 @@ ipcMain.on('say', (_, text: string) => {
   }
   startListening('typed')
   transition(() => {
+    clip = null
     transcript.finalized.push(text)
     agent.segment(text)
   })

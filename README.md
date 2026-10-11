@@ -21,7 +21,9 @@ Without `AI_GATEWAY_API_KEY` the app runs with a mock decision model.
 
 ```sh
 pnpm test            # unit tests (agent loop, options, transcript)
-pnpm eval [filter]   # headless scenario evals against real Jev/Haiku (needs .env)
+pnpm eval [filter]   # headless scenario evals against real Jev/Haiku (needs .env, costs money)
+pnpm eval:stt        # transcription accuracy on your recorded clips (local, free)
+pnpm eval:voice      # scenario evals driven by recorded clips (costs money)
 pnpm typecheck
 ```
 
@@ -34,5 +36,5 @@ packages/agent     Decision loop, context log, serializers, guardrails
 packages/jev       Jev via Vercel AI Gateway + mock
 packages/stt       sherpa-onnx Parakeet + Silero VAD
 packages/app-*     Demo apps: ./core (headless) + ./ui (Svelte)
-evals              Headless scenario evals
+evals              Headless scenario + speech evals (see evals/README.md)
 ```

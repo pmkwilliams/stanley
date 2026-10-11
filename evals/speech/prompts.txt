@@ -1,0 +1,24 @@
+# Lines to read aloud when recording clips. `pnpm clips:label` prefills the closest one.
+# Mix in your own real requests — the hard cases are names, short replies, and corrections.
+what's the weather in Denver
+let's go through my inbox
+add buy eggs to my to-do list
+mark buy oat milk as done
+play some music
+who is the prime minister of the UK
+open my email
+open the one from Priya
+yes
+no, the other one
+go back
+skip this one
+reply saying I'll be there at three thirty
+add call the dentist tomorrow morning to my list
+what's the weather going to be like this weekend in San Francisco
+pause the music
+play the next song
+um so I was thinking
+actually never mind
+search for the best ramen in Brooklyn
+read me the latest email from Jordan
+archive that

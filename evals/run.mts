@@ -1,69 +1,23 @@
 /**
  * Headless scenario evals: real apps, real Jev + Haiku through the gateway, no Electron.
- * Each utterance is fed word by word like live transcription, then ended.
+ * Each utterance is typed word by word like live transcription, then ended.
  *
- *   pnpm eval            # all scenarios
+ *   pnpm eval            # list scenarios (runs nothing)
  *   pnpm eval inbox pm   # scenarios whose name contains a filter
+ *   pnpm eval --all      # every scenario
  */
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
-import { Agent, createTextGen, type TickReport } from '@stanley/agent'
-import { createJevClient } from '@stanley/jev'
-import { Shell } from '../apps/desktop/src/main/shell'
-import { apps } from '../apps/desktop/src/main/apps'
-import { scenarios, type Check } from './scenarios.mts'
+import { loadEnv, printUsage, report, runScenario, select, typeUtterance } from './harness.mts'
+import { scenarios } from './scenarios.mts'
 
-const envFile = join(import.meta.dirname, '..', '.env')
-if (existsSync(envFile)) process.loadEnvFile(envFile)
-if (!process.env.AI_GATEWAY_API_KEY) throw new Error('AI_GATEWAY_API_KEY not set')
-
-const filters = process.argv.slice(2)
-const WORD_MS = 180
-/** The agent counts as settled once it has been idle (not thinking/acting) this long. */
-const QUIET_MS = 500
-const MAX_SETTLE_MS = 120_000
-
-let passed = 0
-const selected = scenarios.filter((s) => !filters.length || filters.some((f) => s.name.includes(f)))
-for (const scenario of selected) {
-  const shell = new Shell(apps, { env: process.env, fetch }, () => {})
-  const ticks: TickReport[] = []
-  let busy = false
-  let changedAt = 0
-  const agent = new Agent(shell, createJevClient(), createTextGen(), {
-    tick: (t) => ticks.push(t),
-    status: (s) => {
-      busy = s === 'guessing' || s === 'thinking' || s === 'writing' || s === 'acting'
-      changedAt = Date.now()
-    },
-  })
-
-  for (const utterance of scenario.utterances) {
-    agent.utteranceStart()
-    const words = utterance.split(' ')
-    for (let i = 1; i <= words.length; i++) {
-      agent.partial(words.slice(0, i).join(' '))
-      await sleep(WORD_MS)
-    }
-    agent.segment(utterance)
-    agent.utteranceEnd()
-    // Wait for the loop to go idle, however long a step takes.
-    const deadline = Date.now() + MAX_SETTLE_MS
-    while ((busy || Date.now() - changedAt < QUIET_MS) && Date.now() < deadline) await sleep(100)
-    if (busy) console.warn(`   ${scenario.name}: still busy after ${MAX_SETTLE_MS / 1000}s`)
+const selected = select(scenarios, (s) => s.name, 'pnpm eval')
+if (selected) {
+  loadEnv()
+  let passed = 0
+  for (const scenario of selected) {
+    const result = await runScenario(scenario, typeUtterance)
+    if (result.ok) passed++
+    report(scenario.name, result)
   }
-
-  const failures = scenario.checks.map((c: Check) => c(shell, agent)).filter((r): r is string => typeof r === 'string')
-  const ok = failures.length === 0
-  if (ok) passed++
-  console.log(`\n${ok ? '✓' : '✗'} ${scenario.name}`)
-  for (const t of ticks) {
-    console.log(`   ${t.outcome.padEnd(15)} ${t.choice}  c=${t.confidence.toFixed(2)}${t.detail ? ` (${t.detail})` : ''}`)
-  }
-  for (const f of failures) console.log(`   ! ${f}`)
-}
-console.log(`\n${passed}/${selected.length} scenarios passed`)
-
-function sleep(ms: number) {
-  return new Promise<void>((r) => setTimeout(r, ms))
+  console.log(`\n${passed}/${selected.length} scenarios passed`)
+  printUsage()
 }

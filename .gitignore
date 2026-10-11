@@ -7,3 +7,7 @@ models/
 !.env.example
 .DS_Store
 *.log
+
+# Recorded eval clips (your voice) — kept local
+evals/speech/clips/
+evals/.cache/

@@ -102,6 +102,9 @@ importers:
       '@stanley/jev':
         specifier: workspace:*
         version: link:../packages/jev
+      '@stanley/stt':
+        specifier: workspace:*
+        version: link:../packages/stt
     devDependencies:
       tsx:
         specifier: ^4.20.6
