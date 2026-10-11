@@ -3,20 +3,21 @@
   import type { TodoState } from './core'
 
   let { data, perform }: AppUiProps<TodoState> = $props()
-  let draft = $state('')
 
+  /** The box's text lives in app state, shared with the agent. */
   function add(e: SubmitEvent) {
     e.preventDefault()
-    if (!draft.trim()) return
-    perform('add', { text: draft })
-    draft = ''
+    const text = new FormData(e.currentTarget as HTMLFormElement).get('title')?.toString() ?? ''
+    if (!text.trim()) return
+    perform('title', { text })
+    perform('add')
   }
 </script>
 
 <section class="app">
   <h1>To-do</h1>
   <form onsubmit={add}>
-    <input placeholder="Add a task" bind:value={draft} />
+    <input name="title" placeholder="Add a task" value={data.newTitle} onchange={(e) => perform('title', { text: e.currentTarget.value })} />
   </form>
   <ul>
     {#each data.todos as todo (todo.id)}

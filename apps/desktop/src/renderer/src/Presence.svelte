@@ -147,9 +147,24 @@
 
   const words = $derived([...snapshot.transcript.finalized, snapshot.transcript.partial].join(' ').trim())
   const captioned = $derived(!!words && (snapshot.utteranceOpen || shown === 'guessing' || shown === 'thinking'))
+
+  /**
+   * What Stanley said. A question stays until the user answers it (main clears it); a statement
+   * fades once there has been time to read it.
+   */
+  let saidExpired = $state(false)
+  $effect(() => {
+    const said = snapshot.said
+    saidExpired = false
+    if (!said || said.text.trim().endsWith('?')) return
+    const timer = setTimeout(() => (saidExpired = true), Math.max(6000, said.text.split(' ').length * 450))
+    return () => clearTimeout(timer)
+  })
+  const saying = $derived(!!snapshot.said && !saidExpired)
 </script>
 
 <canvas bind:this={canvas} data-presence={shown}></canvas>
+<p class="said" class:docked class:on={saying} aria-live="polite">{snapshot.said?.text ?? ''}</p>
 <p class="caption" class:docked class:on={captioned}>{words}</p>
 
 <style>
@@ -160,5 +175,14 @@
     pointer-events: none; opacity: 0; transition: opacity 0.4s, top 0.5s cubic-bezier(0.2, 0.8, 0.2, 1), font-size 0.5s;
   }
   .caption.on { opacity: 1; }
+  .said {
+    position: fixed; left: 0; right: 0; top: 26%; z-index: 2; margin: 0; padding: 0 18%;
+    text-align: center; font-size: 22px; font-weight: 500; line-height: 1.35; color: #fff; text-shadow: 0 1px 16px rgba(0, 0, 0, 0.7);
+    pointer-events: none; opacity: 0; transform: translateY(6px);
+    transition: opacity 0.4s, transform 0.4s, top 0.5s cubic-bezier(0.2, 0.8, 0.2, 1), font-size 0.5s;
+  }
+  .said.on { opacity: 1; transform: none; }
+  .said.docked { top: auto; bottom: 92px; font-size: 15px; padding: 10px 16px; margin: 0 auto; width: fit-content; max-width: 70%;
+    background: rgba(20, 20, 24, 0.72); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; backdrop-filter: blur(20px); }
   .caption.docked { top: calc(100% - 64px); font-size: 13px; }
 </style>

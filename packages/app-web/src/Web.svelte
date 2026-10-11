@@ -3,7 +3,6 @@
   import type { WebState } from './core'
 
   let { data, perform }: AppUiProps<WebState> = $props()
-  let draft = $state('')
   /** Local "in flight" flag: perform is fire-and-forget, so clear it when new state arrives. */
   let pending = $state(false)
 
@@ -14,11 +13,14 @@
 
   let open = $derived(data.route.startsWith('page/') ? data.page : null)
 
+  /** The box's text lives in app state, shared with the agent. */
   function search(e: SubmitEvent) {
     e.preventDefault()
-    if (!draft.trim()) return
+    const text = new FormData(e.currentTarget as HTMLFormElement).get('q')?.toString() ?? ''
+    if (!text.trim()) return
     pending = true
-    perform('search', { text: draft })
+    perform('box', { text })
+    perform('search')
   }
 </script>
 
@@ -35,7 +37,7 @@
   {:else}
     <div class="search">
       <form onsubmit={search}>
-        <input placeholder="Search the web" bind:value={draft} />
+        <input name="q" placeholder="Search the web" value={data.box} onchange={(e) => perform('box', { text: e.currentTarget.value })} />
       </form>
       {#if pending}
         <p class="muted">Searching…</p>

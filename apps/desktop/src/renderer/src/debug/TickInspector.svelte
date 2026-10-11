@@ -80,6 +80,45 @@
     {/if}
   {/if}
 
+  {#if tick.checks.length}
+    <h2>Consequence checks</h2>
+    <ul class="gates">
+      {#each tick.checks as c, i (i)}
+        <li>
+          <strong>{c.option}</strong> → {c.effect}{c.cached ? ' (cached)' : ''}
+          {#if c.consequential} · P(user asked) {(c.asked ?? 0).toFixed(2)} · <span class={c.allowed ? '' : 'warn'}>{c.allowed ? 'allowed' : 'needs the user'}</span>{/if}
+          <span class="muted">· {ms(c.latencyMs)} · {Object.entries(c.effects).map(([k, p]) => `${k} ${(p * 100).toFixed(0)}%`).join(', ')}</span>
+        </li>
+      {/each}
+    </ul>
+  {/if}
+
+  {#if tick.escalation}
+    {@const esc = tick.escalation}
+    <h2>Escalation</h2>
+    <p>{esc.start.reason}</p>
+    <ol class="gates">
+      {#each esc.steps as step, i (i)}
+        <li class:warn={step.blocked}>
+          <strong>{step.option}</strong>{#if step.text} <code>{step.text}</code>{/if}
+          <details><summary>{step.blocked ? 'blocked' : 'result'}</summary><pre>{step.result}</pre></details>
+        </li>
+      {/each}
+    </ol>
+    {#if esc.end}
+      <p>
+        {#if esc.end.aborted}<span class="warn">Dropped: the user said more.</span>
+        {:else if esc.end.text}Said <strong>"{esc.end.text}"</strong>
+        {:else}<span class="muted">Said nothing.</span>{/if}
+        <span class="muted">· {esc.end.steps} steps · {ms(esc.end.latencyMs)}</span>
+      </p>
+    {:else}
+      <p class="muted">working…</p>
+    {/if}
+    <details><summary>Context sent to the escalation model</summary><pre>{esc.start.context}</pre></details>
+    <details><summary>Options it had</summary><pre>{esc.start.options}</pre></details>
+  {/if}
+
   <h2>Options <span class="muted">({options.length}, ranked by probability)</span></h2>
   <table>
     <tbody>

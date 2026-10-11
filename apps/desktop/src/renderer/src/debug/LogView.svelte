@@ -11,13 +11,15 @@
       case 'user':
         return e.content
       case 'assistant': {
-        const who = e.origin === 'user' ? 'user clicked' : 'agent chose'
+        const who = e.origin === 'user' ? 'user clicked' : e.via === 'escalation' ? 'escalation chose' : 'agent chose'
         const text = e.toolCall.args?.text ? ` ("${e.toolCall.args.text}")` : ''
         const conf = e.decision ? ` · ${e.decision.confidence.toFixed(2)}` : ''
         return `${who} ${e.toolCall.option}${text}${conf}`
       }
       case 'tool':
         return e.summary
+      case 'said':
+        return `Stanley said: "${e.content}"`
       case 'event':
         return `${e.kind}${e.detail ? `: ${e.detail}` : ''}`
     }

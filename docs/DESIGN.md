@@ -13,8 +13,8 @@ list. v1 is a demo of live transcription + the basic agent loop over a few toy a
 - Toy apps: To-do, Email, Weather, Music, Web (search + webview).
 - A debug window that explains every decision.
 
-**Not in v1**: wake phrase, real handoff to a frontier LLM (stubbed), multi-window layouts,
-spoken responses, persistence across launches.
+**Not in v1**: wake phrase, multi-window layouts, spoken responses (Stanley's replies are text on
+screen for now), persistence across launches.
 
 ## Agent loop
 
@@ -27,7 +27,8 @@ One Jev `choice` question per tick. `criteria` = option id → description.
   - `stop` — everything the user asked for is done.
   - `show` — bring the working surface into the layout (make it visible).
   - `home`, `back` — navigation.
-  - `handoff` — pass to a frontier LLM. **Stub in v1** (logs, then behaves as `stop`).
+  - `escalate` — hand the turn to the escalation model (see **Escalation**). Deliberately a low bar:
+    questions, anything that needs a reply, complicated requests, or when Jev is unsure.
 - **Nodes**: up to **50** nodes nearest the current node. Nearness = BFS over the node tree treated
   as undirected (parent, children, siblings, cousins…), ties broken by depth.
 
@@ -38,12 +39,15 @@ Option count must stay ≤ 255 (Jev limit).
 One tree, rebuilt live from app state every tick.
 
 - **Location** nodes — choosing navigates there (apps, screens, items such as a specific email).
-- **Action** nodes — choosing executes (mark done, delete email, play, next track…).
-  May be flagged `destructive`.
-- **Input** nodes — declare a text slot (search box, new to-do title). Choosing one implicitly
-  runs **text_gen**: the small LLM fills the slot from the conversation, then the action runs.
-  text_gen is *only* for actions just beyond Jev's capability (filling inputs). It never responds
-  to the user.
+- **Action** nodes — choosing executes (mark done, delete email, play, send, search…). Apps may
+  flag `destructive` as a hint, but never have to: the agent judges consequences itself (see
+  **Consequences**), because real apps and web pages won't label their buttons.
+- **Input** nodes — a text field (search box, new to-do title, reply). Choosing one implicitly
+  runs **text_gen**: the small LLM types the user's words into the field. **Typing never submits**,
+  just like a text box on a page: submitting (search, add, send) is a separate action node that only
+  exists once the field has text. So generated text is always visible before anything is done with
+  it, and "reply" and "draft a reply" both end at a draft. text_gen uses the user's own words and
+  returns nothing when they haven't said the value yet. It never responds to the user.
 
 Dynamic data (individual emails, to-dos, tracks, search results) are real nodes.
 
@@ -55,8 +59,47 @@ next — the agent decides what to do with information, including whether to dis
 
 ### Responding to the user
 
-v1: **UI state only**. The agent answers by showing things (e.g. the weather for Denver, a web
-page). When UI state isn't enough, that will be `handoff` (later).
+Mostly by showing things (the weather for Denver, a web page). When showing isn't enough, the
+escalation model talks: its text is shown on screen now and will be spoken later.
+
+### Escalation
+
+Jev is a fast System 1 that picks the most likely next option. It can't reason about
+consequences, answer questions or talk, and without a way to talk, "ask the user" was never an
+option, so it acted instead. Escalation hands the turn to a language model (Claude Haiku 5.5) that
+works like a chatbot agent:
+
+- **Triggers**: Jev chooses `escalate`; Jev `wait`s (or is below the confidence gate) after the user
+  finished; an input has no value after the user finished ("reply" alone); or the consequence
+  check blocks an action.
+- **Whole turns only**: an `escalate` mid-word is held like any data change and re-asked at the pause.
+  While the model works, Jev doesn't tick. If the user says more, the run is aborted (it says
+  nothing; actions it already took stay done and logged) and Jev re-decides with the whole turn.
+- **Same world**: one `act(option, text?)` tool over the same options Jev sees (up to 150 nodes, plus
+  `show`/`home`/`back`), rebuilt after every step; each result includes the new screen. Its
+  actions are logged with the same option names, so Jev can pick up afterwards. It types field
+  text itself (no text_gen), and its actions go through the same consequence check.
+- **Its text is speech**: anything it writes is said to the user (text on screen now, TTS later), so
+  it's prompted to write only what it would say out loud, not narrate, and stay silent when
+  nothing is worth saying. There is no separate `say`/`ask` tool.
+- **Then back to Jev**: the turn ends (`task-end`). What it said is in the history (`Stanley said:
+  "Send this to Sam?"`), so a follow-up like "yes, send it" is Jev's to handle, and Jev escalates
+  again if it can't.
+
+### Consequences
+
+Confidence in a choice is not consent: Jev was 94% sure about "reply" when the user had said
+only "reply". Before any action node runs, chosen by Jev or by the escalation model, the agent
+asks Jev two narrow questions (`consequence.ts`):
+
+1. **What does it do?** none (looks/fetches) / local (easy to undo) / destructive / external (sends,
+   posts, pays, books…). Judged from the label, description and screen; cached per action.
+2. **Did the user explicitly ask for exactly this?** Only asked when P(destructive) + P(external) ≥
+   0.35 (unsure counts as consequential) or the app hinted `destructive`.
+
+A consequential action runs only when P(asked) ≥ 0.8. Otherwise it escalates, and the model shows
+what is ready and asks ("I've drafted 'Sounds good' to Sam. Should I send it?"). "Reply saying I'm
+in and send it" sends in one go, because the user said so.
 
 ### Tick scheduling
 
@@ -90,8 +133,8 @@ count grew, or a segment finalized.
 Identical loop control (halt until new words / utterance end). Different meaning:
 - `stop` closes the task: marks the turn complete in the log, performs a final `show`, allows
   older tool results to be collapsed.
-- `wait` leaves the task open. `wait` *after the utterance ended* = dead end → status shows
-  "didn't get that" (later: handoff to clarify).
+- `wait` leaves the task open. `wait` *after the utterance ended* = dead end → escalate, so Stanley
+  asks instead of going quiet. "Didn't get that" is left for an utterance that ended with no words.
 - P(wait)+P(stop) can be read as "idle probability".
 
 ### Guardrails (one tunable config)
@@ -101,7 +144,9 @@ Identical loop control (halt until new words / utterance end). Different meaning
 | Confidence gate: below → treat as `wait` | 0.3 |
 | Max actions per utterance → force stop ("got stuck") | 15 |
 | Oscillation: same option from the same screen N times in last M steps → force stop | 3 in 6 |
-| Destructive actions require confidence ≥ | 0.6 |
+| An action is consequential when P(destructive) + P(external) ≥ | 0.35 |
+| A consequential action runs only when P(user explicitly asked) ≥ (else escalate) | 0.8 |
+| Escalation: nodes visible / tool steps | 150 / 10 |
 | Stale-result execute threshold (navigation only) | 0.8 |
 
 ## Context
@@ -128,7 +173,7 @@ logged too (as user-originated tool calls) so the agent sees them.
   2. history (utterances, actions, results; older tool results collapsed to `summary`;
      tasks before the current one collapsed)
   3. **Now** block: current surface as markdown, layout, live partial utterance last
-- **LLM serializer** (for handoff, later) → provider messages. Same ordering keeps the prefix stable
+- **LLM serializer** (for escalation; today it gets the same markdown as Jev) → provider messages. Same ordering keeps the prefix stable
   for prompt caching.
 
 The option list lives only in `criteria`, never in `state`. Every decision — including `wait` and
@@ -181,6 +226,8 @@ All via **Vercel AI Gateway** with the AI SDK (`ai`, pinned exactly), one `AI_GA
   `providerMetadata.typesafe.confidence[questionId]`. `packages/jev` normalizes to
   `{ choice, probabilities, confidence }` and provides a mock.
 - **text_gen**: Claude Haiku 5.5 via gateway, behind a `TextGen` interface.
+- **Escalation**: Claude Haiku 5.5 via gateway (`generateText` with one `act` tool), behind an
+  `Escalator` interface.
 - **Search**: Parallel Search API (`PARALLEL_API_KEY`).
 - **Weather**: Open-Meteo forecast + geocoding (no key).
 
@@ -188,11 +235,11 @@ All via **Vercel AI Gateway** with the AI SDK (`ai`, pinned exactly), one `AI_GA
 
 | App | Data | Notes |
 | --- | --- | --- |
-| To-do | seeded, in-memory | add (input node), mark done, delete (destructive) |
-| Email | seeded, in-memory | inbox list, open email, archive/delete, reply (input) |
-| Weather | Open-Meteo | location input, current + forecast |
+| To-do | seeded, in-memory | type a task (input) → add, mark done, delete |
+| Email | seeded, in-memory | inbox list, open email, archive/delete, write a reply (input, a draft in app state) → send, which then shows Sent |
+| Weather | Open-Meteo | type a city (input) → look up, current + forecast |
 | Music | bundled tracks | play/pause/next/prev/volume; tracks are nodes |
-| Web | Parallel search + webview | search input → result nodes; open result → page markdown observation |
+| Web | Parallel search + webview | type a query (input) → search → result nodes; open result → page markdown observation |
 
 Seeded data resets each launch. The user can also click/type in apps directly; those go through
 the same action handlers.
@@ -235,12 +282,13 @@ Working, verified end to end:
 - Parakeet + Silero live transcription: partials every ~430 ms, segments at pauses, silence
   auto-end at 2 s; model loads in ~1.3 s. Verified by streaming synthesized speech through the app.
 - All five apps; background work with a single reveal; debug window decision timeline.
-- Evals 8/8 on repeated runs.
+- Evals 14/14 (including the reply, draft-then-send and escalation scenarios).
 
 Not yet verified / known gaps:
 - Real microphone capture (needs macOS mic permission for the dev Electron binary; a packaged app
   needs `NSMicrophoneUsageDescription`).
-- `handoff` is a stub that behaves like `stop`. "Didn't get that" is only a status.
+- The consequence check uses Jev; whether Haiku classifies effects better is still to be measured
+  with a labelled set of real-world action labels.
 - Web pages render in a `<webview>` from the app UI; page markdown comes from Parallel Extract rather
   than from the rendered page. Moving to offscreen `WebContentsView` surfaces is the next step for
   real web views and multi-window layouts.

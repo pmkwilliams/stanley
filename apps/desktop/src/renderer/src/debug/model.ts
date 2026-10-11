@@ -12,6 +12,9 @@ export interface TickView {
   gates: Of<'gate'>[]
   fill?: Of<'fill'>
   act?: Of<'act'>
+  /** Consequence checks, by Jev's choice or the escalation model's. */
+  checks: Of<'check'>[]
+  escalation?: { start: Of<'escalate'>; steps: Of<'escalation-step'>[]; end?: Of<'escalation-end'> }
   end?: Of<'tick-end'>
 }
 
@@ -76,7 +79,7 @@ export function buildModel(events: DebugEvent[]): DebugModel {
         continue
       }
       if (ev.type === 'tick-start') {
-        const tick: TickView = { id: ev.tickId, at: e.at, task: task?.index ?? null, start: ev, gates: [] }
+        const tick: TickView = { id: ev.tickId, at: e.at, task: task?.index ?? null, start: ev, gates: [], checks: [] }
         ticks.set(ev.tickId, tick)
         model.ticks.push(tick)
         task?.ticks.push(tick)
@@ -89,7 +92,12 @@ export function buildModel(events: DebugEvent[]): DebugModel {
       else if (ev.type === 'decision') tick.decision = ev
       else if (ev.type === 'fill') tick.fill = ev
       else if (ev.type === 'act') tick.act = ev
-      else tick.end = ev
+      else if (ev.type === 'check') tick.checks.push(ev)
+      else if (ev.type === 'escalate') tick.escalation = { start: ev, steps: [] }
+      else if (ev.type === 'escalation-step') tick.escalation?.steps.push(ev)
+      else if (ev.type === 'escalation-end') {
+        if (tick.escalation) tick.escalation.end = ev
+      } else tick.end = ev
       continue
     }
 

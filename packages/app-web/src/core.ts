@@ -21,6 +21,8 @@ export interface WebState {
   results: SearchResult[]
   page: WebPage | null
   error: string | null
+  /** Text typed in the search box, not yet searched. */
+  box: string
 }
 
 // Parallel REST API, https://docs.parallel.ai/api-reference/search/search and .../extract/extract
@@ -99,7 +101,7 @@ export const webApp = defineApp<WebState>({
   title: 'Web',
   description: 'Web search and page reader',
 
-  init: () => ({ route: 'home', query: '', results: [], page: null, error: null }),
+  init: () => ({ route: 'home', query: '', results: [], page: null, error: null, box: '' }),
 
   current: (s) => s.route,
 
@@ -112,13 +114,14 @@ export const webApp = defineApp<WebState>({
     }))
     const children: AgentNode[] = [
       {
-        id: 'search',
+        id: 'box',
         kind: 'input',
-        label: 'search the web',
-        description: s.query ? `new web search (last: "${s.query}")` : 'run a web search',
+        label: 'type a web search',
+        description: s.query ? `type a new query into the search box (last search: "${s.query}")` : 'type a query into the search box',
         input: { instructions: 'A concise web search query (3-8 words) for what the user wants to find.', placeholder: 'Search the web' },
       },
     ]
+    if (s.box) children.push({ id: 'search', kind: 'action', label: 'run the typed search', description: `search the web for "${s.box}"` })
     if (s.results.length || s.route === 'results') {
       children.push({ id: 'results', kind: 'location', label: `search results for "${s.query}"`, description: `${s.results.length} results`, children: results })
     }
@@ -131,9 +134,17 @@ export const webApp = defineApp<WebState>({
 
     const key = ctx.env.PARALLEL_API_KEY
 
+    if (nodeId === 'box') {
+      const box = args.text?.trim() ?? ''
+      // The search box is on the search page, so typing leaves an open page.
+      const onPage = s.route.startsWith('page/')
+      const state = { ...s, box, route: onPage ? 'home' : s.route, page: onPage ? null : s.page }
+      return { state, summary: box ? `Typed "${box}" in the search box (not searched yet)` : 'Cleared the search box' }
+    }
+
     if (nodeId === 'search') {
-      const query = args.text?.trim()
-      if (!query) return { state: s, summary: 'No query given; nothing searched' }
+      const query = s.box.trim()
+      if (!query) return { state: s, summary: 'Nothing typed in the search box; nothing searched' }
       // On failure keep the previous query with its results, so they are never labelled with the new one.
       if (!key) {
         const error = 'Web search unavailable: PARALLEL_API_KEY is not set'
@@ -141,7 +152,7 @@ export const webApp = defineApp<WebState>({
       }
       try {
         const results = await search(ctx, key, query)
-        const next = { ...s, route: 'results', query, results, page: null, error: null }
+        const next = { ...s, route: 'results', query, results, page: null, error: null, box: '' }
         return { state: next, summary: `Searched "${query}": ${results.length} results`, observation: `# Results for "${query}"\n${resultsMarkdown(next)}` }
       } catch (err) {
         const error = `Web search failed: ${errorText(err)}`
@@ -175,8 +186,9 @@ export const webApp = defineApp<WebState>({
   toMarkdown(s) {
     const notice = s.error ? `\n\n_${s.error}_` : ''
     if (s.route.startsWith('page/') && s.page) return `# Web › ${s.page.title}\n${s.page.url}\n\n${clip(s.page.markdown, 1500)}${notice}`
-    if (s.route === 'results') return `# Web › Results for "${s.query}"\n${resultsMarkdown(s)}${notice}`
-    return `# Web\nSearch box${s.query ? ` (last search: "${s.query}")` : ''}${notice}`
+    const box = s.box ? `\nTyped in the search box (not searched yet): ${s.box}` : ''
+    if (s.route === 'results') return `# Web › Results for "${s.query}"${box}\n${resultsMarkdown(s)}${notice}`
+    return `# Web\nSearch box${s.query ? ` (last search: "${s.query}")` : ''}${box}${notice}`
   },
 })
 

@@ -38,7 +38,7 @@ function session(): DebugEvent[] {
     log({ role: 'user', content: 'delete the first one', utteranceId: '2', at: 0 }),
     start(2, 'email:inbox'),
     decision(2, 'Email › delete', { 'Email › delete': 0.4, wait: 0.6 }),
-    agent({ type: 'gate', tickId: 2, rule: 'destructive', detail: 'below threshold' }),
+    agent({ type: 'gate', tickId: 2, rule: 'consequence', detail: 'not asked for' }),
     agent({ type: 'tick-end', tickId: 2, outcome: 'gated', effective: 'wait' }),
   ]
 }

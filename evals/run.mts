@@ -7,7 +7,7 @@
  */
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { Agent, createTextGen, type TickReport } from '@stanley/agent'
+import { Agent, createEscalator, createTextGen, type TickReport } from '@stanley/agent'
 import { createJevClient } from '@stanley/jev'
 import { Shell } from '../apps/desktop/src/main/shell'
 import { apps } from '../apps/desktop/src/main/apps'
@@ -30,11 +30,19 @@ for (const scenario of selected) {
   const ticks: TickReport[] = []
   let busy = false
   let changedAt = 0
-  const agent = new Agent(shell, createJevClient(), createTextGen(), {
-    tick: (t) => ticks.push(t),
-    status: (s) => {
-      busy = s === 'guessing' || s === 'thinking' || s === 'writing' || s === 'acting'
-      changedAt = Date.now()
+  const said: string[] = []
+  const agent = new Agent({
+    world: shell,
+    jev: createJevClient(),
+    textGen: createTextGen(),
+    escalator: createEscalator(),
+    events: {
+      tick: (t) => ticks.push(t),
+      said: (text) => said.push(text),
+      status: (s) => {
+        busy = s === 'guessing' || s === 'thinking' || s === 'writing' || s === 'acting'
+        changedAt = Date.now()
+      },
     },
   })
 
@@ -60,6 +68,7 @@ for (const scenario of selected) {
   for (const t of ticks) {
     console.log(`   ${t.outcome.padEnd(15)} ${t.choice}  c=${t.confidence.toFixed(2)}${t.detail ? ` (${t.detail})` : ''}`)
   }
+  for (const text of said) console.log(`   said: "${text}"`)
   for (const f of failures) console.log(`   ! ${f}`)
 }
 console.log(`\n${passed}/${selected.length} scenarios passed`)

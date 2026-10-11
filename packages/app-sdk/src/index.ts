@@ -16,9 +16,16 @@ export interface AgentNode {
   /** Extra text that helps Jev tell this option apart from its neighbours. */
   description?: string
   children?: AgentNode[]
-  /** Data-changing action that needs a higher confidence bar. */
+  /**
+   * Optional hint that an action deletes or overwrites data. The agent judges every action's
+   * consequences itself, so apps (and web pages) never have to mark them; a hint only makes it stricter.
+   */
   destructive?: boolean
-  /** Input nodes only: what text_gen should write into the slot. */
+  /**
+   * Input nodes only: what goes in the field. An input node only types into its field, like a text
+   * box on a page; it never submits. Submitting (search, add, send) is a separate action node, so
+   * generated text is always visible before anything is done with it.
+   */
   input?: { instructions: string; placeholder?: string }
 }
 

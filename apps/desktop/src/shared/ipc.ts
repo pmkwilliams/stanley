@@ -17,6 +17,8 @@ export interface Snapshot {
   utteranceOpen: boolean
   transcript: { finalized: string[]; partial: string }
   status: AgentStatus
+  /** What Stanley last said to the user (spoken later); null once the user has answered. */
+  said: { text: string; at: number } | null
   stt: 'ready' | 'loading' | 'missing-models' | 'error'
   mock: boolean
   /** Registered push-to-talk accelerator, or null if none could be registered. */

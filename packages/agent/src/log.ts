@@ -12,9 +12,13 @@ export type Message =
       toolCall: { id: string; option: string; nodeId?: string; args?: { text?: string } }
       /** `user` when the person clicked/typed in an app directly. */
       origin: 'agent' | 'user'
+      /** Set when the escalation model, not Jev, chose this. */
+      via?: 'escalation'
       decision?: DecisionMeta
     }
   | { role: 'tool'; toolCallId: string; content: string; summary: string }
+  /** What Stanley said to the user (shown on screen; spoken later). */
+  | { role: 'said'; content: string }
   | { role: 'event'; kind: 'task-start' | 'task-end' | 'gated' | 'stale' | 'forced-stop'; detail?: string }
 
 export type LogEntry = Message & { at: number }

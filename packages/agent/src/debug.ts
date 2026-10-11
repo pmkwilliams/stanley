@@ -1,6 +1,7 @@
 import type { ActionArgs } from '@stanley/app-sdk'
 import type { ChoiceResult } from '@stanley/jev'
 import type { TickOutcome } from './agent'
+import type { ConsequenceVerdict } from './consequence'
 import type { TranscriptSnapshot } from './transcript'
 
 /** Why a tick was asked for. */
@@ -29,7 +30,14 @@ export type AgentDebugEvent =
       options: Record<string, string | null>
     }
   | { type: 'decision'; tickId: number; result: ChoiceResult; stale: boolean; endedDuringCall: boolean }
-  | { type: 'gate'; tickId: number; rule: 'stale' | 'min-confidence' | 'destructive' | 'mid-speech' | 'no-value' | 'oscillation' | 'step-cap'; detail: string }
+  | { type: 'gate'; tickId: number; rule: 'stale' | 'min-confidence' | 'consequence' | 'mid-speech' | 'no-value' | 'oscillation' | 'step-cap'; detail: string }
+  /** The consequence check on an action, chosen by Jev or by the escalation model. */
+  | ({ type: 'check'; tickId: number; option: string; latencyMs: number } & ConsequenceVerdict)
+  /** Jev handed the turn to the escalation model; `context` and `options` are its exact input. */
+  | { type: 'escalate'; tickId: number; reason: string; context: string; options: string }
+  /** One `act` call by the escalation model. `blocked` when the consequence check refused it. */
+  | { type: 'escalation-step'; tickId: number; option: string; text?: string; result: string; blocked?: boolean }
+  | { type: 'escalation-end'; tickId: number; text: string; steps: number; latencyMs: number; aborted: boolean }
   | { type: 'fill'; tickId: number; option: string; instructions: string; context: string; text: string; latencyMs: number }
   | {
       type: 'act'
