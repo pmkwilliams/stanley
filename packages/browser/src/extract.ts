@@ -54,7 +54,12 @@ export const EXTRACT = String.raw`(function (opts) {
     var v = el.getAttribute('aria-label'); if (clean(v)) return clean(v)
     v = el.getAttribute('aria-labelledby'); if (v && byIds(v)) return byIds(v)
     if (el.id) { var l = document.querySelector('label[for="' + CSS.escape(el.id) + '"]'); if (l && textOf(l)) return textOf(l) }
-    var wrap = el.closest('label'); if (wrap && wrap !== el) { var t = clean(wrap.innerText.replace(el.value || '', '')); if (t) return t }
+    // A label around the control; a text field's own value isn't part of its name.
+    var wrap = el.closest('label')
+    if (wrap && wrap !== el) {
+      var typed = (el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && !/^(radio|checkbox|submit|button|reset|image)$/.test(el.type))) ? el.value : ''
+      var t = clean(typed ? wrap.innerText.replace(typed, '') : wrap.innerText); if (t) return t
+    }
     var tag = el.tagName
     if (tag === 'INPUT' && /^(submit|button|reset)$/.test(el.type)) return clean(el.value) || el.type
     if (tag === 'INPUT' || tag === 'TEXTAREA') { if (clean(el.placeholder)) return clean(el.placeholder) }
@@ -81,8 +86,12 @@ export const EXTRACT = String.raw`(function (opts) {
   }
   function kindOf(role) {
     if (role === 'link') return 'location'
-    if (role === 'field' || role === 'search field') return 'input'
+    if (role === 'field' || role === 'search field' || role === 'combobox') return 'input'
     return 'action'
+  }
+  function valueOf(el) {
+    if (el.tagName === 'SELECT') return el.selectedOptions[0] ? clean(el.selectedOptions[0].textContent) : ''
+    return el.isContentEditable ? textOf(el) : (el.value || '')
   }
   function stateOf(el) {
     var s = []
@@ -127,16 +136,22 @@ export const EXTRACT = String.raw`(function (opts) {
     var item = { id: id, kind: kind, role: role, name: name || role, context: [], el: el }
     var rect = el.getBoundingClientRect()
     if (rect.bottom < 0 || rect.top > innerHeight) item.offscreen = true
-    if (kind === 'input') { item.value = el.isContentEditable ? textOf(el) : (el.value || ''); item.submits = el.tagName === 'INPUT' && !!item.value }
-    var st = stateOf(el); if (st) item.state = st
+    if (kind === 'input') { item.value = valueOf(el); item.submits = el.tagName === 'INPUT' && !!item.value }
+    var st = stateOf(el)
+    if (el.tagName === 'SELECT') st = [st, 'options: ' + Array.from(el.options).slice(0, 12).map(function (o) { return clean(o.textContent) }).join(', ')].filter(Boolean).join(', ')
+    if (st) item.state = st
     found.push(item)
   })
   document.documentElement.setAttribute('data-stanley-next', String(seen))
 
   // Repeated names ("Delete" on every row) get the name of the container that tells them apart.
+  // Controls in a dialog always say so: a banner or modal on top changes what can be done.
+  var DIALOG = 'dialog, [role=dialog], [role=alertdialog], [aria-modal=true]'
   var counts = {}
   found.forEach(function (f) { counts[f.name] = (counts[f.name] || 0) + 1 })
   found.forEach(function (f) {
+    var d = f.el.closest(DIALOG)
+    if (d) { var dn = containerName(d, f.el) || 'dialog'; if (dn !== f.name) { f.context = [dn]; return } }
     if (counts[f.name] < 2) return
     var c = f.el.parentElement && f.el.parentElement.closest(CONTAINER)
     while (c) {
@@ -160,8 +175,9 @@ export const EXTRACT = String.raw`(function (opts) {
     if (!shown(el) && el.tagName !== 'BR') return
     if (el.matches(SEL)) {
       var nm = nameOf(el), r = roleOf(el)
-      if (kindOf(r) === 'input') line += ' [' + (nm || r) + ': ' + ((el.isContentEditable ? textOf(el) : el.value) || 'empty') + ']'
-      else if (r === 'link') line += ' ' + nm
+      if (kindOf(r) === 'input') line += ' [' + (nm || r) + ': ' + (valueOf(el) || 'empty') + ']'
+      // A link reads in full in the text, even when its option name is shortened.
+      else if (r === 'link') { var lt = textOf(el); line += ' ' + (lt ? (lt.length > 400 ? lt.slice(0, 399) + '…' : lt) : nm) }
       else if (nm) { var st2 = stateOf(el); line += ' [' + nm + (st2 ? ': ' + st2 : '') + ']' }
       return
     }
@@ -187,6 +203,13 @@ export const EXTRACT = String.raw`(function (opts) {
   var root = document.querySelector('main, [role=main]') || document.body
   children(root, window.scrollY > 0)
   flush()
+  // Dialogs and banners sit on top of everything, often outside the main content: always read them.
+  document.querySelectorAll(DIALOG).forEach(function (d) {
+    if (root.contains(d) || !shown(d)) return
+    lines.push('## ' + (containerName(d, d) || 'Dialog'))
+    children(d, false)
+    flush()
+  })
   var markdown = lines.join('\n')
   if (markdown.length > maxText) markdown = markdown.slice(0, maxText) + '\n…'
   var more = { below: window.scrollY + innerHeight < document.documentElement.scrollHeight - 4, above: window.scrollY > 0 }

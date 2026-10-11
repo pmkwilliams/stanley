@@ -22,7 +22,7 @@ export class PageWorld implements World {
   constructor(
     readonly page: Page,
     private sites: Site[],
-    private opts: { maxText?: number; settleMs?: number } = {},
+    private opts: { maxText?: number; settleMs?: number; actionTimeoutMs?: number } = {},
   ) {}
 
   appList(): AppEntry[] {
@@ -61,10 +61,17 @@ export class PageWorld implements World {
     const [id, key] = node.id.split('/')
     const element = this.page.locator(`[data-stanley-id="${id}"]`)
     const before = await this.fingerprint()
+    // Short timeouts: a control that can't be used (covered by a banner, disabled) should fail
+    // fast, so the agent sees the failure and tries something else.
+    const timeout = this.opts.actionTimeoutMs ?? 1500
     if (id === 'scroll') await this.page.mouse.wheel(0, (key === 'up' ? -0.8 : 0.8) * (this.page.viewportSize()?.height ?? 800))
-    else if (key === 'enter') await element.press('Enter')
-    else if (node.kind === 'input') await element.fill(args.text ?? '')
-    else await element.click()
+    else if (key === 'enter') await element.press('Enter', { timeout })
+    else if (node.kind === 'input' && (await element.evaluate((el) => el.tagName)) === 'SELECT') {
+      const label = await this.optionLabel(element, args.text ?? '')
+      await element.selectOption({ label }, { timeout })
+      return { summary: `"${label}" is chosen` }
+    } else if (node.kind === 'input') await element.fill(args.text ?? '', { timeout })
+    else await element.click({ timeout })
     await this.settle()
     const after = await this.fingerprint()
     // A generic page can't say what a click did, so report what visibly changed.
@@ -78,6 +85,15 @@ export class PageWorld implements World {
     if (option === 'home') await this.page.goto('about:blank')
     if (option === 'show') this.visible = true
     await this.settle()
+  }
+
+  /** The option a spoken choice means: exact, then case-insensitive, then the one that contains it. */
+  private async optionLabel(select: ReturnType<Page['locator']>, wanted: string): Promise<string> {
+    const labels = (await select.evaluate((el) => Array.from((el as HTMLSelectElement).options).map((o) => o.textContent?.trim() ?? ''))) as string[]
+    const w = wanted.trim().toLowerCase()
+    const match = labels.find((l) => l === wanted) ?? labels.find((l) => l.toLowerCase() === w) ?? labels.filter((l) => l.toLowerCase().includes(w) || w.includes(l.toLowerCase()))[0]
+    if (!match) throw new Error(`no option "${wanted}"; the options are ${labels.join(', ')}`)
+    return match
   }
 
   private extract(): Promise<Extracted> {

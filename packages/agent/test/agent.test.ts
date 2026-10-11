@@ -256,7 +256,7 @@ describe('Agent loop', () => {
     await settle()
     expect(performed).not.toContain('todo:delete')
     expect(debug.some((e) => e.type === 'gate' && e.rule === 'step-confidence')).toBe(true)
-    expect(thinker.runs[0]!.reason).toContain('[Delete]')
+    expect(thinker.runs[0]!.reason).toBe('No step stood out clearly.')
   })
 
   it('stops when it keeps choosing the same step from the same screen', async () => {
@@ -297,15 +297,40 @@ describe('Agent loop', () => {
     expect(performed).not.toContain('todo:sort')
   })
 
-  it('logs a step that throws as its result, and reports the error', async () => {
-    const { agent, statuses, ticks, debug } = setup(() => ({ next: 'act', step: 'Sort' }), { world: { failOn: 'todo:sort' } })
+  it('logs a step that fails and keeps going, so the next decision can work around it', async () => {
+    const seen: string[] = []
+    const { agent, performed, statuses } = setup(
+      (req, i) => {
+        seen.push(req.state)
+        return i === 0 ? { next: 'act', step: 'Sort' } : i === 1 ? { next: 'act', step: 'Buy milk' } : { next: 'done' }
+      },
+      { world: { failOn: 'todo:sort' } },
+    )
+    agent.utteranceStart()
+    agent.segment('sort')
+    await settle()
+    expect(seen[1]).toContain('Stanley pressed [Sort]: failed (todo:sort broke).')
+    expect(performed).toEqual(['todo:item', 'show'])
+    expect(statuses.at(-1)).toBe('done')
+  })
+
+  it('stops a step that keeps failing', async () => {
+    const { agent, statuses } = setup(() => ({ next: 'act', step: 'Sort' }), { world: { failOn: 'todo:sort' } })
+    agent.utteranceStart()
+    agent.segment('sort')
+    await settle()
+    expect(statuses.at(-1)).toBe('stuck')
+  })
+
+  it('reports an error when the decision itself fails', async () => {
+    const { agent, statuses, ticks } = setup(() => {
+      throw new Error('gateway down')
+    })
     agent.utteranceStart()
     agent.segment('sort')
     await settle()
     expect(statuses.at(-1)).toBe('error')
     expect(ticks.at(-1)!.outcome).toBe('error')
-    expect(debug.at(-1)).toMatchObject({ type: 'tick-end', outcome: 'error', detail: expect.stringContaining('broke') })
-    expect(await agent.context()).toContain('Stanley pressed [Sort]: failed (todo:sort broke).')
   })
 
   it('retries a failed decision when the utterance ends', async () => {

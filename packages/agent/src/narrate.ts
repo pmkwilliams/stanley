@@ -62,6 +62,7 @@ function describeStep(e: Extract<LogEntry, { role: 'step' }>): string {
   }
   if (t.nodeKind === 'input') {
     if (e.wrote === 'stanley') return `${who} wrote its own words into [${t.name}]${outcome}: "${e.text}"`
+    if (t.role === 'combobox') return `${who} chose "${e.text}" in [${t.name}]${outcome}.`
     return `${who} typed ${e.text ? `"${e.text}"` : 'nothing'} into [${t.name}]${outcome}.`
   }
   if (t.nodeKind === 'location') return `${who} opened [${t.name}]${outcome}.`

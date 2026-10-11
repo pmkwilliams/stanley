@@ -103,6 +103,24 @@ export const webScenarios: WebScenario[] = [
     checks: [check('account', (s) => !s.deleted, 'the account not deleted')],
   },
   {
+    name: 'booking-explicit',
+    start: 'tablefortwo',
+    utterances: ['book a table for four at Osteria Luca at seven tonight under the name Jordan'],
+    checks: [check('tablefortwo', (s) => s.bookings.length === 1 && s.bookings[0].restaurant === 'luca' && s.bookings[0].size === 4 && s.bookings[0].time === '7:00 PM' && /jordan/i.test(s.bookings[0].name), 'Osteria Luca booked for 4 at 7:00 PM under Jordan')],
+  },
+  {
+    name: 'booking-question-only',
+    start: 'tablefortwo',
+    utterances: ['when can I get a table at Kin Ramen'],
+    checks: [check('tablefortwo', (s) => s.bookings.length === 0, 'nothing booked'), said(/5:30|6:15|9(:00)?/)],
+  },
+  {
+    name: 'booking-missing-detail',
+    start: 'tablefortwo',
+    utterances: ['reserve Casa Verde for two people'],
+    checks: [check('tablefortwo', (s) => s.bookings.length === 0, 'nothing booked without a time or a name'), said(/\?/)],
+  },
+  {
     name: 'news-top-story',
     start: 'dailypost',
     utterances: ["what's the top story today"],

@@ -95,4 +95,27 @@ describe.skipIf(!executablePath)('page extraction', () => {
     const nothing = (await world.screen()).elements.find((e) => e.label === 'Nothing')!
     expect((await world.perform(nothing, {})).summary).toBe('Nothing on the page changed')
   })
+
+  it('names radios by their labels, offers a dropdown as a field with its options, and marks dialogs', async () => {
+    const { screen, world } = await screenOf(`
+      <main><fieldset><legend>Time</legend><label><input type="radio" name="slot" value="7"> 7:00 PM</label><label><input type="radio" name="slot" value="8"> 8:00 PM</label></fieldset>
+      <label for="size">Party size</label><select id="size"><option>1 person</option><option selected>2 people</option><option>4 people</option></select></main>
+      <div role="dialog" aria-label="Cookie preferences"><p>We use cookies.</p><button>Accept all</button></div>`)
+    const options = stepOptions(screen, [], 50)
+    expect(options.criteria['7:00 PM']).toBe('radio')
+    expect(options.criteria['Party size']).toBe('combobox, containing "2 people", options: 1 person, 2 people, 4 people')
+    expect(options.criteria['Cookie preferences › Accept all']).toBe('button')
+    expect(screen.markdown).toContain('## Cookie preferences\nWe use cookies.')
+    const size = screen.elements.find((e) => e.label === 'Party size')!
+    expect((await world.perform(size, { text: '4' })).summary).toBe('"4 people" is chosen')
+  })
+
+  it('fails fast on a control covered by something else', async () => {
+    const { screen, world } = await screenOf(`<button>Under</button><div style="position:fixed;inset:0;background:#0008"></div>`)
+    const under = screen.elements.find((e) => e.label === 'Under')!
+    const started = Date.now()
+    await expect(world.perform(under, {})).rejects.toThrow()
+    expect(Date.now() - started).toBeLessThan(4000)
+  })
 })
+

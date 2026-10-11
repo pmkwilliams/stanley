@@ -363,7 +363,8 @@ export class Agent {
 
     if (mode === 'think') {
       this.report(id, d, 'think', gated ? 'gated' : 'executed')
-      const why = gated ? `No step stood out (best guess: [${option}]).` : 'This part of the turn needs words or judgement.'
+      // Not the unsure guess itself: thinking has the whole picture, and a weak hint only steers it wrong.
+      const why = gated ? 'No step stood out clearly.' : 'This part of the turn needs words or judgement.'
       return this.think(id, why)
     }
 
@@ -410,9 +411,23 @@ export class Agent {
 
     this.report(id, d, option, 'executed')
     this.events.status?.('acting')
-    await this.step(id, option, target, {}, 'fast', decision)
+    await this.attempt(id, option, target, {}, 'fast', decision)
     this.request('action')
     return option
+  }
+
+  /**
+   * A step whose failure is part of the conversation, not the end of the turn: a control covered
+   * by a banner or a page that didn't respond is something to work around. The failure is logged
+   * ("failed (…)"), and the loop guard stops a step that keeps failing.
+   */
+  private async attempt(...args: Parameters<Agent['step']>): Promise<StepResult | null> {
+    try {
+      return await this.step(...args)
+    } catch (err) {
+      this.events.debug?.({ type: 'act', tickId: args[0], option: args[1], summary: `failed: ${err instanceof Error ? err.message : String(err)}`, latencyMs: 0 })
+      return null
+    }
   }
 
   /**
@@ -433,7 +448,7 @@ export class Agent {
       const say = w.say.trim()
       if (text) {
         this.events.status?.('acting')
-        await this.step(id, option, target, { text }, 'thinking', decision, w.source === 'stanley' ? 'stanley' : 'user')
+        await this.attempt(id, option, target, { text }, 'thinking', decision, w.source === 'stanley' ? 'stanley' : 'user')
       }
       if (say) {
         this.log.push({ role: 'said', content: say })
@@ -481,7 +496,7 @@ export class Agent {
       this.events.debug?.({ type: 'confirm', tickId: id, option, context, ...c, latencyMs: performance.now() - started, aborted: false })
       if (c.press) {
         this.events.status?.('acting')
-        await this.step(id, option, target, {}, 'thinking', decision)
+        await this.attempt(id, option, target, {}, 'thinking', decision)
         this.request('action')
         return option
       }
@@ -602,9 +617,14 @@ export class Agent {
       args.text = text.trim()
     }
     this.events.status?.(args.text !== undefined ? 'writing' : 'acting')
-    const result = await this.step(id, option, target, args, 'thinking')
+    let outcome: string
+    try {
+      outcome = (await this.step(id, option, target, args, 'thinking')).summary
+    } catch (err) {
+      outcome = `That failed: ${err instanceof Error ? err.message : String(err)}`
+    }
     this.events.status?.('thinking')
-    return done(`${result.summary}\n\n${await this.screenText()}`)
+    return done(`${outcome}\n\n${await this.screenText()}`)
   }
 
   private async screenText(options?: OptionSet): Promise<string> {

@@ -9,6 +9,7 @@ export const SITES: Site[] = [
   { id: 'cornerstore', title: 'Corner Store', description: 'Online shop for kitchen and home goods', url: 'https://cornerstore.test/' },
   { id: 'account', title: 'Lumen account', description: 'Account settings', url: 'https://account.test/' },
   { id: 'dailypost', title: 'The Daily Post', description: 'Local news', url: 'https://dailypost.test/' },
+  { id: 'tablefortwo', title: 'Table for Two', description: 'Restaurant reservations', url: 'https://tablefortwo.test/' },
 ]
 
 /** Real sites for --live runs. The ids double as starting points. */
