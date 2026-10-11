@@ -361,6 +361,11 @@ export class Agent {
       return 'done'
     }
 
+    // Thinking about a field Jev is sure of is writing: one call instead of a tool loop. The writer
+    // still decides whose words they are, and can ask or say something instead.
+    const writing = target.kind === 'element' && target.node.kind === 'input' && step.confidence >= c.writeStep
+    if (mode === 'think' && !gated && writing) mode = 'act'
+
     if (mode === 'think') {
       this.report(id, d, 'think', gated ? 'gated' : 'executed')
       // Not the unsure guess itself: thinking has the whole picture, and a weak hint only steers it wrong.
@@ -445,7 +450,9 @@ export class Agent {
       const w = await this.thinker.write({ context, field: option, signal: controller.signal })
       this.events.debug?.({ type: 'write', tickId: id, option, context, ...w, latencyMs: performance.now() - started, aborted: false })
       const text = w.source === 'missing' ? '' : w.text.trim()
-      const say = w.say.trim()
+      let say = w.say.trim()
+      // Words Stanley wrote itself are read back word for word before anything can send them.
+      if (w.source === 'stanley' && text && !say.includes(text)) say = `I wrote: "${text}" ${say || 'Should I go ahead?'}`
       if (text) {
         this.events.status?.('acting')
         await this.attempt(id, option, target, { text }, 'thinking', decision, w.source === 'stanley' ? 'stanley' : 'user')

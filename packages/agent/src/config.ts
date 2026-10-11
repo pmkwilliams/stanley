@@ -7,6 +7,8 @@ export interface AgentConfig {
   done: number
   /** The chosen step needs at least this confidence; below it Stanley listens (mid-speech) or thinks. */
   stepConfidence: number
+  /** `think` with a field step at least this sure is handled as writing that field (one call, not a tool loop). */
+  writeStep: number
   /** P(commits) at or above this makes a button go to thinking: unsure counts as committing. */
   commits: number
   /** A navigation decided from a stale transcript still runs at or above this step confidence. */
@@ -27,6 +29,7 @@ export const defaultConfig: AgentConfig = {
   act: 0.4,
   done: 0.5,
   stepConfidence: 0.4,
+  writeStep: 0.9,
   commits: 0.3,
   staleNavConfidence: 0.8,
   maxStepsPerUtterance: 15,

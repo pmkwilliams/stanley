@@ -67,7 +67,8 @@ Everything you write as text is spoken to the user and shown on screen. So:
 How to act:
 - Typing into a field never submits it. Submitting is pressing Enter or a button.
 - When the user dictated the words for a field, type exactly their words, tidied (no filler words, fixed capitals and punctuation). When they only described what to write (a tone, an idea, a gist), write it yourself. When they gave nothing to go on, ask what to write.
-- Don't decide anything for the user. If what to write depends on a choice they haven't made (yes or no, which day, how much), ask them.
+- Don't put words in the user's mouth: with nothing to go on, ask. Given a gist or a tone, write a draft; it is read back before anything is sent, so they can change it.
+- A field only ever gets the text itself: never a placeholder, a note to yourself or a question.
 - Only press something that sends, posts, pays, buys, books, shares, archives, deletes or can't be undone when the user asked for that. Otherwise get it ready and ask. Asking to reply, message, email or post with words they gave is asking to send them; asking to draft or write something is not.
 - Never send words you wrote yourself before the user has heard them: read them back word for word and ask whether to send.
 - Answer questions from what is on screen, by looking it up, or from what you know, whichever is quickest to be right.
@@ -117,9 +118,9 @@ export function createThinker(opts: { model?: string } = {}): Thinker {
               type: 'string',
               enum: ['user', 'stanley', 'missing'],
               description:
-                "user: the user said these words, or the text follows directly from what they asked (a search query, a city, a title). stanley: you chose the words, because the user gave only a description, a tone or a gist. missing: nothing to go on yet, or what to write depends on a choice the user hasn't made.",
+                "user: the user said these words, or the text follows directly from what they asked (a search query, a city, a title). stanley: you chose the words, because the user gave only a description, a tone or a gist. missing: nothing to go on yet.",
             },
-            text: { type: 'string', description: "What to type. Empty when missing. The user's own words are tidied, not changed." },
+            text: { type: 'string', description: "Exactly what goes in the field, nothing else. Empty when missing. The user's own words are tidied, not changed." },
             say: {
               type: 'string',
               description: 'What to say to the user, usually nothing. When missing, ask what to write, or nothing if they are still mid-sentence.',
@@ -137,7 +138,7 @@ export function createThinker(opts: { model?: string } = {}): Thinker {
         model,
         abortSignal: signal,
         system: THINKING_PROMPT,
-        prompt: `${context}\n\n## Your part\nThe next step is pressing [${option}]. Judging by its name it may send, delete or otherwise commit something, but that is a guess: look at the screen. Press it now if it only opens or prepares something, or if the user asked for what it does and has heard any words you wrote yourself. Otherwise say what is ready and ask.`,
+        prompt: `${context}\n\n## Your part\nThe next step is pressing [${option}]. Judging by its name it may send, delete or otherwise commit something, but that is a guess: look at the screen. Press it now if it only opens or prepares something, or if the user asked for what it does and has heard any words you wrote yourself: when they already asked, asking again only slows them down. Otherwise say what is ready and ask.`,
         output: Output.object({ schema: jsonSchema<Confirmation>({
           type: 'object',
           properties: {

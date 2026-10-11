@@ -371,6 +371,27 @@ describe('Agent writing', () => {
     expect(await agent.context()).toContain('Stanley wrote its own words into [Add a task]: "Ramen? I was born ready."')
   })
 
+  it('writes a field Jev is sure of with one call, even when it chose to think', async () => {
+    const { agent, performed, thinker } = setup(plan({ next: 'think', step: 'Add a task', stepConfidence: 0.97 }, { next: 'done' }))
+    agent.utteranceStart()
+    agent.segment('add buy eggs')
+    agent.utteranceEnd()
+    await settle()
+    expect(performed[0]).toBe('todo:title=Buy eggs')
+    expect(thinker.runs).toHaveLength(0)
+  })
+
+  it('reads back its own words word for word, even when thinking paraphrased them', async () => {
+    const { agent, said } = setup(plan({ next: 'act', step: 'Add a task' }), {
+      thinker: { write: async () => ({ source: 'stanley', text: 'Ramen? Always.', say: 'I drafted something playful. Send it?' }) },
+    })
+    agent.utteranceStart()
+    agent.segment('reply with something funny')
+    agent.utteranceEnd()
+    await settle()
+    expect(said).toEqual(['I wrote: "Ramen? Always." I drafted something playful. Send it?'])
+  })
+
   it('keeps listening when there is nothing to type yet and the user is mid-turn', async () => {
     const { agent, performed, statuses } = setup(plan({ next: 'act', step: 'Add a task' }), { thinker: { write: async () => ({ source: 'missing', text: '', say: '' }) } })
     agent.utteranceStart()

@@ -82,6 +82,7 @@ decisions showed the old single question giving 50% to an option whose route hel
 | `act` on a link, app, `back`, `home` | Runs at once, even mid-word (navigation is cheap to undo) |
 | `act` on a button | Runs at a pause, unless it **commits** (see **Effects**): then thinking confirms |
 | `act` on a field | Thinking writes what goes in it (one call), then the fast part carries on |
+| `think` with a field step ≥ 0.9 | Handled as writing that field: one call instead of a tool loop |
 | `act`, unsure of `act` or of the step | Listens while the user speaks; after they finish, thinking takes the turn |
 | `think` | Thinking takes the turn, at a pause |
 | `listen` | Waits for more words; after the user finished, thinking takes the turn (usually to ask) |
@@ -93,13 +94,15 @@ One model, one prompt (`THINKING_PROMPT`), the same conversation, three ways in:
 
 - **write** (one structured call): the fast part chose a field. Thinking returns the text, whose
   words they are (`user`: said by the user or following directly from the request, like a search
-  query or a city; `stanley`: written from a description; `missing`: nothing to go on, or it depends
-  on a choice the user hasn't made), and anything to say. Then the fast part continues (Enter,
-  Send, done), unless thinking said something, which hands the turn to the user.
+  query or a city; `stanley`: written from a gist or a tone; `missing`: nothing to go on), and
+  anything to say. Words Stanley wrote itself are always read back word for word (the agent adds
+  the quote if thinking paraphrased), which hands the turn to the user. Otherwise the fast part
+  continues (Enter, Send, done).
 - **confirm** (one structured call): the fast part chose a button that commits. Thinking presses it
   only if the user asked for that and has heard any words Stanley wrote itself; otherwise it says
   what is ready and asks. Asking to reply or post with given words is asking to send; asking to
-  draft is not.
+  draft is not. When the user already asked for exactly this, it presses: asking again only slows
+  them down.
 - **run** (a short tool loop over `act(option, text?)`, the same options as Jev): for `think` turns.
   It answers, asks, or works the screen itself. Its text is speech: shown now, spoken later.
 
@@ -153,11 +156,14 @@ count grew, or a segment finalized.
 | Max steps per utterance → stop ("got stuck") | 15 |
 | Oscillation: same step from the same screen N times in the last M steps → stop | 3 in 6 |
 | Stale navigation still runs at step confidence ≥ | 0.8 |
+| `think` with a field step at least this sure is handled as writing | 0.9 |
 | Elements offered per tick / to thinking | 50 / 150 |
 | Thinking tool steps | 10 |
 
 A field chosen during a pause with nothing to type yet ("called… um…") isn't a step, so a long
-pause can't trip the loop guard.
+pause can't trip the loop guard. A step that fails (a control covered by a cookie banner, a page that
+didn't respond) doesn't end the turn: the failure goes into the conversation and Jev decides again;
+the loop guard stops a step that keeps failing.
 
 ## Context
 
