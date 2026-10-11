@@ -81,4 +81,11 @@ describe('narrate', () => {
     const log = entries({ role: 'event', kind: 'task-start' }, { role: 'event', kind: 'task-end' })
     expect(narrate(log, screen)).toContain('## Conversation\n(nothing yet)\n')
   })
+
+  it('keeps only the most recent turns of a long session', () => {
+    const log = entries(...Array.from({ length: 5 }, (_, i): Message => ({ role: 'user', content: `turn ${i}`, utteranceId: i })))
+    const text = narrate(log, screen, undefined, 2)
+    expect(text).toContain('## Conversation\n(earlier conversation left out)\nUser: turn 3\nUser: turn 4\n')
+    expect(text).not.toContain('turn 2')
+  })
 })

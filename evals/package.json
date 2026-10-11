@@ -8,7 +8,8 @@
     "eval:voice": "tsx voice.mts",
     "eval:stt": "tsx stt.mts",
     "clips:label": "tsx label.mts",
-    "eval:web": "tsx web.mts"
+    "eval:web": "tsx web.mts",
+    "smoke:desktop": "tsx desktop-smoke.mts"
   },
   "dependencies": {
     "@stanley/agent": "workspace:*",

@@ -14,18 +14,22 @@ export interface LiveUtterance {
  * finishing, discarded or gated guesses) and which model took a step are left out. Those are the
  * agent's mechanics and live in the debug trace.
  */
-export function narrate(entries: LogEntry[], screen: Screen, live?: LiveUtterance): string {
+export function narrate(entries: LogEntry[], screen: Screen, live?: LiveUtterance, maxTurns = 20): string {
   const words = new Map<number, string[]>()
   for (const e of entries) if (e.role === 'user') words.set(e.utteranceId, [...(words.get(e.utteranceId) ?? []), e.content])
 
   const lines: string[] = []
+  /** Where each of the user's turns starts in `lines`. */
+  const turns: number[] = []
   const told = new Set<number>()
   const tell = (utteranceId: number | undefined) => {
     if (utteranceId === undefined || told.has(utteranceId)) return
     told.add(utteranceId)
     const isLive = live?.utteranceId === utteranceId
     const text = (isLive ? live.text : words.get(utteranceId)?.join(' '))?.trim()
-    if (text) lines.push(`${isLive && !live.ended ? 'User (still speaking)' : 'User'}: ${text}`)
+    if (!text) return
+    turns.push(lines.length)
+    lines.push(`${isLive && !live.ended ? 'User (still speaking)' : 'User'}: ${text}`)
   }
 
   for (const e of entries) {
@@ -38,8 +42,10 @@ export function narrate(entries: LogEntry[], screen: Screen, live?: LiveUtteranc
   }
   if (live) tell(live.utteranceId)
 
+  // A long session keeps only its recent turns, so what the models read stays small and fast.
+  const kept = turns.length > maxTurns ? ['(earlier conversation left out)', ...lines.slice(turns[turns.length - maxTurns])] : lines
   const where = screen.visible ? 'in front of the user' : "in the background, the user can't see it"
-  return ['## Conversation', ...(lines.length ? lines : ['(nothing yet)']), '', `## Screen: ${screen.title} (${where})`, screen.markdown].join('\n')
+  return ['## Conversation', ...(kept.length ? kept : ['(nothing yet)']), '', `## Screen: ${screen.title} (${where})`, screen.markdown].join('\n')
 }
 
 function describeStep(e: Extract<LogEntry, { role: 'step' }>): string {

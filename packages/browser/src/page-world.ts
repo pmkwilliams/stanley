@@ -1,3 +1,6 @@
+import { existsSync, readdirSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import type { AppEntry, Screen, StepResult, World } from '@stanley/agent'
 import type { ActionArgs, AgentNode } from '@stanley/app-sdk'
 import type { Page } from 'playwright-core'
@@ -122,3 +125,14 @@ export function toNodes(elements: ExtractedElement[]): AgentNode[] {
   }
   return out
 }
+
+/** A headless Chromium to drive: $STANLEY_CHROMIUM, else the newest Playwright headless shell, else Homebrew's. */
+export function findChromium(): string | undefined {
+  if (process.env.STANLEY_CHROMIUM) return process.env.STANLEY_CHROMIUM
+  const cache = join(homedir(), 'Library', 'Caches', 'ms-playwright')
+  const shells = existsSync(cache) ? readdirSync(cache).filter((d) => d.startsWith('chromium_headless_shell-')).sort() : []
+  const cached = shells.length ? join(cache, shells.at(-1)!, 'chrome-headless-shell-mac-arm64', 'chrome-headless-shell') : undefined
+  if (cached && existsSync(cached)) return cached
+  return existsSync('/opt/homebrew/bin/chromium') ? '/opt/homebrew/bin/chromium' : undefined
+}
+

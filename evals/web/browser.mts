@@ -1,7 +1,6 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Site } from '@stanley/browser'
+import { findChromium, type Site } from '@stanley/browser'
 import { chromium, type Browser, type BrowserContext } from 'playwright-core'
 
 /** Fixture sites, served at made-up `.test` origins so pages behave as if they were on the web. */
@@ -21,12 +20,9 @@ export const LIVE_SITES: Site[] = [
 
 const html = Object.fromEntries(SITES.map((s) => [new URL(s.url).host, readFileSync(join(import.meta.dirname, 'sites', `${s.id}.html`), 'utf8')]))
 
-/** A headless Chromium: $STANLEY_CHROMIUM, else the newest Playwright headless shell, else Homebrew's. */
 export function launch(): Promise<Browser> {
-  const cache = join(homedir(), 'Library', 'Caches', 'ms-playwright')
-  const shells = existsSync(cache) ? readdirSync(cache).filter((d) => d.startsWith('chromium_headless_shell-')).sort() : []
-  const cached = shells.length ? join(cache, shells.at(-1)!, 'chrome-headless-shell-mac-arm64', 'chrome-headless-shell') : undefined
-  const executablePath = process.env.STANLEY_CHROMIUM ?? (cached && existsSync(cached) ? cached : '/opt/homebrew/bin/chromium')
+  const executablePath = findChromium()
+  if (!executablePath) throw new Error('No Chromium found: set STANLEY_CHROMIUM, or run `npx playwright install chromium-headless-shell`')
   return chromium.launch({ executablePath })
 }
 
