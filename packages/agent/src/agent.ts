@@ -579,7 +579,7 @@ export class Agent {
         options: list,
         maxSteps: this.config.thinkingSteps,
         signal: controller.signal,
-        act: (option, text) => this.thinkStep(id, ++steps, option, text, controller.signal),
+        act: (option, text) => (steps++, this.thinkStep(id, option, text, controller.signal)),
       })
       const said = text.trim()
       this.events.debug?.({ type: 'think-end', tickId: id, text: said, steps, latencyMs: performance.now() - started, aborted: false })
@@ -607,7 +607,7 @@ export class Agent {
   }
 
   /** One `act` call by the thinking model. Returns what it sees next. */
-  private async thinkStep(id: number, n: number, option: string, text: string | undefined, signal: AbortSignal): Promise<string> {
+  private async thinkStep(id: number, option: string, text: string | undefined, signal: AbortSignal): Promise<string> {
     signal.throwIfAborted()
     const done = (result: string) => {
       this.events.debug?.({ type: 'think-step', tickId: id, option, text, result })
