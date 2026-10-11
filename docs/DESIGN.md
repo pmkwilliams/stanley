@@ -237,7 +237,7 @@ next, which is how the desktop app would drive real sites.
 - **STT**: NVIDIA Parakeet TDT 0.6B **v2** (English) via **sherpa-onnx** (`sherpa-onnx-node`) in main.
   Parakeet is offline-only, so live = **Silero VAD** segments + re-decode the current segment every
   ~400 ms for partials; finalize at VAD pause. Accuracy over true streaming.
-  Each decode includes 0.3 s of audio before the VAD's (late) speech onset, plus up to 10 s of the
+  Each decode includes 0.6 s of audio before the VAD's (late) speech onset, plus up to 10 s of the
   utterance's earlier speech as context; token timestamps pick out only the new words. Earlier
   segments are never revised — the agent has already acted on them.
 - Mic capture in the renderer (`getUserMedia`, 16 kHz mono PCM via AudioWorklet) → IPC → main.

@@ -5,7 +5,7 @@ import type { DecisionClient } from '@stanley/jev'
 export type Effect = 'looks' | 'changes' | 'commits'
 
 export const EFFECTS: Record<Effect, string> = {
-  looks: 'Only shows, opens, fetches, searches, plays or moves around. Nothing is saved or sent.',
+  looks: 'Only shows, opens, fetches, searches, plays or moves around, including opening a form, menu or editor to fill in. Nothing is saved or sent.',
   changes: "Changes the user's own things in a way that is easy to undo: marks, adds, moves, saves, or changes a setting.",
   commits:
     'Reaches other people or the outside world, or is hard to undo: sends, posts, pays, buys, books, shares, submits, archives or deletes.',

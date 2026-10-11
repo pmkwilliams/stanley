@@ -18,6 +18,7 @@ const filters = args.filter((a) => !a.startsWith('-'))
 /** Strategies to compare. The first is what the app ships. */
 const STRATEGIES: { name: string; opts: Omit<TranscriberOptions, 'modelsDir'> }[] = [
   { name: 'context', opts: {} },
+  { name: 'context-300', opts: { prerollMs: 300 } },
   { name: 'preroll', opts: { contextMs: 0 } },
   { name: 'segment', opts: { contextMs: 0, prerollMs: 0 } },
 ]

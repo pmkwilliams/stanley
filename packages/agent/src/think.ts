@@ -137,12 +137,12 @@ export function createThinker(opts: { model?: string } = {}): Thinker {
         model,
         abortSignal: signal,
         system: THINKING_PROMPT,
-        prompt: `${context}\n\n## Your part\nThe next step looks like pressing [${option}], which sends, deletes or otherwise commits something. Press it now only if the user asked for that, and has heard any words you wrote yourself. Otherwise say what is ready and ask.`,
+        prompt: `${context}\n\n## Your part\nThe next step is pressing [${option}]. Judging by its name it may send, delete or otherwise commit something, but that is a guess: look at the screen. Press it now if it only opens or prepares something, or if the user asked for what it does and has heard any words you wrote yourself. Otherwise say what is ready and ask.`,
         output: Output.object({ schema: jsonSchema<Confirmation>({
           type: 'object',
           properties: {
             press: { type: 'boolean', description: 'Press it now.' },
-            say: { type: 'string', description: 'When not pressing, what to say to the user: what is ready, and a short question. Otherwise empty.' },
+            say: { type: 'string', description: 'When not pressing, what to say to the user: what is on screen and ready, and a short question. Only describe what the screen shows. Otherwise empty.' },
           },
           required: ['press', 'say'],
           additionalProperties: false,

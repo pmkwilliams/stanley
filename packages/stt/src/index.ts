@@ -33,7 +33,11 @@ export interface TranscriberOptions {
   modelsDir: string
   partialIntervalMs?: number
   silenceMs?: number
-  /** Audio kept before the VAD's speech onset, which it detects a little late. */
+  /**
+   * Audio kept before the VAD's speech onset. Silero fires only after ~250 ms of speech, so a short
+   * first word ("add", "mark") or a word after a pause can start well before the onset; at 300 ms
+   * synthetic speech lost such words, at 600 ms it lost none.
+   */
   prerollMs?: number
   /**
    * Earlier speech from the same utterance decoded along with each segment, so the model hears
@@ -89,7 +93,7 @@ export class Transcriber {
   ) {
     this.partialIntervalMs = opts.partialIntervalMs ?? 400
     this.silenceMs = opts.silenceMs ?? 2000
-    this.preroll = samples(opts.prerollMs ?? 300)
+    this.preroll = samples(opts.prerollMs ?? 600)
     this.context = samples(opts.contextMs ?? 10_000)
     this.keepWindows = Math.ceil((this.context + this.preroll + samples(MAX_SPEECH_S * 1000 + 2000)) / WINDOW)
   }

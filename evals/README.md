@@ -62,7 +62,8 @@ speech alongside ours.
 clip and the word error rate for each:
 
 - `context`: what the app ships. Each segment is decoded with the utterance's earlier speech.
-- `preroll`: each segment decoded alone, with 0.3 s of lead-in.
+- `context-300`: as shipped, but with the old 0.3 s of lead-in instead of 0.6 s.
+- `preroll`: each segment decoded alone, with 0.6 s of lead-in.
 - `segment`: each segment decoded alone with no lead-in (the previous behaviour).
 - `whole`: the whole clip in one pass. This is the best this model can do.
 - `live`: what the app heard while recording.
