@@ -70,7 +70,7 @@ export interface Style {
   freq: number
   /** 0: the layers drift independently. 1: they move together. */
   coherence: number
-  /** Hues at the left, centre and right. */
+  /** Hues up the curtain: the bottom fringe, the middle and the crown. */
   h0: number
   h1: number
   h2: number
@@ -93,11 +93,11 @@ export interface Style {
 }
 
 const ARMED: Style = {
-  amp: 0.06, blur: 40, speed: 0.25, freq: 1.3, coherence: 0.4, h0: 195, h1: 220, h2: 255, sat: 55, lit: 55, alpha: 0.35,
+  amp: 0.06, blur: 40, speed: 0.25, freq: 1.3, coherence: 0.4, h0: 150, h1: 172, h2: 250, sat: 55, lit: 52, alpha: 0.35,
   width: 0.8, voice: 1, breathe: 1, shimmer: 0, scan: 0, pulse: 0, travel: 0,
 }
 const HEARING: Partial<Style> = {
-  amp: 0.09, blur: 24, speed: 0.55, freq: 1.8, coherence: 0.3, h0: 185, h1: 212, h2: 265, sat: 80, lit: 60, alpha: 0.6,
+  amp: 0.09, blur: 24, speed: 0.55, freq: 1.8, coherence: 0.3, h0: 128, h1: 160, h2: 290, sat: 80, lit: 55, alpha: 0.6,
   width: 0.62, voice: 1.7, breathe: 0,
 }
 
@@ -106,17 +106,17 @@ export const STYLES: Record<Presence, Style> = {
   armed: ARMED,
   hearing: { ...ARMED, ...HEARING },
   trailing: { ...ARMED, ...HEARING, amp: 0.075, blur: 30, speed: 0.4, freq: 1.6, sat: 72, lit: 58, alpha: 0.5, width: 0.66, voice: 1.5, breathe: 0.6 },
-  guessing: { ...ARMED, ...HEARING, speed: 0.6, freq: 1.9, coherence: 0.45, h1: 240, h2: 290, sat: 82, lit: 62, alpha: 0.62, width: 0.6, voice: 1.6, shimmer: 1 },
+  guessing: { ...ARMED, ...HEARING, speed: 0.6, freq: 1.9, coherence: 0.45, h1: 185, h2: 310, sat: 82, lit: 58, alpha: 0.62, width: 0.6, voice: 1.6, shimmer: 1 },
   thinking: {
-    ...ARMED, amp: 0.07, blur: 16, speed: 0.9, freq: 2.6, coherence: 0.9, h0: 262, h1: 298, h2: 330, sat: 85, lit: 62, alpha: 0.72,
+    ...ARMED, amp: 0.07, blur: 16, speed: 0.9, freq: 2.6, coherence: 0.9, h0: 200, h1: 275, h2: 320, sat: 85, lit: 60, alpha: 0.72,
     width: 0.42, voice: 0.7, breathe: 0, scan: 1,
   },
   writing: {
-    ...ARMED, amp: 0.08, blur: 14, speed: 1.1, freq: 3.5, coherence: 0.8, h0: 280, h1: 330, h2: 390, sat: 90, lit: 62, alpha: 0.75,
+    ...ARMED, amp: 0.08, blur: 14, speed: 1.1, freq: 3.5, coherence: 0.8, h0: 175, h1: 300, h2: 340, sat: 90, lit: 60, alpha: 0.75,
     width: 0.55, voice: 0.7, breathe: 0, pulse: 1,
   },
   acting: {
-    ...ARMED, amp: 0.11, blur: 16, speed: 1.2, freq: 2.2, coherence: 0.85, h0: 170, h1: 285, h2: 395, sat: 90, lit: 60, alpha: 0.8,
+    ...ARMED, amp: 0.11, blur: 16, speed: 1.2, freq: 2.2, coherence: 0.85, h0: 100, h1: 130, h2: 345, sat: 90, lit: 55, alpha: 0.8,
     width: 0.85, voice: 0.8, breathe: 0, travel: 1,
   },
   done: ARMED,

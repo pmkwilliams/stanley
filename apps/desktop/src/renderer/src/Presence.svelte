@@ -18,21 +18,31 @@
     let time = 0, last = performance.now(), frame = 0
     // Props are read per frame, so the loop is set up once rather than on every change.
     let dock = untrack(() => (docked ? 1 : 0)), voice = 0, flow = 0
+    /** Wave phase, accumulated so easing `speed` between states never jumps it (`time * speed` would, more so the longer it runs). */
+    let drift = 0
     /** One-shot effects, decaying from 1: `exhale` when a task is done, `wobble` when it didn't get that. */
     let exhale = 0, wobble = 0, typing = 0, nextKey = 0
 
+    // The aurora is drawn per pixel into a coarse buffer, then scaled up: soft by construction, and cheap.
+    const buffer = document.createElement('canvas')
+    const bctx = buffer.getContext('2d')!
+    let cell = 4, bw = 1, bh = 1, image = bctx.createImageData(1, 1)
     const resize = () => {
       W = canvas.width = canvas.clientWidth
       H = canvas.height = canvas.clientHeight
+      cell = Math.max(3, Math.ceil(Math.sqrt((W * H) / 70000)))
+      bw = buffer.width = Math.max(1, Math.ceil(W / cell))
+      bh = buffer.height = Math.max(1, Math.ceil(H / cell))
+      image = bctx.createImageData(bw, bh)
     }
     resize()
     const observer = new ResizeObserver(resize)
     observer.observe(canvas)
 
+    const envelope = (u: number, p: Style) => Math.exp(-(((u - 0.5) / (p.width * 0.5)) ** 2) * 2.2)
     const height = (i: number, u: number, p: Style) => {
-      const envelope = Math.exp(-(((u - 0.5) / (p.width * 0.5)) ** 2) * 2.2)
       const phase = i * 1.9 * (1 - p.coherence)
-      const t = time * p.speed
+      const t = drift
       const wave =
         0.55 * Math.sin(u * p.freq * 6.28 + t * (1 + i * 0.25) + phase - flow) +
         0.3 * Math.sin(u * p.freq * 1.7 * 6.28 - t * 0.7 + phase * 2) +
@@ -44,15 +54,25 @@
       a *= 1 + p.pulse * 0.6 * typing
       a += wobble * 0.07 * Math.sin(u * 10 - time * 16) * (u < 0.5 ? 1 : 0.35)
       a += exhale * 0.09
-      return envelope * a * (0.6 + 0.4 * wave)
+      return envelope(u, p) * a * (0.6 + 0.4 * wave)
     }
     const scanAt = () => 0.5 + 0.36 * Math.sin(time * 1.7)
-    const spot = (x: number, y: number, r: number, blur: number, color: string) => {
-      ctx.filter = `blur(${blur}px)`
-      ctx.fillStyle = color
-      ctx.beginPath()
-      ctx.arc(x, y, r, 0, Math.PI * 2)
-      ctx.fill()
+
+    /** Color by height up the curtain, as a fraction of its ray length: index `t * LUT_PER_UNIT`. */
+    const LUT_PER_UNIT = 48, LUT_SIZE = LUT_PER_UNIT * 2
+    const lut = new Uint8ClampedArray(LUT_SIZE * 3), stops = new Uint8ClampedArray(9)
+    const hsl = (h: number, s: number, l: number, out: Uint8ClampedArray, o: number) => {
+      h = ((h % 360) + 360) % 360
+      s /= 100
+      l /= 100
+      const c = s * Math.min(l, 1 - l)
+      const f = (n: number) => {
+        const k = (n + h / 30) % 12
+        return 255 * (l - c * Math.max(-1, Math.min(k - 3, 9 - k, 1)))
+      }
+      out[o] = f(0)
+      out[o + 1] = f(8)
+      out[o + 2] = f(4)
     }
 
     const draw = (now: number) => {
@@ -74,6 +94,7 @@
       const level = Math.max(mic.level, snapshot.speaking ? 0.35 : 0)
       voice += (level - voice) * ease(14)
       flow += dt * cur.travel * 3
+      drift += dt * cur.speed
       exhale *= Math.exp(-dt * 2)
       wobble *= Math.exp(-dt * 1.6)
       if (time > nextKey) {
@@ -86,56 +107,64 @@
       const base = H * (0.5 + 0.5 * dock)
       const scale = H * (1 + dock * 0.9)
       const mirror = 1 - dock
-      const hue = (f: number) => (f < 0.5 ? p.h0 + (p.h1 - p.h0) * f * 2 : p.h1 + (p.h2 - p.h1) * (f - 0.5) * 2)
+      // Bottom edge → middle → crown, like the green fringe under a red aurora.
+      // Colors mix rather than hues sweeping, so green into red passes through a dim warm blend, not blue.
+      hsl(p.h0, p.sat, Math.min(90, p.lit + 18), stops, 0)
+      hsl(p.h1, p.sat, p.lit, stops, 3)
+      hsl(p.h2, p.sat, p.lit + 8, stops, 6)
+      for (let j = 0; j < LUT_SIZE; j++) {
+        // The bottom color holds only a short fringe; the crown color fills most of the curtain.
+        const t = Math.min(1, j / LUT_PER_UNIT)
+        const k = t < 0.25 ? 0 : 3, m = t < 0.25 ? t / 0.25 : (t - 0.25) / 0.75
+        for (let n = 0; n < 3; n++) lut[j * 3 + n] = stops[k + n]! + (stops[k + 3 + n]! - stops[k + n]!) * m
+      }
 
-      ctx.clearRect(0, 0, W, H)
-      ctx.globalCompositeOperation = 'lighter'
-      for (let i = 4; i >= 0; i--) {
-        const top: [number, number][] = []
-        const bottom: [number, number][] = []
-        for (let x = 0; x <= W + 6; x += 6) {
-          const u = x / W
-          top.push([x, base - height(i, u, p) * scale])
-          bottom.push([x, base + height(i + 0.5, u, p) * scale * 0.7 * mirror])
-        }
-        const gradient = ctx.createLinearGradient(0, 0, W, 0)
-        const alpha = p.alpha * (1 - i * 0.14)
-        for (let f = 0; f <= 1; f += 0.125) gradient.addColorStop(f, `hsla(${hue(f) + i * 8},${p.sat}%,${p.lit}%,${alpha * Math.sin(f * Math.PI)})`)
-
-        ctx.filter = `blur(${p.blur * (1 + i * 0.45)}px)`
-        ctx.fillStyle = gradient
-        ctx.beginPath()
-        ctx.moveTo(0, base)
-        for (const [x, y] of top) ctx.lineTo(x, y)
-        if (dock > 0.98) {
-          ctx.lineTo(W, H + 40)
-          ctx.lineTo(0, H + 40)
-        } else for (let j = bottom.length - 1; j >= 0; j--) ctx.lineTo(...bottom[j]!)
-        ctx.closePath()
-        ctx.fill()
-
-        if (i > 0) continue
-        // A crisp rim on the front layer gives the glow an edge.
-        ctx.filter = 'blur(1px)'
-        ctx.strokeStyle = gradient
-        ctx.lineWidth = 1.4
-        ctx.beginPath()
-        top.forEach(([x, y], j) => (j ? ctx.lineTo(x, y) : ctx.moveTo(x, y)))
-        ctx.stroke()
-        if (p.shimmer > 0.05) {
-          for (let k = 0; k < 4; k++) {
-            const u = 0.2 + 0.6 * ((k * 0.27 + time * 0.09) % 1)
-            const glint = Math.max(0, Math.sin(time * 2.3 + k * 2.1)) * p.shimmer
-            spot(u * W, base - height(0, u, p) * scale, 5, 6, `hsla(${hue(u)},100%,85%,${glint * 0.8})`)
-          }
-        }
-        if (p.scan > 0.05) {
-          const u = scanAt()
-          spot(u * W, base - height(0, u, p) * scale, 9, 10, `hsla(${hue(u)},100%,85%,${p.scan * 0.9})`)
+      const data = image.data
+      data.fill(0)
+      const drawn = Math.min(1, p.alpha * 1.9 * (1 + exhale * 0.8) * (1 + p.pulse * 0.5 * typing))
+      for (let cx = 0; cx < bw; cx++) {
+        const u = (cx + 0.5) / bw
+        const env = envelope(u, p)
+        if (env < 0.01) continue
+        // Rays: fine striations wandering over coarse folds; `travel` sweeps them sideways.
+        const sway = 1.8 * (1 - p.coherence * 0.5) * Math.sin(u * 6 + drift * 0.25)
+        // Incommensurate frequencies, so the rays never settle into a comb.
+        const fine = (0.5 + 0.25 * Math.sin(u * 97 + drift * 0.5 + sway * 3 - flow * 2) + 0.15 * Math.sin(u * 151 - drift * 0.35 + sway * 2) + 0.1 * Math.sin(u * 233 + time * 0.6)) ** 2
+        const coarse = (0.5 + 0.5 * Math.sin(u * 29 - drift * 0.3 + 1.2 * Math.sin(u * 3 + time * 0.2) - flow)) ** 2
+        const folds = 0.5 + 0.3 * Math.sin(u * 11 + drift * 0.2 + sway) + 0.2 * Math.sin(u * 23 - drift * 0.15)
+        let rays = 0.35 + 0.65 * (0.6 * fine + 0.4 * coarse)
+        rays *= 1 + p.shimmer * 1.4 * Math.max(0, Math.sin(u * 91 + time * 6 + 4 * Math.sin(u * 13 - time))) ** 10
+        rays += p.scan * 0.8 * Math.exp(-(((u - scanAt()) / 0.05) ** 2))
+        const bright = drawn * env * rays * (1 + voice * p.voice * 0.35)
+        // A curtain, not a mountain: the envelope fades it sideways more than it shortens it.
+        const length = Math.max(cell * 2, (height(0, u, p) / env) * scale * 4.2 * (1 - dock * 0.45) * (0.45 + 0.55 * env) * (0.55 + 0.6 * folds + 0.25 * coarse))
+        const edge = base - height(2, u, p) * scale * 0.3 * (1 - dock * 0.7)
+        const below = cell * 1.5 + mirror * 0.35 * length
+        const y0 = Math.max(0, Math.floor((edge - length * 1.7) / cell))
+        const y1 = Math.min(bh - 1, Math.ceil((edge + below * 3) / cell))
+        for (let cy = y0; cy <= y1; cy++) {
+          const d = edge - (cy + 0.5) * cell
+          let v: number, j = 0
+          if (d >= 0) {
+            const t = d / length
+            // A bright fringe at the bottom edge, then the tall curtain, fading out at the crown.
+            v = 0.9 * Math.exp(-t * 8) + Math.exp(-(((t - 0.5) / 0.42) ** 2)) * (0.3 + 0.7 * rays)
+            j = Math.min(LUT_SIZE - 1, (t * LUT_PER_UNIT) | 0)
+          } else v = Math.exp(d / (cell * 1.5)) * 0.8 + mirror * 0.12 * Math.exp(d / below)
+          const o = (cy * bw + cx) * 4
+          data[o] = lut[j * 3]!
+          data[o + 1] = lut[j * 3 + 1]!
+          data[o + 2] = lut[j * 3 + 2]!
+          data[o + 3] = 255 * v * bright
         }
       }
+      bctx.putImageData(image, 0, 0)
+
+      ctx.clearRect(0, 0, W, H)
+      ctx.imageSmoothingQuality = 'high'
+      ctx.filter = `blur(${1 + p.blur * 0.06}px)`
+      ctx.drawImage(buffer, 0, 0, bw * cell, bh * cell)
       ctx.filter = 'none'
-      ctx.globalCompositeOperation = 'source-over'
       frame = requestAnimationFrame(draw)
     }
     frame = requestAnimationFrame(draw)
