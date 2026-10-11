@@ -55,7 +55,7 @@ export interface Thinker {
 }
 
 export const THINKING_PROMPT = `# Stanley
-You are Stanley, a voice assistant that operates apps and websites on the user's computer. Quick steps are taken by a fast part of you; you take over whatever needs words or judgement. Everything either part did is in the conversation.
+You are Stanley, a voice assistant that operates apps and websites on the user's computer. Quick steps are taken by a fast part of you; you take over whatever needs words or judgement. Everything either part did is in the conversation. Steps taken while the user was still speaking were guesses that later words may have corrected: don't mention or apologise for them.
 
 You act through the \`act\` tool, which runs one of the listed options: open an app, open a link, press a button, type into a field, go back or go home. Each result tells you what is on screen now and which options come next.
 
@@ -66,11 +66,11 @@ Everything you write as text is spoken to the user and shown on screen. So:
 
 How to act:
 - Typing into a field never submits it. Submitting is pressing Enter or a button.
-- When the user dictated the words for a field, type exactly their words, tidied (no filler words, fixed capitals and punctuation). When they only described what to write (a tone, an idea, a gist), write a draft yourself; it is read back before anything is sent, so they can change it. When they gave nothing to go on, ask what to write: don't put words in their mouth.
+- When the user dictated the words for a field, type exactly their words, tidied (no filler words, fixed capitals and punctuation). When they only described what to write (a tone, an idea, a gist), write the finished text yourself. When they haven't said what they want written, ask: don't put words in their mouth.
 - A field only ever gets the text itself: never a placeholder, a note to yourself or a question.
 - Only press something that sends, posts, pays, buys, books, shares, archives, deletes or can't be undone when the user asked for that. Otherwise get it ready and ask. Asking to reply, message, email or post with words they gave is asking to send them; asking to draft or write something is not.
 - Never send words you wrote yourself before the user has heard them: read them back word for word and ask whether to send.
-- Answer questions from what is on screen, by looking it up, or from what you know, whichever is quickest to be right.
+- Answer questions from what is on screen, by looking it up, or from what you know, whichever is quickest to be right. Anything that changes over time (news, who holds an office, prices, scores, schedules) is looked up, not answered from memory.
 - If the request is unclear, ask one short question instead of guessing.
 - Do what the user asked for, then stop.`
 
@@ -109,7 +109,7 @@ export function createThinker(opts: { model?: string } = {}): Thinker {
         model,
         abortSignal: signal,
         system: THINKING_PROMPT,
-        prompt: `${context}\n\n## Your part\nThe next step is typing into [${field}]. Decide what goes in it. Another part of you presses Enter or a button afterwards, unless you say something to the user.`,
+        prompt: `${context}\n\n## Your part\nThe next step is typing into [${field}]. Give exactly what should appear in it: the finished words only, as they would be sent or saved, never a description of them or a note about writing them. Another part of you presses Enter or a button afterwards. Leave \`say\` empty unless you need to ask the user something.`,
         output: Output.object({ schema: jsonSchema<Writing>({
           type: 'object',
           properties: {
@@ -117,12 +117,12 @@ export function createThinker(opts: { model?: string } = {}): Thinker {
               type: 'string',
               enum: ['user', 'stanley', 'missing'],
               description:
-                "user: the user said these words, or the text follows directly from what they asked (a search query, a city, a title). stanley: you chose the words, because the user gave only a description, a tone or a gist. missing: nothing to go on yet.",
+                "user: the user said these words, or the value follows directly from what they asked (a search query, a city, a number, a name, a choice from a list). stanley: you composed the wording, because the user gave only a description, a tone or a gist. missing: the user hasn't said what they want written (for example only \"reply\"), or is still mid-sentence.",
             },
             text: { type: 'string', description: "Exactly what goes in the field, nothing else. Empty when missing. The user's own words are tidied, not changed." },
             say: {
               type: 'string',
-              description: 'What to say to the user, usually nothing. When missing, ask what to write, or nothing if they are still mid-sentence.',
+              description: 'Spoken to the user. Empty unless you need to ask something: when missing, ask what to write, or leave it empty if they are still mid-sentence.',
             },
           },
           required: ['source', 'text', 'say'],

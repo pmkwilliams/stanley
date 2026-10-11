@@ -352,7 +352,7 @@ export class Agent {
     if (mode === 'done' && this.utteranceEnded && next.confidence < c.done) {
       this.report(id, d, 'think', 'gated')
       this.gate(id, 'done-confidence', `P(done) ${next.confidence.toFixed(2)} < done ${c.done} → think`)
-      return this.think(id, 'It may already be done: check whether anything is left for the user, such as an answer.')
+      return this.think(id, 'It may already be done. If something is left for the user, such as an answer, do it; if not, say nothing.')
     }
 
     if (mode === 'done') {
@@ -451,8 +451,10 @@ export class Agent {
       this.events.debug?.({ type: 'write', tickId: id, option, context, ...w, latencyMs: performance.now() - started, aborted: false })
       const text = w.source === 'missing' ? '' : w.text.trim()
       let say = w.say.trim()
-      // Words Stanley wrote itself are read back word for word before anything can send them.
-      if (w.source === 'stanley' && text && !say.includes(text)) say = `I wrote: "${text}" ${say || 'Should I go ahead?'}`
+      // Prose Stanley composed is read back word for word before anything can send it. A value
+      // (a number, a choice from a list, a word or two) is just filling in what was asked.
+      const prose = target.kind === 'element' && target.role !== 'combobox' && text.split(/\s+/).length > 3
+      if (w.source === 'stanley' && prose && !say.includes(text)) say = `I wrote: "${text}" Should I go ahead?`
       if (text) {
         this.events.status?.('acting')
         await this.attempt(id, option, target, { text }, 'thinking', decision, w.source === 'stanley' ? 'stanley' : 'user')

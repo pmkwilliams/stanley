@@ -383,13 +383,25 @@ describe('Agent writing', () => {
 
   it('reads back its own words word for word, even when thinking paraphrased them', async () => {
     const { agent, said } = setup(plan({ next: 'act', step: 'Add a task' }), {
-      thinker: { write: async () => ({ source: 'stanley', text: 'Ramen? Always.', say: 'I drafted something playful. Send it?' }) },
+      thinker: { write: async () => ({ source: 'stanley', text: 'Ramen? I was born ready.', say: 'I drafted something playful.' }) },
     })
     agent.utteranceStart()
     agent.segment('reply with something funny')
     agent.utteranceEnd()
     await settle()
-    expect(said).toEqual(['I wrote: "Ramen? Always." I drafted something playful. Send it?'])
+    expect(said).toEqual(['I wrote: "Ramen? I was born ready." Should I go ahead?'])
+  })
+
+  it('fills in a short value without reading it back, even when thinking calls it its own', async () => {
+    const { agent, performed, said } = setup(plan({ next: 'act', step: 'Add a task' }, { next: 'done' }), {
+      thinker: { write: async () => ({ source: 'stanley', text: '4 people', say: '' }) },
+    })
+    agent.utteranceStart()
+    agent.segment('a table for four')
+    agent.utteranceEnd()
+    await settle()
+    expect(performed).toEqual(['todo:title=4 people', 'show'])
+    expect(said).toEqual([])
   })
 
   it('keeps listening when there is nothing to type yet and the user is mid-turn', async () => {
