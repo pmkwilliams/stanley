@@ -12,6 +12,13 @@ export const SITES: Site[] = [
   { id: 'dailypost', title: 'The Daily Post', description: 'Local news', url: 'https://dailypost.test/' },
 ]
 
+/** Real sites for --live runs. The ids double as starting points. */
+export const LIVE_SITES: Site[] = [
+  { id: 'wikipedia', title: 'Wikipedia', description: 'The free encyclopedia', url: 'https://en.wikipedia.org/wiki/Main_Page' },
+  { id: 'wikipedia-eiffel', title: 'Wikipedia: Eiffel Tower', description: 'Encyclopedia article', url: 'https://en.wikipedia.org/wiki/Eiffel_Tower' },
+  { id: 'hn', title: 'Hacker News', description: 'Tech news and discussion', url: 'https://news.ycombinator.com/' },
+]
+
 const html = Object.fromEntries(SITES.map((s) => [new URL(s.url).host, readFileSync(join(import.meta.dirname, 'sites', `${s.id}.html`), 'utf8')]))
 
 /** A headless Chromium: $STANLEY_CHROMIUM, else the newest Playwright headless shell, else Homebrew's. */
@@ -23,9 +30,9 @@ export function launch(): Promise<Browser> {
   return chromium.launch({ executablePath })
 }
 
-/** A fresh browser profile with the fixture sites routed in. */
+/** A fresh browser profile with the fixture sites routed in (live sites load from the web). */
 export async function freshContext(browser: Browser): Promise<BrowserContext> {
-  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } })
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: 'en-US' })
   await context.route(/https:\/\/[a-z]+\.test\//, (route) => {
     const page = html[new URL(route.request().url()).host]
     return page ? route.fulfill({ contentType: 'text/html', body: page }) : route.abort()
@@ -34,11 +41,16 @@ export async function freshContext(browser: Browser): Promise<BrowserContext> {
 }
 
 /** A site's saved state, read from its own origin in the same profile. */
-export async function siteState(context: BrowserContext, siteId: string): Promise<any> {
-  const site = SITES.find((s) => s.id === siteId)!
+export function siteState(context: BrowserContext, siteId: string): Promise<any> {
+  return readSite(context, siteId, `JSON.parse(localStorage.getItem('state') || 'null')`)
+}
+
+/** Evaluates `fn` (a JS expression) on a fresh load of a site in the same profile. */
+export async function readSite(context: BrowserContext, siteId: string, fn: string): Promise<any> {
+  const site = [...SITES, ...LIVE_SITES].find((s) => s.id === siteId)!
   const page = await context.newPage()
   await page.goto(site.url)
-  const state = await page.evaluate(() => JSON.parse(localStorage.getItem('state') || 'null'))
+  const value = await page.evaluate(fn)
   await page.close()
-  return state
+  return value
 }

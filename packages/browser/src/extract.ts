@@ -20,6 +20,8 @@ export interface ExtractedElement {
   context: string[]
   /** Single-line text fields with text in them can be submitted with Enter. */
   submits?: boolean
+  /** Scrolled out of view: a person would have to scroll to see it. */
+  offscreen?: boolean
 }
 
 export interface Extracted {
@@ -27,6 +29,8 @@ export interface Extracted {
   url: string
   markdown: string
   elements: ExtractedElement[]
+  /** More of the page below / above the viewport. */
+  more: { below: boolean; above: boolean }
 }
 
 export const EXTRACT = String.raw`(function (opts) {
@@ -55,10 +59,10 @@ export const EXTRACT = String.raw`(function (opts) {
     if (tag === 'INPUT' && /^(submit|button|reset)$/.test(el.type)) return clean(el.value) || el.type
     if (tag === 'INPUT' || tag === 'TEXTAREA') { if (clean(el.placeholder)) return clean(el.placeholder) }
     var t2 = textOf(el); if (t2) return t2.length > 80 ? t2.slice(0, 79) + '…' : t2
-    var img = el.querySelector('img[alt], svg[aria-label], [role=img][aria-label]')
-    if (img) return clean(img.getAttribute('alt') || img.getAttribute('aria-label'))
+    var img = el.querySelector('img[alt], svg[aria-label], [role=img][aria-label], [aria-label], [title]')
+    if (img) { var n = clean(img.getAttribute('alt') || img.getAttribute('aria-label') || img.getAttribute('title')); if (n) return n }
     if (clean(el.title)) return clean(el.title)
-    return clean(el.getAttribute('name')) || tag.toLowerCase()
+    return clean(el.getAttribute('name'))
   }
   function roleOf(el) {
     var r = el.getAttribute('role'); if (r) return r === 'textbox' || r === 'searchbox' ? 'field' : r
@@ -92,13 +96,20 @@ export const EXTRACT = String.raw`(function (opts) {
     if (el.disabled || el.getAttribute('aria-disabled') === 'true') s.push('disabled')
     return s.join(', ')
   }
+  function short(t) { return t.length > 60 ? t.slice(0, 59) + '…' : t }
+  // A container's name: its label or heading, or for a row or card, its main link. Never a run of
+  // its text, which reads as noise ("Home Sport Business…").
   function containerName(c, inner) {
-    var v = c.getAttribute('aria-label'); if (clean(v)) return clean(v)
-    v = c.getAttribute('aria-labelledby'); if (v && byIds(v)) return byIds(v)
-    var h = c.querySelector('h1, h2, h3, h4, h5, h6, [role=heading], legend, caption, strong, b')
-    if (h && textOf(h)) return textOf(h).slice(0, 60)
-    var t = textOf(c).replace(textOf(inner), '').trim()
-    return t ? (t.length > 50 ? t.slice(0, 49) + '…' : t) : ''
+    var v = c.getAttribute('aria-label'); if (clean(v)) return short(clean(v))
+    v = c.getAttribute('aria-labelledby'); if (v && byIds(v)) return short(byIds(v))
+    var h = c.querySelector('h1, h2, h3, h4, h5, h6, [role=heading], legend, caption')
+    if (h && textOf(h)) return short(textOf(h))
+    if (c.matches('li, tr, [role=row], [role=listitem], article, [role=article]')) {
+      var best = ''
+      c.querySelectorAll('a[href]').forEach(function (a) { var t = textOf(a); if (a !== inner && !a.contains(inner) && t.length > best.length) best = t })
+      if (best.length > 3) return short(best)
+    }
+    return ''
   }
 
   var seen = Number(document.documentElement.getAttribute('data-stanley-next') || '1')
@@ -110,7 +121,12 @@ export const EXTRACT = String.raw`(function (opts) {
     if (!id) { id = 'e' + seen++; el.setAttribute('data-stanley-id', id) }
     var role = roleOf(el)
     var kind = kindOf(role)
-    var item = { id: id, kind: kind, role: role, name: nameOf(el), context: [], el: el }
+    var name = nameOf(el)
+    // An element with no name is noise to anyone who can't see it ("link", "button").
+    if (!name && kind !== 'input') return
+    var item = { id: id, kind: kind, role: role, name: name || role, context: [], el: el }
+    var rect = el.getBoundingClientRect()
+    if (rect.bottom < 0 || rect.top > innerHeight) item.offscreen = true
     if (kind === 'input') { item.value = el.isContentEditable ? textOf(el) : (el.value || ''); item.submits = el.tagName === 'INPUT' && !!item.value }
     var st = stateOf(el); if (st) item.state = st
     found.push(item)
@@ -131,42 +147,55 @@ export const EXTRACT = String.raw`(function (opts) {
   })
 
   // Readable text: headings, paragraphs, list items; controls inline as [name] or [name: value].
+  // From the main content when the page marks it, and from the scroll position on, as a person reads.
   var lines = []
   var line = ''
   var BLOCK = /^(P|DIV|LI|TR|H[1-6]|SECTION|ARTICLE|HEADER|FOOTER|NAV|ASIDE|MAIN|FORM|FIELDSET|UL|OL|TABLE|BLOCKQUOTE|PRE|DL|DT|DD|FIGURE|FIGCAPTION|DIALOG|BR|HR)$/
   function flush() { var t = clean(line); if (t) lines.push(t); line = '' }
-  function walk(node) {
+  function visit(c) {
+    if (c.nodeType === 3) { line += ' ' + c.textContent; return }
+    if (c.nodeType !== 1) return
+    var el = c
+    if (/^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE|SVG)$/.test(el.tagName)) return
+    if (!shown(el) && el.tagName !== 'BR') return
+    if (el.matches(SEL)) {
+      var nm = nameOf(el), r = roleOf(el)
+      if (kindOf(r) === 'input') line += ' [' + (nm || r) + ': ' + ((el.isContentEditable ? textOf(el) : el.value) || 'empty') + ']'
+      else if (r === 'link') line += ' ' + nm
+      else if (nm) { var st2 = stateOf(el); line += ' [' + nm + (st2 ? ': ' + st2 : '') + ']' }
+      return
+    }
+    var block = BLOCK.test(el.tagName)
+    if (block) flush()
+    var h = /^H([1-6])$/.exec(el.tagName)
+    if (h) line += '#'.repeat(Number(h[1])) + ' '
+    if (el.tagName === 'LI') line += '- '
+    children(el, false)
+    if (block) flush()
+  }
+  // With \`fromView\`, skip what is scrolled above the viewport and descend into what straddles it.
+  function children(node, fromView) {
     for (var c = node.firstChild; c; c = c.nextSibling) {
-      if (c.nodeType === 3) { line += ' ' + c.textContent; continue }
-      if (c.nodeType !== 1) continue
-      var el = c
-      if (/^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE|SVG)$/.test(el.tagName)) continue
-      if (!shown(el) && el.tagName !== 'BR') continue
-      if (el.matches(SEL)) {
-        var nm = nameOf(el), r = roleOf(el)
-        if (kindOf(r) === 'input') line += ' [' + nm + ': ' + ((el.isContentEditable ? textOf(el) : el.value) || 'empty') + ']'
-        else if (r === 'link') line += ' ' + nm
-        else { var st2 = stateOf(el); line += ' [' + nm + (st2 ? ': ' + st2 : '') + ']' }
-        continue
+      if (fromView && c.nodeType === 1) {
+        var r = c.getBoundingClientRect()
+        if (r.bottom < 0) continue
+        if (r.top < 0 && c.firstElementChild) { children(c, true); continue }
       }
-      var block = BLOCK.test(el.tagName)
-      if (block) flush()
-      var h = /^H([1-6])$/.exec(el.tagName)
-      if (h) line += '#'.repeat(Number(h[1])) + ' '
-      if (el.tagName === 'LI') line += '- '
-      walk(el)
-      if (block) flush()
+      visit(c)
     }
   }
-  walk(document.body)
+  var root = document.querySelector('main, [role=main]') || document.body
+  children(root, window.scrollY > 0)
   flush()
   var markdown = lines.join('\n')
   if (markdown.length > maxText) markdown = markdown.slice(0, maxText) + '\n…'
+  var more = { below: window.scrollY + innerHeight < document.documentElement.scrollHeight - 4, above: window.scrollY > 0 }
 
   return {
     title: document.title,
     url: location.href,
     markdown: markdown,
+    more: more,
     elements: found.map(function (f) { var o = Object.assign({}, f); delete o.el; return o }),
   }
 })`

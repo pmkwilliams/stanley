@@ -208,6 +208,13 @@ export class Agent {
     void this.tick(reason)
   }
 
+  /** What the user is asking for now: the live utterance, else the last thing they said. */
+  private focus(): string {
+    const live = fullText(this.transcript)
+    if (live.trim()) return live
+    return this.log.entries.findLast((e) => e.role === 'user')?.content ?? ''
+  }
+
   private live(): LiveUtterance | undefined {
     return this.utteranceId ? { utteranceId: this.utteranceId, text: fullText(this.transcript), ended: this.utteranceEnded } : undefined
   }
@@ -231,7 +238,7 @@ export class Agent {
       // A decision is a guess until the person finishes or the agent has started acting on it.
       this.events.status?.(!seenEnded && this.steps === 0 ? 'guessing' : 'thinking')
       const screen = await this.world.screen()
-      const options = stepOptions(screen, this.world.appList(), this.config.maxElements)
+      const options = stepOptions(screen, this.world.appList(), this.config.maxElements, this.focus())
       const state = `${SYSTEM_PROMPT}\n\n${narrate(this.log.entries, screen, this.live())}`
       const questions: Record<string, Question> = {
         next: { instructions: NEXT_INSTRUCTIONS, options: NEXT },
@@ -533,7 +540,7 @@ export class Agent {
    */
   private async think(id: number, reason: string): Promise<string> {
     const screen = await this.world.screen()
-    const options = stepOptions(screen, this.world.appList(), this.config.thinkingElements)
+    const options = stepOptions(screen, this.world.appList(), this.config.thinkingElements, this.focus())
     const context = narrate(this.log.entries, screen, this.live())
     const list = optionList(options)
     this.events.debug?.({ type: 'think-start', tickId: id, reason, context, options: list })
@@ -583,7 +590,7 @@ export class Agent {
       this.events.debug?.({ type: 'think-step', tickId: id, option, text, result })
       return result
     }
-    const options = stepOptions(await this.world.screen(), this.world.appList(), this.config.thinkingElements)
+    const options = stepOptions(await this.world.screen(), this.world.appList(), this.config.thinkingElements, this.focus())
     const name = resolveOption(options, option)
     const target = name && options.targets.get(name)
     if (!name || !target) return done(`There is no option [${option}] right now. Use a name exactly as listed.\n\n${await this.screenText(options)}`)
@@ -601,7 +608,7 @@ export class Agent {
 
   private async screenText(options?: OptionSet): Promise<string> {
     const screen = await this.world.screen()
-    const list = optionList(options ?? stepOptions(screen, this.world.appList(), this.config.thinkingElements))
+    const list = optionList(options ?? stepOptions(screen, this.world.appList(), this.config.thinkingElements, this.focus()))
     return `## Screen: ${screen.title} (${screen.visible ? 'in front of the user' : 'in the background'})\n${screen.markdown}\n\n## Options\n${list}`
   }
 

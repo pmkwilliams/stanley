@@ -38,7 +38,11 @@ export class PageWorld implements World {
       title: page.title || site?.title || new URL(page.url).host,
       visible: this.visible,
       markdown: page.markdown,
-      elements: toNodes(page.elements),
+      elements: [
+        ...toNodes(page.elements),
+        ...(page.more.above ? [{ id: 'scroll/up', kind: 'action' as const, label: 'Scroll up' }] : []),
+        ...(page.more.below ? [{ id: 'scroll/down', kind: 'action' as const, label: 'Scroll down' }] : []),
+      ],
     }
   }
 
@@ -54,7 +58,8 @@ export class PageWorld implements World {
     const [id, key] = node.id.split('/')
     const element = this.page.locator(`[data-stanley-id="${id}"]`)
     const before = await this.fingerprint()
-    if (key === 'enter') await element.press('Enter')
+    if (id === 'scroll') await this.page.mouse.wheel(0, (key === 'up' ? -0.8 : 0.8) * (this.page.viewportSize()?.height ?? 800))
+    else if (key === 'enter') await element.press('Enter')
     else if (node.kind === 'input') await element.fill(args.text ?? '')
     else await element.click()
     await this.settle()
@@ -97,7 +102,7 @@ export function toNodes(elements: ExtractedElement[]): AgentNode[] {
   const out: AgentNode[] = []
   const groups = new Map<string, AgentNode>()
   for (const e of elements) {
-    const node: AgentNode = { id: e.id, kind: e.kind, role: e.role, label: e.name || e.role, description: e.state }
+    const node: AgentNode = { id: e.id, kind: e.kind, role: e.role, label: e.name || e.role, description: e.state, offscreen: e.offscreen }
     if (e.kind === 'input') {
       node.value = e.value ?? ''
       if (e.submits) node.children = [{ id: `${e.id}/enter`, kind: 'action', role: 'key', label: 'press Enter' }]

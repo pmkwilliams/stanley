@@ -28,6 +28,8 @@ export interface AgentNode {
   description?: string
   /** Input nodes: the text currently in the field. */
   value?: string
+  /** Scrolled out of view: on the page, but a person would have to scroll to see it. */
+  offscreen?: boolean
   /** Elements inside this one, on the same screen. */
   children?: AgentNode[]
   /**

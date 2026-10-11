@@ -6,14 +6,17 @@
  *   pnpm eval:web mail shop          # scenarios whose name contains a filter
  *   pnpm eval:web --all --runs 3     # every scenario, 3 times each
  *
- * Options: --runs N, --concurrency N (default 4), --trace, --verbose.
+ * Options: --runs N, --concurrency N (default 4), --trace, --verbose. --live runs read-only
+ * scenarios on real websites instead (they change, so they aren't part of the default suite).
  */
 import { PageWorld } from '@stanley/browser'
 import { drive, flag, loadEnv, pool, printUsage, report, select, typeUtterance, type ScenarioResult } from './harness.mts'
-import { freshContext, launch, siteState, SITES } from './web/browser.mts'
-import { webScenarios, type WebScenario } from './web/scenarios.mts'
+import { freshContext, launch, LIVE_SITES, readSite, siteState, SITES } from './web/browser.mts'
+import { liveScenarios, webScenarios, type WebScenario } from './web/scenarios.mts'
 
-const selected = select(webScenarios, (s) => s.name, 'pnpm eval:web')
+const live = process.argv.includes('--live')
+const sites = live ? LIVE_SITES : SITES
+const selected = select(live ? liveScenarios : webScenarios, (s) => s.name, `pnpm eval:web${live ? ' --live' : ''}`)
 if (selected) {
   loadEnv()
   const runs = flag('runs', 1)
@@ -53,10 +56,12 @@ if (selected) {
     const context = await freshContext(browser)
     try {
       const page = await context.newPage()
-      const world = new PageWorld(page, SITES)
+      const world = new PageWorld(page, sites)
       if (scenario.start) await world.open(scenario.start)
       const run = await drive(world, scenario.utterances, typeUtterance)
-      const checks = await Promise.all(scenario.checks.map((c) => c({ state: (id) => siteState(context, id), agent: run.agent, url: page.url() })))
+      const checks = await Promise.all(
+        scenario.checks.map((c) => c({ state: (id) => siteState(context, id), read: (id, fn) => readSite(context, id, fn), agent: run.agent, url: page.url() })),
+      )
       const failures = checks.filter((r): r is string => typeof r === 'string')
       return { ok: failures.length === 0, failures, ...run.result }
     } finally {

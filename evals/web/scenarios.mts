@@ -4,7 +4,10 @@ import type { Agent } from '@stanley/agent'
 export interface WebRun {
   state(siteId: string): Promise<any>
   agent: Agent
+  /** Where the page ended up. */
   url: string
+  /** Reads something from a site's live page, loaded fresh in the same profile. */
+  read(siteId: string, fn: string): Promise<any>
 }
 
 /** Returns a failure message, or nothing when the check passes. */
@@ -111,3 +114,41 @@ export const webScenarios: WebScenario[] = [
     checks: [either(check('dailypost', (s) => s?.viewed?.includes('2'), 'the bakery story opened'), said(/sourdough|bakery/i))],
   },
 ]
+
+const urlMatches = (pattern: RegExp): WebCheck => async ({ url }) => (pattern.test(url) ? undefined : `expected the page to be ${pattern}, got ${url}`)
+
+/** Real websites, read-only. They change, so these run only with --live and aren't in the default suite. */
+export const liveScenarios: WebScenario[] = [
+  {
+    name: 'live-wikipedia-fact',
+    start: 'wikipedia-eiffel',
+    utterances: ['when was this tower finished'],
+    checks: [said(/1889/)],
+  },
+  {
+    name: 'live-wikipedia-search',
+    start: 'wikipedia',
+    utterances: ['look up the Golden Gate Bridge'],
+    checks: [urlMatches(/Golden_Gate_Bridge/i)],
+  },
+  {
+    name: 'live-hn-top-story',
+    start: 'hn',
+    utterances: ["what's the top story here"],
+    checks: [
+      async (run) => {
+        const title: string = await run.read('hn', `document.querySelector('.titleline a')?.textContent ?? ''`)
+        const key = title.split(/\s+/).filter((w) => w.length > 3).slice(0, 2)
+        const spoken = run.agent.log.entries.filter((e) => e.role === 'said').map((e) => (e.role === 'said' ? e.content : '')).join(' ')
+        return key.every((w) => spoken.toLowerCase().includes(w.toLowerCase())) ? undefined : `expected the top story "${title}" said, got "${spoken}"`
+      },
+    ],
+  },
+  {
+    name: 'live-hn-comments',
+    start: 'hn',
+    utterances: ['show me the comments on the first story'],
+    checks: [urlMatches(/item\?id=\d+/)],
+  },
+]
+
