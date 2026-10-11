@@ -17,7 +17,7 @@ const elements: AgentNode[] = [
 function fakeWorld(opts: { screenChanges?: boolean; failOn?: string } = {}) {
   const performed: string[] = []
   const world: World = {
-    screen: () => ({ id: 'todo:list', title: 'To-do', visible: true, markdown: opts.screenChanges ? `${performed.length} done` : '# To-do', elements }),
+    screen: async () => ({ id: 'todo:list', title: 'To-do', visible: true, markdown: opts.screenChanges ? `${performed.length} done` : '# To-do', elements }),
     appList: () => [
       { id: 'todo', title: 'To-do', description: 'tasks' },
       { id: 'email', title: 'Email', description: 'mail' },
@@ -266,7 +266,7 @@ describe('Agent loop', () => {
     await settle()
     expect(performed.filter((p) => p === 'todo:item')).toHaveLength(2)
     expect(statuses.at(-1)).toBe('stuck')
-    expect(agent.context()).toContain('Stanley stopped: it kept repeating the same step.')
+    expect(await agent.context()).toContain('Stanley stopped: it kept repeating the same step.')
   })
 
   it('repeats a step that keeps changing the screen', async () => {
@@ -305,7 +305,7 @@ describe('Agent loop', () => {
     expect(statuses.at(-1)).toBe('error')
     expect(ticks.at(-1)!.outcome).toBe('error')
     expect(debug.at(-1)).toMatchObject({ type: 'tick-end', outcome: 'error', detail: expect.stringContaining('broke') })
-    expect(agent.context()).toContain('Stanley pressed [Sort]: failed (todo:sort broke).')
+    expect(await agent.context()).toContain('Stanley pressed [Sort]: failed (todo:sort broke).')
   })
 
   it('retries a failed decision when the utterance ends', async () => {
@@ -330,7 +330,7 @@ describe('Agent writing', () => {
     agent.segment('add buy eggs')
     await settle()
     expect(performed).toEqual(['todo:title=Buy eggs', 'todo:add', 'show'])
-    expect(agent.context()).toContain('Stanley typed "Buy eggs" into [Add a task].')
+    expect(await agent.context()).toContain('Stanley typed "Buy eggs" into [Add a task].')
   })
 
   it("marks words Stanley wrote itself, and ends the turn when it has something to say", async () => {
@@ -343,7 +343,7 @@ describe('Agent writing', () => {
     await settle()
     expect(performed).toEqual(['todo:title=Ramen? I was born ready.', 'show'])
     expect(said).toEqual(['I wrote "Ramen? I was born ready." Send it?'])
-    expect(agent.context()).toContain('Stanley wrote its own words into [Add a task]: "Ramen? I was born ready."')
+    expect(await agent.context()).toContain('Stanley wrote its own words into [Add a task]: "Ramen? I was born ready."')
   })
 
   it('keeps listening when there is nothing to type yet and the user is mid-turn', async () => {

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The Daily Post</title>
+<style>
+  body { font: 17px Charter, Georgia, serif; margin: 0 auto; max-width: 760px; padding: 24px; }
+  header { border-bottom: 3px double #222; margin-bottom: 16px; }
+  article.teaser { border-bottom: 1px solid #ddd; padding: 12px 0; }
+  article.teaser h2 { margin: 0 0 6px; font-size: 22px; }
+  article.teaser h2 a { color: #111; text-decoration: none; }
+  .byline { color: #666; font-size: 14px; }
+</style>
+</head>
+<body>
+<header><a href="#/" style="color: inherit; text-decoration: none"><strong style="font-size: 32px">The Daily Post</strong></a><div class="byline">Saturday, October 10</div></header>
+<main id="app"></main>
+<script>
+const stories = [
+  { id: '1', title: 'City council approves protected bike lanes on Main Street', summary: 'The 7–2 vote clears the way for construction to begin in the spring.', body: ['After two years of debate, the city council voted 7–2 on Thursday to build protected bike lanes along a 2.4-mile stretch of Main Street.', 'Construction is expected to begin in March and finish by late summer. Parking on the east side of the street will be reduced by about 40 spaces.', 'Supporters cited a rise in cycling commutes; opponents worried about deliveries for local shops.'] },
+  { id: '2', title: 'Local bakery wins regional sourdough contest', summary: 'Hearth & Crumb took first place among 60 entrants.', body: ['Hearth & Crumb, the bakery on Elm Street, won first place at the regional sourdough competition.', 'Owner Mae Lin credits a 40-year-old starter.'] },
+  { id: '3', title: 'Library extends weekend hours through winter', summary: 'Branches will stay open until 8 p.m. on Saturdays.', body: ['The public library will keep all branches open until 8 p.m. on Saturdays from November through February.'] },
+  { id: '4', title: 'High school robotics team heads to nationals', summary: 'The Gearheads qualified with a record score.', body: ['The Westfield High robotics team will compete at the national championship in Houston next month.'] },
+]
+const seed = { viewed: [] }
+let state = JSON.parse(localStorage.getItem('state') || 'null') || structuredClone(seed)
+const save = () => localStorage.setItem('state', JSON.stringify(state))
+save()
+function render() {
+  const route = location.hash.replace(/^#/, '') || '/'
+  const app = document.getElementById('app')
+  const m = /^\/story\/(\w+)/.exec(route)
+  if (m) {
+    const s = stories.find((x) => x.id === m[1])
+    if (!state.viewed.includes(s.id)) { state.viewed.push(s.id); save() }
+    document.title = `${s.title} – The Daily Post`
+    app.innerHTML = `<article><h1>${s.title}</h1><p class="byline">By Staff Reporter</p>${s.body.map((p) => `<p>${p}</p>`).join('')}</article><p><a href="#/">← Front page</a></p>`
+    return
+  }
+  document.title = 'The Daily Post'
+  app.innerHTML = `<h2 style="font-size: 14px; text-transform: uppercase">Top stories</h2>` + stories.map((s) => `<article class="teaser"><h2><a href="#/story/${s.id}">${s.title}</a></h2><p>${s.summary}</p></article>`).join('')
+}
+window.addEventListener('hashchange', render)
+render()
+</script>
+</body>
+</html>

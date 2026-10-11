@@ -28,7 +28,7 @@ export interface StepResult {
 
 /** What the agent can see and do. Implemented by the desktop shell (and, later, by browser and OS adapters). */
 export interface World {
-  screen(): Screen
+  screen(): Promise<Screen>
   /** Apps Stanley can open from anywhere. */
   appList(): AppEntry[]
   open(appId: string): Promise<StepResult>

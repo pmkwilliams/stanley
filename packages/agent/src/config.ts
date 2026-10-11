@@ -3,6 +3,8 @@ export interface AgentConfig {
   speakingAct: number
   /** After they finish, `act` needs at least this confidence; below it thinking takes the turn. */
   act: number
+  /** After the user finishes, `done` needs at least this confidence; below it thinking checks what's left. */
+  done: number
   /** The chosen step needs at least this confidence; below it Stanley listens (mid-speech) or thinks. */
   stepConfidence: number
   /** P(commits) at or above this makes a button go to thinking: unsure counts as committing. */
@@ -23,6 +25,7 @@ export interface AgentConfig {
 export const defaultConfig: AgentConfig = {
   speakingAct: 0.6,
   act: 0.4,
+  done: 0.5,
   stepConfidence: 0.4,
   commits: 0.3,
   staleNavConfidence: 0.8,

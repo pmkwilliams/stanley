@@ -8,7 +8,7 @@
     "eval:voice": "tsx voice.mts",
     "eval:stt": "tsx stt.mts",
     "clips:label": "tsx label.mts",
-    "eval:replay": "tsx replay.mts"
+    "eval:web": "tsx web.mts"
   },
   "dependencies": {
     "@stanley/agent": "workspace:*",
@@ -18,10 +18,12 @@
     "@stanley/app-todo": "workspace:*",
     "@stanley/app-weather": "workspace:*",
     "@stanley/app-web": "workspace:*",
+    "@stanley/browser": "workspace:^",
     "@stanley/jev": "workspace:*",
     "@stanley/stt": "workspace:*"
   },
   "devDependencies": {
+    "playwright-core": "1.64.0",
     "tsx": "^4.20.6"
   }
 }

@@ -15,7 +15,7 @@ export type TickOutcome = 'executed' | 'stale-discarded' | 'gated' | 'forced-sto
 export interface TickReport {
   id: number
   /** Jev's answer to "what now?" and to "which step?", as decided. */
-  next: { choice: string; confidence: number } | null
+  next: { choice: string; confidence: number; probabilities: Record<string, number> } | null
   step: { choice: string; confidence: number; top: { option: string; p: number }[] } | null
   /** What took effect: `listen`, `done`, `think`, `stale`, or the step's option. */
   effective: string
@@ -77,7 +77,7 @@ What to do now:
 - "listen" while the user is still saying what they want and it isn't clear yet what to do.
 - "act" when a step on the screen moves toward what they asked for. See a request through: if it is about something inside an app, open the app, then the item, then use it. Looking at, checking, reading or going through things means opening them, starting with the first, not stopping at the list they are in.
 - "think" when the next part needs words or judgement: typing text, answering a question, asking the user something, getting their go-ahead, or working out what they mean. The thinking part of Stanley takes over and can talk to the user.
-- "done" when what they asked for is done or showing on the screen. Don't go further than they asked.
+- "done" when what they asked for is done or showing on the screen. Don't go further than they asked. A question is done only once it is answered out loud: when the screen shows the answer, choose "think" so Stanley can say it.
 
 The screen is the app Stanley is working on, which may be in the background. Elements are written in [brackets]. A link opens something, a button does something, and a field holds text that the thinking part types.`
 
@@ -87,7 +87,7 @@ export const NEXT: Record<Next, string> = {
   listen: "The user is still saying what they want, and it isn't clear yet what to do.",
   act: 'Take a step on the screen that moves toward what the user asked for.',
   think: 'The next part needs words or judgement: typing text, answering, asking the user, getting their go-ahead, or working out what they mean.',
-  done: 'What the user asked for is done or showing on the screen.',
+  done: 'What the user asked for is done or showing on the screen, and any question they asked has been answered out loud.',
 }
 export const NEXT_INSTRUCTIONS = 'What should Stanley do now?'
 export const STEP_INSTRUCTIONS =
@@ -136,8 +136,8 @@ export class Agent {
   }
 
   /** The conversation and screen as the models read them right now. */
-  context(): string {
-    return narrate(this.log.entries, this.world.screen(), this.live())
+  async context(): Promise<string> {
+    return narrate(this.log.entries, await this.world.screen(), this.live())
   }
 
   // ── Transcript input ────────────────────────────────────────────────────
@@ -230,7 +230,7 @@ export class Agent {
     try {
       // A decision is a guess until the person finishes or the agent has started acting on it.
       this.events.status?.(!seenEnded && this.steps === 0 ? 'guessing' : 'thinking')
-      const screen = this.world.screen()
+      const screen = await this.world.screen()
       const options = stepOptions(screen, this.world.appList(), this.config.maxElements)
       const state = `${SYSTEM_PROMPT}\n\n${narrate(this.log.entries, screen, this.live())}`
       const questions: Record<string, Question> = {
@@ -341,6 +341,13 @@ export class Agent {
       return 'listen'
     }
 
+    // Unsure whether it's finished once the user has: let thinking check (it may need to answer).
+    if (mode === 'done' && this.utteranceEnded && next.confidence < c.done) {
+      this.report(id, d, 'think', 'gated')
+      this.gate(id, 'done-confidence', `P(done) ${next.confidence.toFixed(2)} < done ${c.done} → think`)
+      return this.think(id, 'It may already be done: check whether anything is left for the user, such as an answer.')
+    }
+
     if (mode === 'done') {
       this.report(id, d, 'done', 'executed')
       await this.finishTask('done')
@@ -407,7 +414,7 @@ export class Agent {
    * `confirm` sees whether the words were Stanley's own and reads them back before sending.
    */
   private async write(id: number, option: string, target: Target, decision: DecisionMeta): Promise<string> {
-    const context = narrate(this.log.entries, this.world.screen(), this.live())
+    const context = narrate(this.log.entries, await this.world.screen(), this.live())
     this.events.status?.('writing')
     const controller = new AbortController()
     this.thinking = controller
@@ -455,7 +462,7 @@ export class Agent {
    * and ask.
    */
   private async confirm(id: number, option: string, target: Target, decision: DecisionMeta): Promise<string> {
-    const context = narrate(this.log.entries, this.world.screen(), this.live())
+    const context = narrate(this.log.entries, await this.world.screen(), this.live())
     this.events.status?.('thinking')
     const controller = new AbortController()
     this.thinking = controller
@@ -525,7 +532,7 @@ export class Agent {
    * was said in the conversation.
    */
   private async think(id: number, reason: string): Promise<string> {
-    const screen = this.world.screen()
+    const screen = await this.world.screen()
     const options = stepOptions(screen, this.world.appList(), this.config.thinkingElements)
     const context = narrate(this.log.entries, screen, this.live())
     const list = optionList(options)
@@ -576,10 +583,10 @@ export class Agent {
       this.events.debug?.({ type: 'think-step', tickId: id, option, text, result })
       return result
     }
-    const options = stepOptions(this.world.screen(), this.world.appList(), this.config.thinkingElements)
+    const options = stepOptions(await this.world.screen(), this.world.appList(), this.config.thinkingElements)
     const name = resolveOption(options, option)
     const target = name && options.targets.get(name)
-    if (!name || !target) return done(`There is no option [${option}] right now. Use a name exactly as listed.\n\n${this.screenText(options)}`)
+    if (!name || !target) return done(`There is no option [${option}] right now. Use a name exactly as listed.\n\n${await this.screenText(options)}`)
     option = name
     const args: ActionArgs = {}
     if (target.kind === 'element' && target.node.kind === 'input') {
@@ -589,11 +596,11 @@ export class Agent {
     this.events.status?.(args.text !== undefined ? 'writing' : 'acting')
     const result = await this.step(id, option, target, args, 'thinking')
     this.events.status?.('thinking')
-    return done(`${result.summary}\n\n${this.screenText()}`)
+    return done(`${result.summary}\n\n${await this.screenText()}`)
   }
 
-  private screenText(options?: OptionSet): string {
-    const screen = this.world.screen()
+  private async screenText(options?: OptionSet): Promise<string> {
+    const screen = await this.world.screen()
     const list = optionList(options ?? stepOptions(screen, this.world.appList(), this.config.thinkingElements))
     return `## Screen: ${screen.title} (${screen.visible ? 'in front of the user' : 'in the background'})\n${screen.markdown}\n\n## Options\n${list}`
   }
@@ -633,7 +640,7 @@ export class Agent {
     this.outcome = { outcome, detail }
     this.events.tick?.({
       id,
-      next: brief(d?.answers.next) ?? null,
+      next: d?.answers.next ? { ...brief(d.answers.next)!, probabilities: d.answers.next.probabilities } : null,
       step: step
         ? {
             ...brief(step)!,

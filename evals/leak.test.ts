@@ -4,7 +4,8 @@ import { describe, expect, it } from 'vitest'
 
 // Plain text extraction: importing scenarios.mts would pull in the whole app graph.
 const root = join(import.meta.dirname, '..')
-const utterances = [...readFileSync(join(import.meta.dirname, 'scenarios.mts'), 'utf8').matchAll(/utterances: \[([^\]]*)\]/g)].flatMap((m) =>
+const scenarioFiles = ['scenarios.mts', 'web/scenarios.mts'].map((f) => readFileSync(join(import.meta.dirname, f), 'utf8')).join('\n')
+const utterances = [...scenarioFiles.matchAll(/utterances: \[([^\]]*)\]/g)].flatMap((m) =>
   [...m[1]!.matchAll(/(['"])((?:(?!\1).)*)\1/g)].map((q) => q[2]!),
 )
 
@@ -18,6 +19,7 @@ const grams = (t: string, n: number) => {
 const sources = [
   ...readdirSync(join(root, 'packages/agent/src')).map((f) => join(root, 'packages/agent/src', f)),
   ...readdirSync(join(root, 'packages')).filter((d) => d.startsWith('app-') && d !== 'app-sdk').map((d) => join(root, 'packages', d, 'src/core.ts')),
+  ...readdirSync(join(root, 'packages/browser/src')).map((f) => join(root, 'packages/browser/src', f)),
 ]
 const prompts = words(sources.map((f) => readFileSync(f, 'utf8')).join('\n')).join(' ')
 

@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Settings · Lumen account</title>
+<style>
+  body { font: 14px -apple-system, system-ui, sans-serif; margin: 0 auto; max-width: 720px; padding: 24px; }
+  section { border: 1px solid #e5e5e5; border-radius: 10px; padding: 8px 20px; margin: 16px 0; }
+  .row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #f0f0f0; }
+  .row:last-child { border: 0; }
+  [role=switch] { width: 40px; height: 22px; border-radius: 11px; background: #ccc; cursor: pointer; }
+  [role=switch][aria-checked=true] { background: #2f7cf6; }
+  .danger { color: #fff; background: #d33; border: 0; padding: 8px 14px; border-radius: 6px; }
+  dialog { border: 1px solid #ccc; border-radius: 10px; }
+  .muted { color: #888; font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>Settings</h1>
+<main id="app"></main>
+<script>
+const seed = { darkMode: false, emailNotifications: true, pushNotifications: false, twoFactor: false, deleted: false, confirming: false }
+let state = JSON.parse(localStorage.getItem('state') || 'null') || structuredClone(seed)
+const save = () => localStorage.setItem('state', JSON.stringify(state))
+save()
+const sw = (key, id, label, hint) => `
+  <div class="row">
+    <div><div id="${id}">${label}</div><div class="muted">${hint}</div></div>
+    <div role="switch" tabindex="0" aria-labelledby="${id}" aria-checked="${state[key]}" data-key="${key}"></div>
+  </div>`
+function render() {
+  const app = document.getElementById('app')
+  if (state.deleted) { app.innerHTML = '<p>Your account has been deleted.</p>'; return }
+  app.innerHTML = `
+    <section aria-labelledby="h-appearance"><h2 id="h-appearance">Appearance</h2>
+      ${sw('darkMode', 'l-dark', 'Dark mode', 'Use a dark theme everywhere.')}
+    </section>
+    <section aria-labelledby="h-notif"><h2 id="h-notif">Notifications</h2>
+      ${sw('emailNotifications', 'l-email', 'Email notifications', 'News, tips and activity summaries by email.')}
+      ${sw('pushNotifications', 'l-push', 'Push notifications', 'Alerts on your phone.')}
+    </section>
+    <section aria-labelledby="h-sec"><h2 id="h-sec">Privacy &amp; security</h2>
+      ${sw('twoFactor', 'l-2fa', 'Two-factor authentication', 'Ask for a code when signing in on a new device.')}
+    </section>
+    <section aria-labelledby="h-danger"><h2 id="h-danger">Danger zone</h2>
+      <div class="row"><div>Permanently delete your account and all of its data.</div><button class="danger" data-delete>Delete account</button></div>
+    </section>
+    ${state.confirming ? `
+      <dialog open aria-labelledby="d-title">
+        <h2 id="d-title">Delete your account?</h2>
+        <p>This can't be undone.</p>
+        <button data-cancel>Cancel</button> <button class="danger" data-confirm>Delete account</button>
+      </dialog>` : ''}`
+}
+document.getElementById('app').onclick = (e) => {
+  const key = e.target.closest('[role=switch]')?.dataset.key
+  if (key) state[key] = !state[key]
+  if (e.target.closest('[data-delete]')) state.confirming = true
+  if (e.target.closest('[data-cancel]')) state.confirming = false
+  if (e.target.closest('[data-confirm]')) { state.deleted = true; state.confirming = false }
+  save(); render()
+}
+render()
+</script>
+</body>
+</html>

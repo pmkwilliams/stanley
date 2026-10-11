@@ -1,7 +1,7 @@
 import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Agent, createThinker, defaultConfig, findElement, SYSTEM_PROMPT, type AgentStatus, type Thinker } from '@stanley/agent'
-import { createJevClient, createMockJevClient } from '@stanley/jev'
+import { createJevClient, createMockJevClient, type DecisionClient } from '@stanley/jev'
 import { SAMPLE_RATE, Transcriber, writeWav } from '@stanley/stt'
 import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, Menu, session } from 'electron'
 import type { AppDebugEvent, ReplayRequest, Snapshot } from '../shared/ipc'
@@ -69,7 +69,27 @@ const debug = new DebugRecorder(sessionsDir, sessionName, (e) => debugWin?.webCo
 const appEvent = (event: AppDebugEvent) => debug.record({ source: 'app', event })
 appEvent({ type: 'session-start', session: sessionName, config: defaultConfig, systemPrompt: SYSTEM_PROMPT, mock })
 
-const jev = mock ? createMockJevClient() : createJevClient()
+const jev = mock ? offlineJev() : createJevClient()
+
+/**
+ * Offline stand-in for Jev: picks the step whose words overlap most with the conversation, takes
+ * it once the user has said something, and is done after one step per utterance.
+ */
+function offlineJev(): DecisionClient {
+  const base = createMockJevClient()
+  return {
+    choose: base.choose,
+    async decide(req) {
+      const result = await base.decide(req)
+      if (!req.questions.next) return result
+      const conversation = req.state.slice(req.state.indexOf('## Conversation'), req.state.indexOf('## Screen'))
+      const last = conversation.trim().split('\n').at(-1) ?? ''
+      const choice = last.startsWith('User:') ? 'act' : last.startsWith('User (still speaking)') ? 'listen' : 'done'
+      result.answers.next = { choice, probabilities: { [choice]: 1 }, confidence: 1 }
+      return result
+    },
+  }
+}
 const agent = new Agent({
   world: shell,
   jev,
