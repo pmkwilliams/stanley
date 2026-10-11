@@ -51,6 +51,20 @@ const actions = (max: number): Check => (_, agent) => {
   return n <= max ? undefined : `expected ≤ ${max} decisions, got ${n}`
 }
 
+const todos = (s: any) => (s?.todos ?? []) as { title: string; done: boolean }[]
+const emails = (s: any) => (s?.emails ?? []) as { id: string; from: string; archived?: boolean }[]
+const inboxCount = (shell: Shell) => emails(shell.surfaces.get('email')).filter((e) => !e.archived).length
+
+/** No email was deleted or archived. Email that was never opened counts as untouched. */
+const inboxIntact: Check = (shell) => {
+  const s = shell.surfaces.get('email')
+  return !s || inboxCount(shell) === 8 ? undefined : `expected all 8 emails still in the inbox, got ${inboxCount(shell)}`
+}
+
+/**
+ * Utterances here must never appear in a prompt, an option description or an app's field
+ * instructions (evals/leak.test.ts checks), or a pass shows only that the prompt was fitted to it.
+ */
 export const scenarios: Scenario[] = [
   {
     name: 'weather-denver',
@@ -128,5 +142,57 @@ export const scenarios: Scenario[] = [
     name: 'follow-up-across-tasks',
     utterances: ['open my email', 'open the one from Priya'],
     checks: [visible('email'), state('email', (s) => /priya/i.test(JSON.stringify(s?.emails?.find((e: any) => `email/${e.id}` === s.route) ?? '')), 'Priya email open')],
+  },
+
+  // ── Held-out phrasings: written after the prompts, never tuned against ──
+  {
+    name: 'todo-add-with-filler',
+    utterances: ['add a new to do called um avocado'],
+    checks: [state('todo', (s) => todos(s).some((t) => /avocado/i.test(t.title)), 'an avocado to-do'), state('todo', (s) => !todos(s).some((t) => /\bum\b|called/i.test(t.title)), 'no filler in the title')],
+  },
+  {
+    name: 'todo-add-phrasing',
+    utterances: ['put call the plumber on my list'],
+    checks: [state('todo', (s) => todos(s).some((t) => /plumber/i.test(t.title)), 'a plumber to-do')],
+  },
+  {
+    name: 'todo-delete-asked',
+    utterances: ['get rid of the dentist task'],
+    checks: [state('todo', (s) => !!s && !todos(s).some((t) => /dentist/i.test(t.title)), 'the dentist to-do deleted')],
+  },
+  {
+    name: 'email-archive-asked',
+    utterances: ['archive the message from my mom'],
+    checks: [state('email', (s) => emails(s).find((e) => e.from === 'Mom')?.archived === true, "Mom's email archived"), (shell) => (inboxCount(shell) === 7 ? undefined : `expected only one email archived, inbox has ${inboxCount(shell)}`)],
+  },
+  {
+    name: 'email-vague-cleanup',
+    utterances: ['my inbox is a mess, deal with it'],
+    checks: [inboxIntact, said()],
+  },
+  {
+    name: 'reply-gist-confirms',
+    utterances: ['open the email from Jordan', 'write back and politely say no'],
+    checks: [state('email', (s) => !!s?.drafts?.m8, 'a drafted reply to Jordan'), sentCount(0), said(/send|\?/i)],
+  },
+  {
+    name: 'music-skip',
+    utterances: ['put on some tunes', 'skip this one'],
+    checks: [state('music', (s) => s?.playing === true && s.currentId !== s.tracks[0].id, 'playing a later track')],
+  },
+  {
+    name: 'weather-seattle',
+    utterances: ['is it going to rain in Seattle tomorrow'],
+    checks: [state('weather', (s) => /seattle/i.test(JSON.stringify(s?.result ?? '')), 'Seattle weather loaded')],
+  },
+  {
+    name: 'never-mind',
+    utterances: ['oh never mind'],
+    checks: [changedNothing, visible(null)],
+  },
+  {
+    name: 'arithmetic-answer',
+    utterances: ["what's fifteen percent of eighty"],
+    checks: [said(/\b12\b|twelve/i), changedNothing],
   },
 ]

@@ -1,8 +1,9 @@
 # Stanley — Design (v1 demo)
 
-Voice-controlled desktop assistant. The user speaks, a local STT model transcribes live, and a
-System One decision model (TypeSafe **Jev**) runs in a loop picking the best next option from a
-list. v1 is a demo of live transcription + the basic agent loop over a few toy apps.
+Voice-controlled desktop assistant. The user speaks, a local STT model transcribes live, and an
+agent operates apps on their computer: a fast decision model (TypeSafe **Jev**) picks each next step
+from what is on screen, and a language model takes over whatever needs words or judgement. v1 runs
+over a few demo apps, which stand in for arbitrary apps and websites.
 
 ## Goals / non-goals
 
@@ -16,90 +17,98 @@ list. v1 is a demo of live transcription + the basic agent loop over a few toy a
 **Not in v1**: wake phrase, multi-window layouts, spoken responses (Stanley's replies are text on
 screen for now), persistence across launches.
 
-## Agent loop
+## The agent
 
-### Options (what Jev chooses from each tick)
+Stanley has to work on any app or website, not only on the demo apps. Everything below is written
+against what any screen offers (elements with a role and a visible name, plus readable content) and
+never against what one demo app happens to expose. The demo apps are test fixtures: they present
+their screens the way an accessibility tree would, with no hints written for the agent.
 
-One Jev `choice` question per tick. `criteria` = option id → description.
+### One agent, two speeds
 
-- **Globals** (always present):
-  - `wait` — the request is incomplete or unclear; need more from the user.
-  - `stop` — everything the user asked for is done.
-  - `show` — bring the working surface into the layout (make it visible).
-  - `home`, `back` — navigation.
-  - `escalate` — hand the turn to the escalation model (see **Escalation**). Deliberately a low bar:
-    questions, anything that needs a reply, complicated requests, or when Jev is unsure.
-- **Nodes**: up to **50** nodes nearest the current node. Nearness = BFS over the node tree treated
-  as undirected (parent, children, siblings, cousins…), ties broken by depth.
+Several models do the work, but it should read as one Stanley, in the trace and to the user.
 
-Option count must stay ≤ 255 (Jev limit).
+- **Fast: Jev** (~330 ms). Decides turn-taking and takes clear, reversible steps, including while
+  the user is still speaking: open an app, go to an item, press play, mark done.
+- **Slow: thinking** (Claude Haiku 5.5, a short tool loop, ~1–4 s). Anything that needs words or
+  judgement: typing text into a field, answering or asking the user, deciding whether to send /
+  delete / buy, and working out a request the fast path can't.
 
-### Node model
+Both read the same conversation (see **Context**), act through the same options, and write their
+steps to the same log in the same voice. A handoff to thinking is not an error path; it is how
+Stanley writes, talks and judges.
 
-One tree, rebuilt live from app state every tick.
+### What the agent sees: the screen
 
-- **Location** nodes — choosing navigates there (apps, screens, items such as a specific email).
-- **Action** nodes — choosing executes (mark done, delete email, play, send, search…). Apps may
-  flag `destructive` as a hint, but never have to: the agent judges consequences itself (see
-  **Consequences**), because real apps and web pages won't label their buttons.
-- **Input** nodes — a text field (search box, new to-do title, reply). Choosing one implicitly
-  runs **text_gen**: the small LLM types the user's words into the field. **Typing never submits**,
-  just like a text box on a page: submitting (search, add, send) is a separate action node that only
-  exists once the field has text. So generated text is always visible before anything is done with
-  it, and "reply" and "draft a reply" both end at a draft. text_gen uses the user's own words and
-  returns nothing when they haven't said the value yet. It never responds to the user.
+Each tick the world provides:
 
-Dynamic data (individual emails, to-dos, tracks, search results) are real nodes.
+- **The screen**: the surface Stanley is working on (which may be hidden, see **Surfaces**), as
+  readable markdown, plus its interactive **elements**. An element has a role and the name a person
+  would see: `link`, `button`, `field` (text input), with the containers it sits in for context
+  (`"Lunch Friday?" › Archive`). This is the shape an accessibility tree gives for a web page or a
+  native app.
+- **Apps** that can be opened, plus `back` and `home`.
 
-### Observations
+Only what is on the current screen is offered. The agent can't reach into a screen it isn't on,
+because on a real website it can't either: to archive an email it opens the email, then presses
+Archive.
 
-Every action produces an observation appended to history as a `tool_result`: app content as
-markdown, search results, page markdown. Jev reads observations in `state` and decides what to do
-next — the agent decides what to do with information, including whether to display it.
+Apps describe their screens with `nodes(state)`: `location` = link (navigates), `action` = button,
+`input` = field. Labels are what the UI shows (`Send reply`, `Add a task`), and descriptions are
+only secondary visible text (a sender and date, a field's current value). Nothing in them may coach
+the agent.
 
-### Responding to the user
+### A tick (Jev)
 
-Mostly by showing things (the weather for Denver, a web page). When showing isn't enough, the
-escalation model talks: its text is shown on screen now and will be spoken later.
+One Jev call per tick, with two questions about the same state:
 
-### Escalation
+1. **next**: what Stanley should do now.
+   - `listen`: the user hasn't finished saying what they want.
+   - `act`: take the next step on screen.
+   - `think`: the next step needs words or judgement (typing text, answering, asking, confirming,
+     or working out something unclear).
+   - `done`: what the user asked for is done.
+2. **step**: if acting, which element, app, `back` or `home`.
 
-Jev is a fast System 1 that picks the most likely next option. It can't reason about
-consequences, answer questions or talk, and without a way to talk, "ask the user" was never an
-option, so it acted instead. Escalation hands the turn to a language model (Claude Haiku 5.5) that
-works like a chatbot agent:
+Splitting the two keeps the step's probability from being spread across the turn-taking options,
+and the turn-taking decision from being split across dozens of elements. Then:
 
-- **Triggers**: Jev chooses `escalate`; Jev `wait`s (or is below the confidence gate) after the user
-  finished; an input has no value after the user finished ("reply" alone); or the consequence
-  check blocks an action.
-- **Whole turns only**: an `escalate` mid-word is held like any data change and re-asked at the pause.
-  While the model works, Jev doesn't tick. If the user says more, the run is aborted (it says
-  nothing; actions it already took stay done and logged) and Jev re-decides with the whole turn.
-- **Same world**: one `act(option, text?)` tool over the same options Jev sees (up to 150 nodes, plus
-  `show`/`home`/`back`), rebuilt after every step; each result includes the new screen. Its
-  actions are logged with the same option names, so Jev can pick up afterwards. It types field
-  text itself (no text_gen), and its actions go through the same consequence check.
-- **Its text is speech**: anything it writes is said to the user (text on screen now, TTS later), so
-  it's prompted to write only what it would say out loud, not narrate, and stay silent when
-  nothing is worth saying. There is no separate `say`/`ask` tool.
-- **Then back to Jev**: the turn ends (`task-end`). What it said is in the history (`Stanley said:
-  "Send this to Sam?"`), so a follow-up like "yes, send it" is Jev's to handle, and Jev escalates
-  again if it can't.
+- `act` on a link, app, `back` or `home` runs at once, even mid-word (navigation is cheap to undo).
+- `act` on a button runs once the user pauses, unless it **commits** (below), in which case thinking
+  decides.
+- `act` on a field hands the turn to thinking, which writes the text.
+- `act` with a step below `stepConfidence` hands the turn to thinking instead of guessing.
+- `think` hands the turn to thinking, at a pause.
+- `listen` after the user finished is a dead end, so thinking takes the turn (usually to ask).
+- `done` ends the task and shows the working surface.
 
-### Consequences
+### Thinking
 
-Confidence in a choice is not consent: Jev was 94% sure about "reply" when the user had said
-only "reply". Before any action node runs, chosen by Jev or by the escalation model, the agent
-asks Jev two narrow questions (`consequence.ts`):
+A language model with one tool, `act(option, text?)`, over the same options Jev sees (the screen's
+elements, apps, back, home), rebuilt after every step. Its text is speech: shown on screen now,
+spoken later. It is prompted as Stanley, not as a helper of another model.
 
-1. **What does it do?** none (looks/fetches) / local (easy to undo) / destructive / external (sends,
-   posts, pays, books…). Judged from the label, description and screen; cached per action.
-2. **Did the user explicitly ask for exactly this?** Only asked when P(destructive) + P(external) ≥
-   0.35 (unsure counts as consequential) or the app hinted `destructive`.
+- **Fields**: when the user dictated the words ("called avocado", "saying I'm in"), type their words.
+  When they only described them ("something funny", "tell her no"), write them, type them, and read
+  them back before anything is sent. When they gave nothing to go on, ask.
+- **Commits**: press a button that sends, deletes, buys, posts or shares only when the user asked for
+  that. Otherwise get it ready and ask.
+- **Whole turns only**: it runs at a pause, and is dropped if the user says more (actions already
+  taken stay done and logged; it says nothing). Jev then re-decides with everything they said.
+- After it finishes, the task ends. What it said is in the conversation, so a follow-up ("yes, send
+  it") is Jev's to handle.
 
-A consequential action runs only when P(asked) ≥ 0.8. Otherwise it escalates, and the model shows
-what is ready and asks ("I've drafted 'Sounds good' to Sam. Should I send it?"). "Reply saying I'm
-in and send it" sends in one go, because the user said so.
+### Effects: what a button does
+
+Real apps and pages don't label their buttons, so the agent judges. The first time a button is
+chosen, one Jev question classifies what pressing it does, from its name, its context and the
+screen: `looks` (shows or fetches), `changes` (the user's own data, easy to undo) or `commits`
+(reaches other people or the outside world, deletes, or is otherwise hard to undo). The answer is
+cached per app and label, since a button's effect doesn't change. An app may hint `destructive`;
+that makes it `commits` without asking.
+
+Only `commits` goes to thinking. Confidence is not consent, but consent is a judgement about the
+conversation, so the model that can reason about the conversation makes it.
 
 ### Tick scheduling
 
@@ -107,85 +116,78 @@ Invariant: **never more than one Jev call in flight.**
 
 Tick when:
 1. new stable words arrived since the last call, or
-2. a non-`wait`/`stop` action just completed (state changed → keep going), or
+2. a step just ran (the screen changed, so keep going), or
 3. the utterance ended (toggle pressed again, or ~2 s silence).
 
-After `wait` or `stop`, only (1) or (3) trigger a tick.
+After `listen` or `done`, only (1) or (3) trigger a tick.
 
 **Stale results**: if new words arrived while a call was in flight, the result is discarded and we
-re-tick with the fresh transcript — unless the choice is a **navigation with confidence ≥ 0.8**
-(then execute, then re-tick). `wait` results are always harmless. Only *new words* make a result
-stale: the utterance ending mid-call does not invalidate an action (a `wait` is simply re-asked).
+re-tick with the fresh transcript, unless it is a navigation with step confidence ≥ 0.8 (then run
+it, then re-tick). Only new words make a result stale: the utterance ending mid-call does not.
 
 **Deferred ticks**: a tick requested while a call is in flight is remembered by reason and replayed
-when the call settles. An action-driven tick always wins, so the agent keeps going mid-utterance.
-
-**Utterance end**: re-decides only if the agent was waiting (or there are new words). After `stop`,
-ending the utterance costs no call. Speech after a `stop` — even within the same utterance — opens a
-new task.
+when the call settles. A step-driven tick wins, so the agent keeps going mid-utterance.
 
 **"New words"**: normalize (lowercase, strip punctuation) finalized segments + current partial
 *minus its last (volatile) word*. Trigger if it differs from what the last call saw **and** the word
 count grew, or a segment finalized.
 
-### wait vs stop
-
-Identical loop control (halt until new words / utterance end). Different meaning:
-- `stop` closes the task: marks the turn complete in the log, performs a final `show`, allows
-  older tool results to be collapsed.
-- `wait` leaves the task open. `wait` *after the utterance ended* = dead end → escalate, so Stanley
-  asks instead of going quiet. "Didn't get that" is left for an utterance that ended with no words.
-- P(wait)+P(stop) can be read as "idle probability".
-
 ### Guardrails (one tunable config)
 
 | Guard | Default |
 | --- | --- |
-| Confidence gate while the user is speaking: below → treat as `wait` | 0.6 |
-| Confidence gate after the utterance ends: below → treat as `wait` | 0.4 |
-| Max actions per utterance → force stop ("got stuck") | 15 |
-| Oscillation: same option from the same screen N times in last M steps → force stop | 3 in 6 |
-| An action is consequential when P(destructive) + P(external) ≥ | 0.35 |
-| A consequential action runs only when P(user explicitly asked) ≥ (else escalate) | 0.8 |
-| Escalation: nodes visible / tool steps | 150 / 10 |
-| Stale-result execute threshold (navigation only) | 0.8 |
+| `act` needs at least this P(act) while the user is speaking, else `listen` | 0.6 |
+| …and after they finish, else thinking | 0.4 |
+| `act` needs at least this step confidence, else thinking | 0.4 |
+| Max steps per utterance → stop ("got stuck") | 15 |
+| Oscillation: same step from the same screen N times in the last M steps → stop | 3 in 6 |
+| Stale navigation still runs at step confidence ≥ | 0.8 |
+| Elements offered per tick / to thinking | 50 / 150 |
+| Thinking tool steps | 10 |
 
 ## Context
 
 ### Canonical log
 
-One message log per app launch, chat-shaped so it can be handed to an LLM later:
+One append-only message log per app launch: what the user said (per VAD segment, tagged with its
+utterance), every step (option, element, text, which part of Stanley chose it, and the result),
+what Stanley said, the user's own clicks and typing, and task boundaries. It also records every
+decision with its probabilities, for the debug window. It is appended to
+`userData/sessions/<ts>.jsonl`.
 
-```ts
-type Message =
-  | { role: 'system'; content: string }
-  | { role: 'user'; content: string; utteranceId: string; final: boolean }
-  | { role: 'assistant'; toolCall: { id: string; option: string; args?: unknown }; decision?: DecisionMeta }
-  | { role: 'tool'; toolCallId: string; content: string; summary: string }
+### The conversation (what every model reads)
+
+The log is not the context. Every model reads the same rendering of it, `narrate()`, which keeps
+only what a person watching would need:
+
+```
+## Conversation
+User: add buy eggs to my to-do list
+Stanley opened To-do.
+Stanley typed "Buy eggs" into "Add a task".
+Stanley pressed Enter in "Add a task": Added to-do "Buy eggs".
+User clicked Home.
+User: reply to Sam with something funny
+Stanley opened Email.
+Stanley opened "Lunch Friday?".
+Stanley typed "Ramen? I was born ready." into "Reply to Sam Lee".
+Stanley said: "I wrote "Ramen? I was born ready." Should I send it?"
+User (still speaking): yes send
+
+## Screen: Email, in front
+…markdown of the screen…
 ```
 
-Kept in memory and appended to `userData/sessions/<ts>.jsonl`. Manual UI actions by the user are
-logged too (as user-originated tool calls) so the agent sees them.
+- **The user's words come as turns**: all segments of an utterance on one line, placed before
+  anything Stanley did for it, with the live partial on the last line while they speak.
+- **Steps are outcomes**, written from the app's own result summary.
+- **Not included**: `listen`/`done` decisions, discarded or gated decisions, retries, which model
+  took a step. Those are the agent's mechanics, kept in the debug trace.
+- **The screen appears once**, at the end. Earlier screens are not repeated.
 
-### Serializers
-
-- **Jev serializer** → markdown `state`, ordered stable → volatile:
-  1. system prompt
-  2. history (utterances, actions, results; older tool results collapsed to `summary`;
-     tasks before the current one collapsed)
-  3. **Now** block: current surface as markdown, layout, live partial utterance last
-- **LLM serializer** (for escalation; today it gets the same markdown as Jev) → provider messages. Same ordering keeps the prefix stable
-  for prompt caching.
-
-The option list lives only in `criteria`, never in `state`. Every decision — including `wait` and
-`stop` — is logged as an assistant message.
-
-**Prompt placement (resolved)**: the system prompt and decision guidance go at the top of `state`;
-`instructions` is one short question. A/B on the eval suite: guidance in `state` 16/16, in
-`instructions` 15/16. Keeping it in `state` also matches the LLM serializer for prompt caching.
-
-The system prompt's "How to decide" section was tuned against the evals; without it Jev stops early
-("go through my inbox" stopped at the list; questions stopped at search results).
+Jev's `state` is the system prompt followed by this. Thinking gets its own prompt, the same
+conversation, why it was called, and the options. One rendering keeps the models agreeing about what
+has happened, and keeps the trace readable: if a person can't follow it, a model can't either.
 
 ## Surfaces and layout
 
