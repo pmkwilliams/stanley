@@ -54,6 +54,8 @@ export async function runScenario(scenario: Scenario, speak: (agent: Agent, utte
     jev: countedJev(createJevClient()),
     textGen: countedTextGen(createTextGen()),
     escalator: countedEscalator(createEscalator()),
+    // `--no-check` lets every action through, to see how the decision loop does on its own.
+    ...(process.argv.includes('--no-check') && { check: { check: async () => ({ effect: 'none', effects: {}, consequential: false, allowed: true, cached: false }) } }),
     events: {
       tick: (t) => ticks.push(t),
       said: (text) => said.push(text),
@@ -79,7 +81,8 @@ export async function runScenario(scenario: Scenario, speak: (agent: Agent, utte
 export function report(label: string, result: Awaited<ReturnType<typeof runScenario>>) {
   console.log(`\n${result.ok ? '✓' : '✗'} ${label}`)
   for (const t of result.ticks) {
-    console.log(`   ${t.outcome.padEnd(15)} ${t.choice}  c=${t.confidence.toFixed(2)}${t.detail ? ` (${t.detail})` : ''}`)
+    const runnersUp = t.top.filter((o) => o.option !== t.choice).slice(0, 2).map((o) => `${o.option} ${o.p.toFixed(2)}`).join(', ')
+    console.log(`   ${t.outcome.padEnd(15)} ${t.choice}  c=${t.confidence.toFixed(2)}${runnersUp ? `  | ${runnersUp}` : ''}${t.detail ? ` (${t.detail})` : ''}`)
   }
   for (const text of result.said) console.log(`   said: "${text}"`)
   for (const f of result.failures) console.log(`   ! ${f}`)

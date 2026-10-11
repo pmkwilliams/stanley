@@ -163,7 +163,7 @@ describe('Agent loop', () => {
     agent.utteranceEnd() // the pause outlasts the silence timeout
     await settle()
     expect(performed).toEqual(['show'])
-    expect(reasons[0]).toContain("hasn't said what to type")
+    expect(reasons[0]).toContain("hasn't dictated what to type")
     agent.utteranceStart()
     agent.segment('get eggs')
     await settle()

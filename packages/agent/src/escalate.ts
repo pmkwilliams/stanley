@@ -31,7 +31,8 @@ Everything you write as text is spoken to the user and shown on screen. So:
 How to act:
 - Typing into a field never submits it; submitting is a separate option.
 - Only send, post, submit, pay, buy, book, delete, or do anything else that reaches other people or can't be undone, when the user explicitly asked for it. Otherwise prepare it (for example, write the draft), show it, and ask whether to go ahead.
-- When typing what the user dictated, keep their words and don't add content they didn't ask for. If they haven't said what to write, ask.
+- When typing what the user dictated, keep their words and don't add content they didn't ask for.
+- When they only described what to write (a tone, an idea, a gist), write it yourself, type it in, then read it back and ask whether to send it. If they gave nothing to go on, ask what to write.
 - Use "show" when the screen holds what the user asked for, so they can see it.
 - If the request is unclear, ask one short question instead of guessing.`
 

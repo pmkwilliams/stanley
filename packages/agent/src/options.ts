@@ -1,8 +1,8 @@
 import type { AgentNode } from '@stanley/app-sdk'
 
 export const GLOBALS = {
-  wait: 'The request is incomplete or unclear, or the user is mid-thought. Need more from the user before acting.',
-  stop: 'Everything the user asked for is done. Nothing left to do.',
+  wait: 'The user is still saying the request: it is incomplete, or they are mid-thought. Keep listening before acting.',
+  stop: 'Everything the user asked for is done, or the next step needs more from the user: what to write, which one, or a go-ahead to send, delete or buy.',
   show: 'Bring the screen the agent is working on to the front so the user can see it.',
   home: 'Go to the home screen with the list of apps.',
   back: 'Go back to the previous screen.',

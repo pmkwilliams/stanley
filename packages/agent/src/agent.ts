@@ -87,10 +87,11 @@ How to decide:
 - Carry the request all the way through. "Go through my inbox" means open the inbox and then open the first message. "Check X" means open X itself, not just the list it is in.
 - For a question, find the answer: search, then open the most relevant result to read it. Stop once the screen shows the answer.
 - Work in the background. Use "show" when the screen holds what the user asked for, not for intermediate steps.
-- Choose "wait" while the user is still speaking and the request is not yet clear, or when nothing sensible can be done yet.
+- Choose "wait" while the user is still speaking and the request is not yet clear.
 - Choose "escalate" when the user asked a question, needs an answer or a reply, the request is complicated, or you are unsure what to do. A smarter assistant takes over the turn and can talk to the user.
+- Typing a value is only for words the user dictated. When they only described what to write (a tone, an idea, a gist) and the words are left to Stanley, choose "escalate".
 - Typing into a field never submits it. Send, post, submit, buy or delete only when the user explicitly asked for it.
-- Choose "stop" only when the whole request is done.`
+- Choose "stop" when the whole request is done, or when the next step needs more from the user than they have said.`
 
 const INSTRUCTIONS = 'Which single option best moves toward what the user wants right now?'
 
@@ -426,7 +427,7 @@ export class Agent {
           this.log.push({ role: 'event', kind: 'gated', detail: `no value for ${choice}` })
           this.report(id, r, 'gated')
           // Finished without saying it: ask for it rather than go quiet.
-          if (decidedEnded) return this.escalate(id, `The user seems to want "${choice}" but hasn't said what to type.`, r)
+          if (decidedEnded) return this.escalate(id, `The user seems to want "${choice}" but hasn't dictated what to type. If they described it, write it; if they gave nothing to go on, ask.`, r)
           this.halt('idle')
           return 'wait'
         }

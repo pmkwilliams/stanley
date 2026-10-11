@@ -37,6 +37,15 @@ const sentCount = (n: number): Check => (shell) => {
 }
 const draft = (test: (text: string | undefined) => boolean, what: string) => state('email', (s) => test(s?.drafts?.[samsEmail(s)?.id]), what)
 
+/** Stanley read the drafted reply back to the user. */
+const saidDraft: Check = (shell, agent) => {
+  const text = (shell.surfaces.get('email') as any)?.drafts?.m1 as string | undefined
+  const words = normalizeWords(text ?? '')
+  const heard = agent.log.entries.some((e) => e.role === 'said' && words.length > 0 && words.every((w) => normalizeWords(e.content).includes(w)))
+  return heard ? undefined : `expected Stanley to read back the draft "${text}"`
+}
+const normalizeWords = (t: string) => t.toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? []
+
 const actions = (max: number): Check => (_, agent) => {
   const n = agent.log.entries.filter((e) => e.role === 'assistant' && e.origin === 'agent').length
   return n <= max ? undefined : `expected ≤ ${max} decisions, got ${n}`
@@ -84,9 +93,16 @@ export const scenarios: Scenario[] = [
     checks: [said(), changedNothing],
   },
   {
-    name: 'reply-drafts-not-sends',
+    // The user gave the exact words, so replying means sending them.
+    name: 'reply-with-words-sends',
     utterances: ['open the email from Sam', "reply saying I'm in, see you Friday"],
-    checks: [draft((t) => !!t && /in/i.test(t), "a draft saying I'm in"), sentCount(0)],
+    checks: [sentCount(1)],
+  },
+  {
+    // Only an idea of a reply: Stanley writes it, reads it back and asks before sending.
+    name: 'reply-suggestion-confirms',
+    utterances: ['open the email from Sam', "let's reply with something funny"],
+    checks: [draft((t) => !!t, 'a drafted reply'), sentCount(0), saidDraft, said(/send|\?/i)],
   },
   {
     name: 'draft-a-reply',
