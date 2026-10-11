@@ -39,28 +39,20 @@ export const musicApp = defineApp<MusicState>({
   current: () => 'player',
 
   nodes(s) {
-    const now = s.tracks.find((t) => t.id === s.currentId)
+    // As on screen: the transport buttons (named by their aria-labels), then the track list.
     const tracks: AgentNode[] = s.tracks.map((t) => ({
       id: `track/${t.id}`,
       kind: 'action',
-      label: `play "${t.title}" by ${t.artist}`,
-      description: t.id === s.currentId ? (s.playing ? 'playing now' : 'current track, paused') : `${t.durationSec}s track`,
+      label: `${t.title} — ${t.artist}`,
+      description: t.id === s.currentId ? (s.playing ? 'playing' : 'paused') : undefined,
     }))
     return [
-      {
-        id: 'player',
-        kind: 'location',
-        label: 'music player',
-        description: now ? `${s.playing ? 'playing' : 'paused'}: ${name(now)}` : 'nothing selected',
-        children: [
-          { id: 'toggle', kind: 'action', label: s.playing ? 'pause music' : 'play music', description: now ? name(now) : undefined },
-          { id: 'next', kind: 'action', label: 'next track', description: 'skip to the following song' },
-          { id: 'previous', kind: 'action', label: 'previous track', description: 'go back to the prior song' },
-          { id: 'volume-up', kind: 'action', label: 'volume up', description: `louder, currently ${pct(s.volume)}` },
-          { id: 'volume-down', kind: 'action', label: 'volume down', description: `quieter, currently ${pct(s.volume)}` },
-          ...tracks,
-        ],
-      },
+      { id: 'previous', kind: 'action', label: 'Previous' },
+      { id: 'toggle', kind: 'action', label: s.playing ? 'Pause' : 'Play' },
+      { id: 'next', kind: 'action', label: 'Next' },
+      { id: 'volume-down', kind: 'action', label: 'Volume down', description: pct(s.volume) },
+      { id: 'volume-up', kind: 'action', label: 'Volume up', description: pct(s.volume) },
+      ...tracks,
     ]
   },
 

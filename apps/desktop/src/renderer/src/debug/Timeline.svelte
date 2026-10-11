@@ -94,9 +94,12 @@
           <span class="who">#{t.id}</span>
           <span class="reason">{t.start.reason}</span>
           <span class="choice">{tickLabel(t)}</span>
-          {#if t.decision}<span class="muted">{t.decision.result.confidence.toFixed(2)} · {ms(t.decision.result.latencyMs)}</span>{/if}
+          {#if t.decision}<span class="muted">{t.decision.result.answers.next?.confidence.toFixed(2)} · {ms(t.decision.result.latencyMs)}</span>{/if}
         </button>
-        {#if t.act?.summary}<div class="sub">→ {t.act.summary}</div>{/if}
+        {#each t.acts as act, i (i)}{#if act.summary}<div class="sub">→ {act.summary}</div>{/if}{/each}
+        {#if t.write?.say}<div class="sub">said "{t.write.say}"</div>{/if}
+        {#if t.confirm?.say}<div class="sub">said "{t.confirm.say}"</div>{/if}
+        {#if t.thinking?.end?.text}<div class="sub">said "{t.thinking.end.text}"</div>{/if}
         {#if t.end?.outcome === 'error'}<div class="sub bad">{t.end.detail}</div>{/if}
       </li>
     {:else}

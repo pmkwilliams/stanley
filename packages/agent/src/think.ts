@@ -1,0 +1,154 @@
+import { generateText, jsonSchema, Output, stepCountIs, tool } from 'ai'
+
+export interface ThinkRequest {
+  /** The conversation and the screen, as every model reads it. */
+  context: string
+  /** Why this turn needs thinking. */
+  reason: string
+  /** The options available right now, one per line. */
+  options: string
+  /** Runs one option and returns what the model should see next: the result, the screen and the new options. */
+  act(option: string, text?: string): Promise<string>
+  maxSteps: number
+  signal: AbortSignal
+}
+
+export interface WriteRequest {
+  context: string
+  /** The field's option name, e.g. `"Lunch Friday?" › Reply to Sam Lee`. */
+  field: string
+  signal: AbortSignal
+}
+
+/**
+ * What goes in a field. `user`: the user's words, or text that follows directly from what they
+ * asked (a search query, a city, a title). `stanley`: words Stanley writes in the user's name that
+ * they haven't heard (a message, a reply, a post). `missing`: nothing to go on yet.
+ */
+export interface Writing {
+  source: 'user' | 'stanley' | 'missing'
+  text: string
+  /** What to say to the user: '' for nothing. */
+  say: string
+}
+
+export interface ConfirmRequest {
+  context: string
+  /** The button's option name. */
+  option: string
+  signal: AbortSignal
+}
+
+/** Whether to press a button that commits something, now. When not, what to say instead. */
+export interface Confirmation {
+  press: boolean
+  say: string
+}
+
+export interface Thinker {
+  /** A turn that needs judgement, with tools. Returns what to say to the user: '' when there is nothing worth saying. */
+  run(req: ThinkRequest): Promise<{ text: string }>
+  /** One field the fast part has already chosen: what to type, and anything to say. One call, no tools. */
+  write(req: WriteRequest): Promise<Writing>
+  /** A button the fast part chose that sends, deletes or commits: press it now, or say why not. One call, no tools. */
+  confirm(req: ConfirmRequest): Promise<Confirmation>
+}
+
+export const THINKING_PROMPT = `# Stanley
+You are Stanley, a voice assistant that operates apps and websites on the user's computer. Quick steps are taken by a fast part of you; you take over whatever needs words or judgement. Everything either part did is in the conversation.
+
+You act through the \`act\` tool, which runs one of the listed options: open an app, open a link, press a button, type into a field, go back or go home. Each result tells you what is on screen now and which options come next.
+
+Everything you write as text is spoken to the user and shown on screen. So:
+- Write only what you would say out loud: short and natural, usually one sentence, no markdown or lists.
+- Don't narrate your steps. Take them.
+- Say nothing when there is nothing worth saying. Don't confirm what the screen already shows.
+
+How to act:
+- Typing into a field never submits it. Submitting is pressing Enter or a button.
+- When the user dictated the words for a field, type exactly their words, tidied (no filler words, fixed capitals and punctuation). When they only described what to write (a tone, an idea, a gist), write it yourself. When they gave nothing to go on, ask what to write.
+- Don't decide anything for the user. If what to write depends on a choice they haven't made (yes or no, which day, how much), ask them.
+- Only press something that sends, posts, pays, buys, books, shares, archives, deletes or can't be undone when the user asked for that. Otherwise get it ready and ask. Asking to reply, message, email or post with words they gave is asking to send them; asking to draft or write something is not.
+- Never send words you wrote yourself before the user has heard them: read them back word for word and ask whether to send.
+- Answer questions from what is on screen, by looking it up, or from what you know, whichever is quickest to be right.
+- If the request is unclear, ask one short question instead of guessing.
+- Do what the user asked for, then stop.`
+
+/** Claude through Vercel AI Gateway, driving the same options as the fast path. */
+export function createThinker(opts: { model?: string } = {}): Thinker {
+  const model = opts.model ?? 'anthropic/claude-haiku-5.5'
+  return {
+    async run({ context, reason, options, act, maxSteps, signal }) {
+      const result = await generateText({
+        model,
+        abortSignal: signal,
+        system: THINKING_PROMPT,
+        prompt: `${context}\n\n## Why you are needed\n${reason}\n\n## Options\n${options}`,
+        tools: {
+          act: tool({
+            description: 'Run one of the listed options. Pass `text` for options that type into a field.',
+            inputSchema: jsonSchema<{ option: string; text?: string }>({
+              type: 'object',
+              properties: {
+                option: { type: 'string', description: 'The option name: the text inside the brackets, exactly as listed.' },
+                text: { type: 'string', description: 'What to type, for fields.' },
+              },
+              required: ['option'],
+              additionalProperties: false,
+            }),
+            execute: ({ option, text }) => act(option, text),
+          }),
+        },
+        stopWhen: stepCountIs(maxSteps),
+      })
+      return { text: result.steps.map((s) => s.text.trim()).filter(Boolean).join(' ') }
+    },
+
+    async write({ context, field, signal }) {
+      const { output } = await generateText({
+        model,
+        abortSignal: signal,
+        system: THINKING_PROMPT,
+        prompt: `${context}\n\n## Your part\nThe next step is typing into [${field}]. Decide what goes in it. Another part of you presses Enter or a button afterwards, unless you say something to the user.`,
+        output: Output.object({ schema: jsonSchema<Writing>({
+          type: 'object',
+          properties: {
+            source: {
+              type: 'string',
+              enum: ['user', 'stanley', 'missing'],
+              description:
+                "user: the user said these words, or the text follows directly from what they asked (a search query, a city, a title). stanley: you chose the words, because the user gave only a description, a tone or a gist. missing: nothing to go on yet, or what to write depends on a choice the user hasn't made.",
+            },
+            text: { type: 'string', description: "What to type. Empty when missing. The user's own words are tidied, not changed." },
+            say: {
+              type: 'string',
+              description: 'What to say to the user, usually nothing. When missing, ask what to write, or nothing if they are still mid-sentence.',
+            },
+          },
+          required: ['source', 'text', 'say'],
+          additionalProperties: false,
+        }) }),
+      })
+      return output
+    },
+
+    async confirm({ context, option, signal }) {
+      const { output } = await generateText({
+        model,
+        abortSignal: signal,
+        system: THINKING_PROMPT,
+        prompt: `${context}\n\n## Your part\nThe next step looks like pressing [${option}], which sends, deletes or otherwise commits something. Press it now only if the user asked for that, and has heard any words you wrote yourself. Otherwise say what is ready and ask.`,
+        output: Output.object({ schema: jsonSchema<Confirmation>({
+          type: 'object',
+          properties: {
+            press: { type: 'boolean', description: 'Press it now.' },
+            say: { type: 'string', description: 'When not pressing, what to say to the user: what is ready, and a short question. Otherwise empty.' },
+          },
+          required: ['press', 'say'],
+          additionalProperties: false,
+        }) }),
+      })
+      return output
+    },
+  }
+}

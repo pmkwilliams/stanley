@@ -1,4 +1,4 @@
-import type { Agent } from '@stanley/agent'
+import { targetOf, type Agent } from '@stanley/agent'
 import type { Shell } from '../apps/desktop/src/main/shell'
 
 /** Returns a failure message, or nothing when the check passes. */
@@ -21,10 +21,18 @@ const route = (appId: string, pattern: RegExp): Check => (shell) => {
 const state = (appId: string, test: (s: any) => boolean, what: string): Check => (shell) =>
   test(shell.surfaces.get(appId)) ? undefined : `expected ${what}`
 
-/** Nothing in any app changed: only waits, an escalation, or something said. */
+const stanleySteps = (agent: Agent) => agent.log.entries.flatMap((e) => (e.role === 'step' && e.by !== 'user' ? [e] : []))
+
+/** Stanley took no steps at all: it only listened, or said something. */
 const changedNothing: Check = (_, agent) => {
-  const acted = agent.log.entries.filter((e) => e.role === 'assistant' && e.origin === 'agent' && !['wait', 'escalate', 'stop'].includes(e.toolCall.option))
-  return acted.length === 0 ? undefined : `expected no actions, got ${acted.map((e) => (e.role === 'assistant' ? e.toolCall.option : '')).join(', ')}`
+  const steps = stanleySteps(agent)
+  return steps.length === 0 ? undefined : `expected no steps, got ${steps.map((e) => targetOf(e.target)).join(', ')}`
+}
+
+/** Passes when any of the checks passes. */
+const either = (...checks: Check[]): Check => (shell, agent) => {
+  const failures = checks.map((c) => c(shell, agent))
+  return failures.some((f) => !f) ? undefined : failures.join(' / ')
 }
 
 const said = (pattern = /\S/): Check => (_, agent) =>
@@ -47,8 +55,8 @@ const saidDraft: Check = (shell, agent) => {
 const normalizeWords = (t: string) => t.toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? []
 
 const actions = (max: number): Check => (_, agent) => {
-  const n = agent.log.entries.filter((e) => e.role === 'assistant' && e.origin === 'agent').length
-  return n <= max ? undefined : `expected ≤ ${max} decisions, got ${n}`
+  const n = stanleySteps(agent).length
+  return n <= max ? undefined : `expected ≤ ${max} steps, got ${n}`
 }
 
 const todos = (s: any) => (s?.todos ?? []) as { title: string; done: boolean }[]
@@ -92,9 +100,10 @@ export const scenarios: Scenario[] = [
     checks: [state('music', (s) => s?.playing === true, 'music playing')],
   },
   {
+    // The user gets the answer: read from a page Stanley opened, or said.
     name: 'pm-research',
     utterances: ['who is the prime minister of the UK'],
-    checks: [visible('web'), route('web', /^page\//)],
+    checks: [either(route('web', /^page\//), said(/\w{3,}/))],
   },
   {
     name: 'mid-thought-wait',

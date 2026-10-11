@@ -5,32 +5,41 @@
  * main process, so the agent can drive a surface that is not on screen.
  */
 
-export type NodeKind = 'location' | 'action' | 'input'
+/**
+ * How an element behaves. `location` navigates (a link), `action` does something (a button),
+ * `input` is a text field, and `group` is a container that only gives its children context.
+ */
+export type NodeKind = 'location' | 'action' | 'input' | 'group'
 
+/**
+ * One element of what is on screen, as an accessibility tree would describe it. Apps must describe
+ * their screens the way any app or web page would be seen: the role and the name a person sees,
+ * never hints written for the agent. The agent has to work the same way on screens it has never seen.
+ */
 export interface AgentNode {
-  /** Stable within the app, e.g. `inbox/msg-3/archive`. The shell prefixes it with the surface id. */
+  /** Stable within the app, e.g. `email/m3/archive`. The shell prefixes it with the surface id. */
   id: string
   kind: NodeKind
-  /** Short human-readable name. Jev sees this as the option name, so make it distinctive. */
+  /** The visible name: button text, aria-label, a field's label or placeholder, a row's text. */
   label: string
-  /** Extra text that helps Jev tell this option apart from its neighbours. */
+  /** What a screen reader calls it: link, button, checkbox, tab, field, row… Defaults from `kind`. */
+  role?: string
+  /** Secondary visible text or state: a sender and date, "unread", "checked". */
   description?: string
+  /** Input nodes: the text currently in the field. */
+  value?: string
+  /** Elements inside this one, on the same screen. */
   children?: AgentNode[]
   /**
-   * Optional hint that an action deletes or overwrites data. The agent judges every action's
-   * consequences itself, so apps (and web pages) never have to mark them; a hint only makes it stricter.
+   * Optional hint that pressing this deletes data or reaches other people. The agent judges every
+   * button's effect itself, because real apps and web pages never label them; a hint only makes it
+   * stricter. The demo apps deliberately leave it unset.
    */
   destructive?: boolean
-  /**
-   * Input nodes only: what goes in the field. An input node only types into its field, like a text
-   * box on a page; it never submits. Submitting (search, add, send) is a separate action node, so
-   * generated text is always visible before anything is done with it.
-   */
-  input?: { instructions: string; placeholder?: string }
 }
 
 export interface ActionArgs {
-  /** Filled by text_gen (agent) or typed by the user (manual input) for input nodes. */
+  /** For input nodes: the text to put in the field. */
   text?: string
 }
 
@@ -52,12 +61,12 @@ export interface AppModule<S = unknown> {
   title: string
   description: string
   init(ctx: AppContext): S | Promise<S>
-  /** Children of the app's root node, rebuilt from state every tick. */
+  /** The interactive elements on the app's current screen, rebuilt from state every tick. Only what is visible. */
   nodes(state: S): AgentNode[]
-  /** Id of the node the app is currently "at". */
+  /** Id of the screen the app is on, e.g. `inbox` or `email/m3`. */
   current(state: S): string
   perform(state: S, nodeId: string, args: ActionArgs, ctx: AppContext): Promise<ActionResult<S>>
-  /** What the user would see, as markdown. Goes into Jev's "Now" block. */
+  /** What the user would read on the current screen, as markdown. */
   toMarkdown(state: S): string
 }
 

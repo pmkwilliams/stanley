@@ -10,11 +10,15 @@ export interface TickView {
   start: Of<'tick-start'>
   decision?: Of<'decision'>
   gates: Of<'gate'>[]
-  fill?: Of<'fill'>
-  act?: Of<'act'>
-  /** Consequence checks, by Jev's choice or the escalation model's. */
-  checks: Of<'check'>[]
-  escalation?: { start: Of<'escalate'>; steps: Of<'escalation-step'>[]; end?: Of<'escalation-end'> }
+  /** What a button does, judged before pressing it. */
+  effects: Of<'effect'>[]
+  /** Thinking deciding what goes in a field the fast part chose. */
+  write?: Of<'write'>
+  /** Thinking deciding whether to press a button that commits. */
+  confirm?: Of<'confirm'>
+  /** Steps taken, by the fast part or by thinking. */
+  acts: Of<'act'>[]
+  thinking?: { start: Of<'think-start'>; steps: Of<'think-step'>[]; end?: Of<'think-end'> }
   end?: Of<'tick-end'>
 }
 
@@ -47,7 +51,7 @@ export interface DebugModel {
 export function buildModel(events: DebugEvent[]): DebugModel {
   const model: DebugModel = { startAt: events[0]?.at ?? 0, rows: [], ticks: [], tasks: [], log: [] }
   const ticks = new Map<number, TickView>()
-  const utterances = new Map<string, string[]>()
+  const utterances = new Map<number, string[]>()
   let task: TaskView | null = null
 
   for (const e of events) {
@@ -79,7 +83,7 @@ export function buildModel(events: DebugEvent[]): DebugModel {
         continue
       }
       if (ev.type === 'tick-start') {
-        const tick: TickView = { id: ev.tickId, at: e.at, task: task?.index ?? null, start: ev, gates: [], checks: [] }
+        const tick: TickView = { id: ev.tickId, at: e.at, task: task?.index ?? null, start: ev, gates: [], effects: [], acts: [] }
         ticks.set(ev.tickId, tick)
         model.ticks.push(tick)
         task?.ticks.push(tick)
@@ -90,13 +94,14 @@ export function buildModel(events: DebugEvent[]): DebugModel {
       if (!tick) continue
       if (ev.type === 'gate') tick.gates.push(ev)
       else if (ev.type === 'decision') tick.decision = ev
-      else if (ev.type === 'fill') tick.fill = ev
-      else if (ev.type === 'act') tick.act = ev
-      else if (ev.type === 'check') tick.checks.push(ev)
-      else if (ev.type === 'escalate') tick.escalation = { start: ev, steps: [] }
-      else if (ev.type === 'escalation-step') tick.escalation?.steps.push(ev)
-      else if (ev.type === 'escalation-end') {
-        if (tick.escalation) tick.escalation.end = ev
+      else if (ev.type === 'write') tick.write = ev
+      else if (ev.type === 'confirm') tick.confirm = ev
+      else if (ev.type === 'act') tick.acts.push(ev)
+      else if (ev.type === 'effect') tick.effects.push(ev)
+      else if (ev.type === 'think-start') tick.thinking = { start: ev, steps: [] }
+      else if (ev.type === 'think-step') tick.thinking?.steps.push(ev)
+      else if (ev.type === 'think-end') {
+        if (tick.thinking) tick.thinking.end = ev
       } else tick.end = ev
       continue
     }
@@ -125,21 +130,28 @@ export function ms(n: number | undefined): string {
   return n === undefined ? '—' : `${Math.round(n)}ms`
 }
 
-/** How a tick ended, e.g. `Email`, `wait (gated)`. */
+/** What Jev answered: `act: open Email`, or just `listen` when no step was taken. */
+export function decided(tick: TickView): string {
+  const a = tick.decision?.result.answers
+  if (!a?.next) return '—'
+  return a.next.choice === 'act' ? `act: ${a.step?.choice}` : a.next.choice
+}
+
+/** How a tick ended, e.g. `open Email`, `listen (gated)`. */
 export function tickLabel(tick: TickView): string {
   if (!tick.end) return '…'
   const { outcome, effective } = tick.end
   if (outcome === 'error') return 'error'
-  if (outcome === 'stale-discarded') return `${tick.decision?.result.choice} (stale)`
-  if (outcome === 'gated') return `${effective} (gated: ${tick.decision?.result.choice})`
-  if (outcome === 'forced-stop') return 'stop (forced)'
+  if (outcome === 'stale-discarded') return `${decided(tick)} (stale)`
+  if (outcome === 'gated') return `${effective} (gated: ${decided(tick)})`
+  if (outcome === 'forced-stop') return 'stuck'
   return effective
 }
 
-/** Options ranked by Jev probability, including ones Jev gave no mass to. */
-export function rankedOptions(tick: TickView): { option: string; description: string | null; p: number | null }[] {
-  const probs = tick.decision?.result.probabilities ?? {}
-  return Object.entries(tick.start.options)
+/** A question's options ranked by Jev probability, including ones Jev gave no mass to. */
+export function rankedOptions(tick: TickView, question = 'step'): { option: string; description: string | null; p: number | null }[] {
+  const probs = tick.decision?.result.answers[question]?.probabilities ?? {}
+  return Object.entries(tick.start.questions[question]?.options ?? {})
     .map(([option, description]) => ({ option, description, p: probs[option] ?? null }))
     .sort((a, b) => (b.p ?? -1) - (a.p ?? -1))
 }
@@ -151,7 +163,7 @@ export function rankedOptions(tick: TickView): { option: string; description: st
  */
 export function evalScenario(model: DebugModel, task: TaskView): string {
   const earlier = model.tasks.filter((t) => t.index < task.index).flatMap((t) => t.utterances)
-  const startNode = task.ticks[0]?.start.currentNodeId ?? 'home'
+  const startNode = task.ticks[0]?.start.screenId ?? 'home'
   const needsContext = startNode !== 'home' && earlier.length > 0
   const utterances = needsContext ? [...earlier, ...task.utterances] : task.utterances
   const observed = task.ticks.map(tickLabel).join(' → ') || 'no decisions'

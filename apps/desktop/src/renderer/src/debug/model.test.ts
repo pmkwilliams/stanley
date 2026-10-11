@@ -7,7 +7,7 @@ const at = (n: number) => 1000 + n * 100
 const log = (event: Extract<DebugEvent, { source: 'log' }>['event']): DebugEvent => ({ seq: ++seq, at: at(seq), source: 'log', event })
 const agent = (event: Extract<DebugEvent, { source: 'agent' }>['event']): DebugEvent => ({ seq: ++seq, at: at(seq), source: 'agent', event })
 
-const start = (tickId: number, currentNodeId = 'home') =>
+const start = (tickId: number, screenId = 'home') =>
   agent({
     type: 'tick-start',
     tickId,
@@ -15,31 +15,37 @@ const start = (tickId: number, currentNodeId = 'home') =>
     utteranceId: 1,
     transcript: { finalized: [], partial: '' },
     utteranceEnded: false,
-    currentNodeId,
+    screenId,
     state: 'state',
-    instructions: 'next?',
-    options: { wait: 'w', stop: 's', Email: 'Go to email', 'Email › delete': 'Do: delete' },
+    questions: {
+      next: { instructions: 'now?', options: { listen: 'l', act: 'a', think: 't', done: 'd' } },
+      step: { instructions: 'which?', options: { 'open Email': 'app', Delete: 'button', back: 'b' } },
+    },
   })
-const decision = (tickId: number, choice: string, probabilities: Record<string, number>) =>
-  agent({ type: 'decision', tickId, result: { choice, probabilities, confidence: probabilities[choice]!, latencyMs: 300 }, stale: false, endedDuringCall: false })
+const answer = (probabilities: Record<string, number>) => {
+  const choice = Object.entries(probabilities).sort(([, a], [, b]) => b - a)[0]![0]
+  return { choice, probabilities, confidence: probabilities[choice]! }
+}
+const decision = (tickId: number, next: Record<string, number>, step: Record<string, number>) =>
+  agent({ type: 'decision', tickId, result: { answers: { next: answer(next), step: answer(step) }, latencyMs: 300 }, stale: false, endedDuringCall: false })
 
 function session(): DebugEvent[] {
   seq = 0
   return [
     { seq: ++seq, at: at(seq), source: 'app', event: { type: 'session-start', session: 's1', config: {} as never, systemPrompt: '', mock: true } },
     log({ role: 'event', kind: 'task-start', at: 0 }),
-    log({ role: 'user', content: 'open my email', utteranceId: '1', at: 0 }),
+    log({ role: 'user', content: 'open my email', utteranceId: 1, at: 0 }),
     agent({ type: 'request', reason: 'words', result: 'no-new-words' }),
     start(1),
-    decision(1, 'Email', { Email: 0.8, wait: 0.2 }),
-    agent({ type: 'tick-end', tickId: 1, outcome: 'executed', effective: 'Email' }),
+    decision(1, { act: 0.9, listen: 0.1 }, { 'open Email': 0.8, back: 0.2 }),
+    agent({ type: 'tick-end', tickId: 1, outcome: 'executed', effective: 'open Email' }),
     log({ role: 'event', kind: 'task-end', at: 0 }),
     log({ role: 'event', kind: 'task-start', at: 0 }),
-    log({ role: 'user', content: 'delete the first one', utteranceId: '2', at: 0 }),
+    log({ role: 'user', content: 'delete the first one', utteranceId: 2, at: 0 }),
     start(2, 'email:inbox'),
-    decision(2, 'Email › delete', { 'Email › delete': 0.4, wait: 0.6 }),
-    agent({ type: 'gate', tickId: 2, rule: 'consequence', detail: 'not asked for' }),
-    agent({ type: 'tick-end', tickId: 2, outcome: 'gated', effective: 'wait' }),
+    decision(2, { act: 0.55, listen: 0.45 }, { Delete: 0.6, back: 0.4 }),
+    agent({ type: 'gate', tickId: 2, rule: 'act-confidence', detail: 'P(act) 0.55 < speakingAct 0.6 → listen' }),
+    agent({ type: 'tick-end', tickId: 2, outcome: 'gated', effective: 'listen' }),
   ]
 }
 
@@ -63,13 +69,13 @@ describe('buildModel', () => {
 
   it('labels outcomes and ranks every option, including ones with no probability', () => {
     const m = buildModel(session())
-    expect(tickLabel(m.ticks[1]!)).toBe('wait (gated: Email › delete)')
+    expect(tickLabel(m.ticks[1]!)).toBe('listen (gated: act: Delete)')
     expect(rankedOptions(m.ticks[1]!).map((o) => [o.option, o.p])).toEqual([
-      ['wait', 0.6],
-      ['Email › delete', 0.4],
-      ['stop', null],
-      ['Email', null],
+      ['Delete', 0.6],
+      ['back', 0.4],
+      ['open Email', null],
     ])
+    expect(rankedOptions(m.ticks[1]!, 'next').map((o) => o.option)).toEqual(['act', 'listen', 'think', 'done'])
   })
 })
 
@@ -79,7 +85,7 @@ describe('evalScenario', () => {
     const out = evalScenario(m, m.tasks[1]!)
     expect(out).toContain(`utterances: ["open my email", "delete the first one"],`)
     expect(out).toContain('name: "delete-the-first-one"')
-    expect(out).toContain('Observed: wait (gated: Email › delete)')
+    expect(out).toContain('Observed: listen (gated: act: Delete)')
   })
 
   it('keeps a home-started task self-contained', () => {

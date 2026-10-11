@@ -93,8 +93,8 @@
     {/if}
     {#if config}
       <span class="config" title="Agent guardrail config for this session">
-        min {config.minConfidence} · speaking {config.speakingConfidence} · explicit ask {config.explicitAsk} · stale nav {config.staleNavConfidence} ·
-        steps {config.maxActionsPerUtterance} · oscillation {config.oscillation.repeats}/{config.oscillation.window} · nodes {config.maxNodes}
+        act {config.act} · speaking {config.speakingAct} · step {config.stepConfidence} · commits {config.commits} · stale nav {config.staleNavConfidence} ·
+        steps {config.maxStepsPerUtterance} · oscillation {config.oscillation.repeats}/{config.oscillation.window} · elements {config.maxElements}
       </span>
     {/if}
     <span class="spacer"></span>

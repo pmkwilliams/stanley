@@ -1,32 +1,24 @@
 import type { ActionArgs, AgentNode } from '@stanley/app-sdk'
-import type { ChoiceResult, DecisionClient } from '@stanley/jev'
+import type { Answer, DecisionClient, MultiChoiceResult, Question } from '@stanley/jev'
 import { defaultConfig, type AgentConfig } from './config'
-import { createConsequenceCheck, describeEffect, type ConsequenceCheck, type ConsequenceVerdict } from './consequence'
-import type { AgentDebugEvent, RequestResult, TickReason } from './debug'
-import type { Escalator } from './escalate'
-import { MessageLog, type LogEntry } from './log'
-import { buildOptions, GLOBALS, type GlobalOption, type OptionSet } from './options'
-import { toJevState, type NowBlock } from './serialize'
-import type { TextGen } from './textgen'
+import type { AgentDebugEvent, GateRule, RequestResult, TickReason } from './debug'
+import { createEffectJudge, type EffectJudge, type EffectVerdict } from './effects'
+import { MessageLog, type Actor, type DecisionMeta, type LogEntry, type StepTarget } from './log'
+import { narrate, type LiveUtterance } from './narrate'
+import { navigates, stepOptions, type OptionSet, type Target } from './options'
+import type { Thinker } from './think'
 import { fullText, hasNewWords, type TranscriptSnapshot } from './transcript'
-
-/** What the agent can see and do. Implemented by the desktop shell. */
-export interface World {
-  /** Root node (`home`) whose children are the apps. */
-  tree(): AgentNode
-  currentNodeId(): string
-  now(): Omit<NowBlock, 'liveUtterance' | 'utteranceFinal'>
-  perform(node: AgentNode, args: ActionArgs): Promise<{ observation?: string; summary: string }>
-  global(option: 'show' | 'home' | 'back'): Promise<void>
-}
+import type { Screen, StepResult, World } from './world'
 
 export type TickOutcome = 'executed' | 'stale-discarded' | 'gated' | 'forced-stop' | 'error'
 
 export interface TickReport {
   id: number
-  top: { option: string; p: number }[]
-  choice: string
-  confidence: number
+  /** Jev's answer to "what now?" and to "which step?", as decided. */
+  next: { choice: string; confidence: number } | null
+  step: { choice: string; confidence: number; top: { option: string; p: number }[] } | null
+  /** What took effect: `listen`, `done`, `think`, `stale`, or the step's option. */
+  effective: string
   latencyMs: number
   outcome: TickOutcome
   detail?: string
@@ -36,15 +28,15 @@ export interface TickReport {
  * What the agent is doing, for the presence indicator.
  * - `idle`: no open task.
  * - `guessing`: deciding mid-utterance before anything has been done for it.
- * - `thinking`: deciding with intent: the utterance ended, or the agent is already acting on it;
- *   also while the escalation model works.
- * - `writing`: generating the text for an input.
- * - `acting`: performing an action.
- * - `listening`: chose `wait` while the utterance is open; the task waits for more words.
- * - `done`: the task finished (`stop`).
- * - `didnt-get-that`: chose `wait` after the utterance ended.
- * - `stuck`: a guardrail forced a stop.
- * - `error`: a Jev call, fill or action failed.
+ * - `thinking`: deciding with intent (the utterance ended, or a step was already taken), or
+ *   while the thinking model works.
+ * - `writing`: typing text into a field.
+ * - `acting`: taking a step.
+ * - `listening`: waiting for more words; the task stays open.
+ * - `done`: the task finished.
+ * - `didnt-get-that`: the utterance ended without anything to act on.
+ * - `stuck`: a guardrail stopped the task.
+ * - `error`: a Jev call or a step failed.
  */
 export type AgentStatus =
   | 'idle'
@@ -69,37 +61,44 @@ export interface AgentEvents {
 export interface AgentDeps {
   world: World
   jev: DecisionClient
-  textGen: TextGen
-  /** Takes over a turn Jev can't handle: answers, explanations, questions back, harder tasks. */
-  escalator: Escalator
-  /** Judges each action's consequences. Defaults to two narrow Jev questions (see consequence.ts). */
-  check?: ConsequenceCheck
+  /** Takes the turns that need words or judgement. */
+  thinker: Thinker
+  /** Judges what a button does. Defaults to one cached Jev question per button (see effects.ts). */
+  effects?: EffectJudge
   events?: Partial<AgentEvents>
   config?: AgentConfig
   sink?: (entry: LogEntry) => void
 }
 
 export const SYSTEM_PROMPT = `# Stanley
-You are the decision layer of a voice assistant that operates apps on the user's computer.
-Each step you pick exactly one option: navigate, act, show the result, wait for the user, or stop.
+You are the quick part of Stanley, a voice assistant that operates apps and websites on the user's computer. Each time, you answer two questions about the conversation below: what Stanley should do now, and which step on the screen it would take.
 
-How to decide:
-- Carry the request all the way through. "Go through my inbox" means open the inbox and then open the first message. "Check X" means open X itself, not just the list it is in.
-- For a question, find the answer: search, then open the most relevant result to read it. Stop once the screen shows the answer.
-- Work in the background. Use "show" when the screen holds what the user asked for, not for intermediate steps.
-- Choose "wait" while the user is still speaking and the request is not yet clear.
-- Choose "escalate" when the user asked a question, needs an answer or a reply, the request is complicated, or you are unsure what to do. A smarter assistant takes over the turn and can talk to the user.
-- Typing a value is only for words the user dictated. When they only described what to write (a tone, an idea, a gist) and the words are left to Stanley, choose "escalate".
-- Typing into a field never submits it. Send, post, submit, buy or delete only when the user explicitly asked for it.
-- Choose "stop" when the whole request is done, or when the next step needs more from the user than they have said.`
+What to do now:
+- "listen" while the user is still saying what they want and it isn't clear yet what to do.
+- "act" when a step on the screen moves toward what they asked for. See a request through: if it is about something inside an app, open the app, then the item, then use it. Looking at, checking, reading or going through things means opening them, starting with the first, not stopping at the list they are in.
+- "think" when the next part needs words or judgement: typing text, answering a question, asking the user something, getting their go-ahead, or working out what they mean. The thinking part of Stanley takes over and can talk to the user.
+- "done" when what they asked for is done or showing on the screen. Don't go further than they asked.
 
-const INSTRUCTIONS = 'Which single option best moves toward what the user wants right now?'
+The screen is the app Stanley is working on, which may be in the background. Elements are written in [brackets]. A link opens something, a button does something, and a field holds text that the thinking part types.`
 
-/** A deferred tick keeps the strongest reason: an action must not be lost, and `end` also covers new words. */
+type Next = 'listen' | 'act' | 'think' | 'done'
+
+export const NEXT: Record<Next, string> = {
+  listen: "The user is still saying what they want, and it isn't clear yet what to do.",
+  act: 'Take a step on the screen that moves toward what the user asked for.',
+  think: 'The next part needs words or judgement: typing text, answering, asking the user, getting their go-ahead, or working out what they mean.',
+  done: 'What the user asked for is done or showing on the screen.',
+}
+export const NEXT_INSTRUCTIONS = 'What should Stanley do now?'
+export const STEP_INSTRUCTIONS =
+  'If Stanley takes a step on the screen now, which one moves toward what the user asked for? Whether to take a step at all is a separate question.'
+
+/** A deferred tick keeps the strongest reason: a step must not be lost, and `end` also covers new words. */
 const PRIORITY: Record<TickReason, number> = { words: 0, end: 1, action: 2 }
 
 export class Agent {
   readonly log: MessageLog
+  readonly config: AgentConfig
   private transcript: TranscriptSnapshot = { finalized: [], partial: '' }
   private seen: TranscriptSnapshot | null = null
   private utteranceEnded = false
@@ -109,33 +108,36 @@ export class Agent {
   private halted = true
   private taskOpen = false
   private lastEffective = ''
-  private actions = 0
+  /** Steps taken for the current utterance, and the recent ones for the oscillation guard. */
+  private steps = 0
   private recent: string[] = []
   private tickId = 0
   private utteranceId = 0
+  private stepCount = 0
   private abort?: AbortController
-  /** Set while the escalation model owns the turn; aborted when the user says more. */
-  private escalation?: AbortController
+  /** Set while the thinking model owns the turn; aborted when the user says more. */
+  private thinking?: AbortController
   /** Last report of the current tick; its outcome is the tick's outcome. */
   private outcome: { outcome: TickOutcome; detail?: string } | null = null
-  readonly config: AgentConfig
   private world: World
   private jev: DecisionClient
-  private textGen: TextGen
-  private escalator: Escalator
-  private check: ConsequenceCheck
+  private thinker: Thinker
+  private effects: EffectJudge
   private events: Partial<AgentEvents>
 
   constructor(deps: AgentDeps) {
     this.world = deps.world
     this.jev = deps.jev
-    this.textGen = deps.textGen
-    this.escalator = deps.escalator
+    this.thinker = deps.thinker
     this.events = deps.events ?? {}
     this.config = deps.config ?? defaultConfig
-    this.check = deps.check ?? createConsequenceCheck(deps.jev, this.config)
+    this.effects = deps.effects ?? createEffectJudge(deps.jev, this.config.commits)
     this.log = new MessageLog(deps.sink)
-    this.log.push({ role: 'system', content: SYSTEM_PROMPT })
+  }
+
+  /** The conversation and screen as the models read them right now. */
+  context(): string {
+    return narrate(this.log.entries, this.world.screen(), this.live())
   }
 
   // ── Transcript input ────────────────────────────────────────────────────
@@ -145,12 +147,12 @@ export class Agent {
     this.transcript = { finalized: [], partial: '' }
     this.seen = null
     this.utteranceEnded = false
-    this.actions = 0
+    this.steps = 0
     this.recent = []
     this.openTask()
   }
 
-  /** Speech after a `stop` (same utterance or new) starts a new task. */
+  /** Speech after `done` (same utterance or new) starts a new task. */
   private openTask(): void {
     if (this.taskOpen) return
     this.taskOpen = true
@@ -162,11 +164,11 @@ export class Agent {
     this.request('words')
   }
 
-  /** A VAD segment finalized. Logged as a user message. */
+  /** A VAD segment finalized. Logged as what the user said. */
   segment(text: string): void {
     if (!text.trim()) return
     this.transcript = { finalized: [...this.transcript.finalized, text], partial: '', previous: '' }
-    this.log.push({ role: 'user', content: text, utteranceId: String(this.utteranceId) })
+    this.log.push({ role: 'user', content: text, utteranceId: this.utteranceId })
     this.request('words')
   }
 
@@ -176,15 +178,13 @@ export class Agent {
   }
 
   /** The person clicked or typed in an app directly. */
-  recordManual(option: string, nodeId: string, result: { observation?: string; summary: string }, args?: ActionArgs): void {
-    const id = `manual-${Date.now()}`
-    this.log.push({ role: 'assistant', origin: 'user', toolCall: { id, option, nodeId, args } })
-    this.log.push({ role: 'tool', toolCallId: id, content: result.observation ?? result.summary, summary: result.summary })
+  recordUserStep(target: StepTarget, result: StepResult, text?: string): void {
+    this.log.push({ role: 'step', id: `user-${++this.stepCount}`, by: 'user', target, text, result })
   }
 
   cancel(): void {
     this.abort?.abort()
-    this.escalation?.abort()
+    this.thinking?.abort()
   }
 
   // ── Scheduling ──────────────────────────────────────────────────────────
@@ -192,20 +192,24 @@ export class Agent {
   private request(reason: TickReason): void {
     const trace = (result: RequestResult) => this.events.debug?.({ type: 'request', reason, result })
     if (this.inFlight) {
-      // The escalation model answers whole turns: if the user says more, its run is out of date.
+      // Thinking answers whole turns: if the user says more, its run is out of date.
       // The deferred `words` tick re-decides with everything they said.
-      if (this.escalation && hasNewWords(this.transcript, this.seen)) this.escalation.abort()
+      if (this.thinking && hasNewWords(this.transcript, this.seen)) this.thinking.abort()
       if (!this.deferred || PRIORITY[reason] > PRIORITY[this.deferred]) this.deferred = reason
       return trace('deferred')
     }
     const fresh = hasNewWords(this.transcript, this.seen)
     if (reason === 'words' && !fresh) return trace('no-new-words')
     if (reason === 'action' && this.halted) return trace('halted')
-    // Ending the utterance only matters if the agent was waiting on the user.
-    if (reason === 'end' && !fresh && this.halted && this.lastEffective !== 'wait') return trace('nothing-to-re-ask')
+    // Ending the utterance only matters if the agent was listening for more.
+    if (reason === 'end' && !fresh && this.halted && this.lastEffective !== 'listen') return trace('nothing-to-re-ask')
     trace('tick')
     if (fresh) this.openTask()
     void this.tick(reason)
+  }
+
+  private live(): LiveUtterance | undefined {
+    return this.utteranceId ? { utteranceId: this.utteranceId, text: fullText(this.transcript), ended: this.utteranceEnded } : undefined
   }
 
   private async tick(reason: TickReason): Promise<void> {
@@ -220,20 +224,19 @@ export class Agent {
     const id = ++this.tickId
     this.outcome = null
 
-    let result: ChoiceResult | null = null
+    let result: MultiChoiceResult | null = null
     let effective = 'error'
     let stale = false
     try {
       // A decision is a guess until the person finishes or the agent has started acting on it.
-      this.events.status?.(!seenEnded && this.actions === 0 ? 'guessing' : 'thinking')
-      const current = this.world.currentNodeId()
-      const now = this.world.now()
-      const options = buildOptions(this.world.tree(), current, this.config.maxNodes)
-      const state = toJevState(SYSTEM_PROMPT, this.log.entries, {
-        ...now,
-        liveUtterance: this.transcript.partial,
-        utteranceFinal: this.utteranceEnded,
-      })
+      this.events.status?.(!seenEnded && this.steps === 0 ? 'guessing' : 'thinking')
+      const screen = this.world.screen()
+      const options = stepOptions(screen, this.world.appList(), this.config.maxElements)
+      const state = `${SYSTEM_PROMPT}\n\n${narrate(this.log.entries, screen, this.live())}`
+      const questions: Record<string, Question> = {
+        next: { instructions: NEXT_INSTRUCTIONS, options: NEXT },
+        step: { instructions: STEP_INSTRUCTIONS, options: options.criteria },
+      }
       this.events.debug?.({
         type: 'tick-start',
         tickId: id,
@@ -241,33 +244,31 @@ export class Agent {
         utteranceId: utterance,
         transcript: seen,
         utteranceEnded: seenEnded,
-        currentNodeId: current,
+        screenId: screen.id,
         state,
-        instructions: INSTRUCTIONS,
-        options: options.criteria,
+        questions,
       })
 
       this.abort = new AbortController()
       try {
-        result = await this.jev.choose({ state, instructions: INSTRUCTIONS, options: options.criteria, signal: this.abort.signal })
+        result = await this.jev.decide({ state, questions, signal: this.abort.signal })
       } catch (err) {
         // Nothing was decided, so the words stay unseen and the next trigger retries.
         if (this.seen === seen) this.seen = before
         throw err
       }
 
-      // Only new words make a decision stale, including words of an utterance
-      // that started mid-call (barge-in). The utterance ending mid-call does not
-      // invalidate an action; a `wait` gets re-asked via the deferred `end`.
+      // Only new words make a decision stale, including words of an utterance that started
+      // mid-call (barge-in). The utterance ending mid-call does not invalidate a step; a
+      // `listen` gets re-asked via the deferred `end`.
       const changed = () => hasNewWords(this.transcript, this.utteranceId === utterance ? seen : null)
       stale = changed()
       const endedDuringCall = this.utteranceEnded && !seenEnded
       this.events.debug?.({ type: 'decision', tickId: id, result, stale, endedDuringCall })
-      const screen = JSON.stringify([current, now])
-      effective = await this.handle(id, result, options, state, seenEnded, stale, screen, changed)
+      effective = await this.handle(id, result, options, screen, seenEnded, stale, changed)
       this.events.debug?.({ type: 'tick-end', tickId: id, effective, ...(this.outcome ?? { outcome: 'executed' }) })
     } catch (err) {
-      // A failed Jev call, fill or action must not leave the loop stuck in `thinking`/`writing`/`acting`.
+      // A failed call or step must not leave the loop stuck in `thinking`/`acting`.
       this.fail(id, result, err)
     } finally {
       this.inFlight = false
@@ -280,307 +281,324 @@ export class Agent {
   }
 
   /**
-   * Returns the choice that actually took effect (after gating).
-   * `state` is the Jev input the decision was made from; `decidedEnded` whether it saw the utterance end.
-   * `screen` identifies what the agent saw when deciding, for the oscillation guard.
+   * Returns what took effect. `decidedEnded`: whether the decision saw the utterance end.
    * `changed` reports whether new words have arrived since the decision's transcript.
    */
   private async handle(
     id: number,
-    r: ChoiceResult,
+    d: MultiChoiceResult,
     options: OptionSet,
-    state: string,
+    screen: Screen,
     decidedEnded: boolean,
     stale: boolean,
-    screen: string,
     changed: () => boolean,
   ): Promise<string> {
     const c = this.config
-    const node = options.nodes.get(r.choice)
-    let choice = r.choice
+    const next = d.answers.next!
+    const step = d.answers.step!
+    const option = step.choice
+    const target = options.targets.get(option)
+    if (!target) throw new Error(`Jev chose "${option}", which is not an option`)
+    let mode = next.choice as Next
+    let gated = false
+    const gate = (rule: GateRule, detail: string, to: Next) => {
+      this.gate(id, rule, detail)
+      gated = true
+      mode = to
+    }
 
     if (stale) {
-      const confidentNav = node?.kind === 'location' && r.confidence >= c.staleNavConfidence
-      if (choice !== 'wait' && !confidentNav) {
+      const confidentNav = mode === 'act' && navigates(target) && step.confidence >= c.staleNavConfidence
+      if (mode !== 'listen' && !confidentNav) {
         this.gate(id, 'stale', `new words arrived during the call; only a navigation at ≥ ${c.staleNavConfidence} survives`)
-        this.log.push({ role: 'event', kind: 'stale', detail: choice })
-        this.report(id, r, 'stale-discarded')
+        this.report(id, d, 'stale', 'stale-discarded')
         return 'stale'
       }
     }
 
-    const [gateName, gateMin] = this.utteranceEnded ? ['minConfidence', c.minConfidence] : ['speakingConfidence', c.speakingConfidence]
-    if (r.confidence < gateMin && choice !== 'wait' && choice !== 'stop') {
-      this.gate(id, 'min-confidence', `confidence ${r.confidence.toFixed(2)} < ${gateName} ${gateMin} → wait`)
-      this.log.push({ role: 'event', kind: 'gated', detail: `${choice} @ ${r.confidence.toFixed(2)}` })
-      this.report(id, r, 'gated')
-      choice = 'wait'
-    } else if (((node && node.kind !== 'location') || choice === 'escalate') && this.midWord()) {
-      // Navigate while the user speaks, but only change things or hand over at a pause:
-      // "add a to-do called…" must not commit before the title is said, and the escalation
-      // model only ever gets whole turns. The segment that finalizes at the pause re-asks.
-      this.gate(id, 'mid-speech', choice === 'escalate' ? 'handing over waits until the user pauses' : `"${choice}" changes data; held until the user pauses`)
-      this.log.push({ role: 'event', kind: 'gated', detail: `mid-speech ${choice}` })
-      this.report(id, r, 'gated')
-      choice = 'wait'
+    // Unsure while the user is still talking: listen for more. Unsure after they finish: think.
+    const unsure: Next = this.utteranceEnded ? 'think' : 'listen'
+    if (mode === 'act') {
+      const [name, min] = this.utteranceEnded ? ['act', c.act] : ['speakingAct', c.speakingAct]
+      if (next.confidence < min) gate('act-confidence', `P(act) ${next.confidence.toFixed(2)} < ${name} ${min} → ${unsure}`, unsure)
+      else if (step.confidence < c.stepConfidence) gate('step-confidence', `step "${option}" at ${step.confidence.toFixed(2)} < stepConfidence ${c.stepConfidence} → ${unsure}`, unsure)
+    }
+    // Navigate while the user speaks, but change things or hand over only at a pause: "add a task
+    // called…" must not commit before the title is said, and thinking only ever gets whole turns.
+    if (((mode === 'act' && !navigates(target)) || mode === 'think') && this.midWord()) {
+      gate('mid-speech', mode === 'think' ? 'thinking waits until the user pauses' : `"${option}" is held until the user pauses`, 'listen')
     }
 
-    if (choice === 'wait') {
-      if (r.choice === 'wait') {
-        this.logDecision(id, 'wait', r)
-        this.report(id, r, 'executed')
-      }
-      // Once the user has finished, waiting is a dead end: hand the turn over instead of going quiet.
-      // A wait decided while they were still speaking is re-asked by the deferred `end` instead.
+    if (mode === 'listen') {
+      this.report(id, d, 'listen', gated ? 'gated' : 'executed')
+      // Once the user has finished, listening is a dead end: think instead of going quiet.
+      // A listen decided while they were still speaking is re-asked by the deferred `end`.
       if (decidedEnded && fullText(this.transcript).trim()) {
-        const why = r.choice === 'wait' ? 'could not tell what the user wants' : `was unsure (best guess "${r.choice}" at ${r.confidence.toFixed(2)})`
-        return this.escalate(id, `The decision model ${why}.`, r)
+        this.gate(id, 'listen-ended', 'the user has finished, so thinking takes the turn')
+        return this.think(id, 'The user has finished speaking, and no clear step stands out.')
       }
       this.halt(this.utteranceEnded ? 'didnt-get-that' : 'listening')
-      return 'wait'
+      return 'listen'
     }
 
-    if (choice === 'stop') {
-      this.logDecision(id, choice, r)
-      this.report(id, r, 'executed')
+    if (mode === 'done') {
+      this.report(id, d, 'done', 'executed')
       await this.finishTask('done')
-      return choice
+      return 'done'
     }
 
-    if (choice === 'escalate') return this.escalate(id, 'The decision model handed this turn to you.', r)
-
-    // Repeating an option only counts when it is chosen from the same screen:
-    // "volume up" four times is progress, bouncing between two screens is not.
-    const step = `${choice}\n${screen}`
-    this.recent = [...this.recent, step].slice(-c.oscillation.window)
-    const repeats = this.recent.filter((x) => x === step).length
-    if (++this.actions > c.maxActionsPerUtterance || repeats >= c.oscillation.repeats) {
-      if (repeats >= c.oscillation.repeats) {
-        this.gate(id, 'oscillation', `"${choice}" chosen ${repeats}× in the last ${c.oscillation.window} actions`)
-      } else {
-        this.gate(id, 'step-cap', `more than ${c.maxActionsPerUtterance} actions this utterance`)
-      }
-      this.log.push({ role: 'event', kind: 'forced-stop', detail: repeats >= c.oscillation.repeats ? 'oscillation' : 'step cap' })
-      this.report(id, r, 'forced-stop')
-      await this.finishTask('stuck')
-      return 'stop'
+    if (mode === 'think') {
+      this.report(id, d, 'think', gated ? 'gated' : 'executed')
+      const why = gated ? `No step stood out (best guess: [${option}]).` : 'This part of the turn needs words or judgement.'
+      return this.think(id, why)
     }
 
-    // Confidence in a choice is not consent: anything that deletes or reaches outside needs the user's say-so.
-    if (node?.kind === 'action') {
-      const verdict = await this.consequence(id, choice, options.criteria[choice] ?? null, node, state)
+    const decision: DecisionMeta = {
+      next: { choice: next.choice, confidence: next.confidence },
+      step: { choice: option, confidence: step.confidence, probabilities: step.probabilities },
+      latencyMs: d.latencyMs,
+    }
+
+    // Words are thinking's: it knows whether they are the user's or its own.
+    if (target.kind === 'element' && target.node.kind === 'input') {
+      this.report(id, d, option, 'executed')
+      return this.write(id, option, target, decision)
+    }
+
+    // Consent is a judgement about the conversation, so a button that commits goes to thinking.
+    if (target.kind === 'element' && target.node.kind === 'action') {
+      const verdict = await this.judge(id, option, target.node, screen)
       if (changed()) {
-        this.gate(id, 'stale', 'new words arrived during the consequence check')
-        this.log.push({ role: 'event', kind: 'stale', detail: choice })
-        this.report(id, r, 'stale-discarded')
+        this.gate(id, 'stale', 'new words arrived while judging the button')
+        this.report(id, d, 'stale', 'stale-discarded')
         return 'stale'
       }
-      if (!verdict.allowed) {
-        const effect = describeEffect(verdict.effect)
-        this.gate(id, 'consequence', `"${choice}" ${effect}; P(user asked) ${(verdict.asked ?? 0).toFixed(2)} < explicitAsk ${c.explicitAsk} → escalate`)
-        this.log.push({ role: 'event', kind: 'gated', detail: `unconfirmed ${choice}` })
-        this.report(id, r, 'gated')
-        this.actions--
-        this.recent = this.recent.slice(0, -1)
-        return this.escalate(
-          id,
-          `The decision model wanted to choose "${choice}", which ${effect}, but the user hasn't clearly asked for that. Don't do it unless they did; otherwise show what is ready and ask whether to go ahead.`,
-          r,
-        )
+      if (verdict.effect === 'commits') {
+        this.report(id, d, option, 'executed')
+        return this.confirm(id, option, target, decision)
       }
     }
 
-    const fills = !(choice in GLOBALS) && node?.kind === 'input' && !!node.input
-    this.events.status?.(fills ? 'writing' : 'acting')
-    const callId = `call-${id}`
-    if (choice in GLOBALS) {
-      this.log.push({ role: 'assistant', origin: 'agent', toolCall: { id: callId, option: choice }, decision: meta(r) })
-      const started = performance.now()
-      await this.run(callId, () => this.world.global(choice as Exclude<GlobalOption, 'wait' | 'stop' | 'escalate'>))
-      this.events.debug?.({ type: 'act', tickId: id, option: choice, latencyMs: performance.now() - started })
-    } else if (node) {
-      const args: ActionArgs = {}
-      if (node.kind === 'input' && node.input) {
-        const context = toJevState(SYSTEM_PROMPT, this.log.entries, {
-          ...this.world.now(),
-          liveUtterance: fullText(this.transcript),
-          utteranceFinal: this.utteranceEnded,
-        })
-        const { instructions } = node.input
-        const started = performance.now()
-        args.text = await this.textGen.fill({ context, instructions })
-        this.events.debug?.({ type: 'fill', tickId: id, option: choice, instructions, context, text: args.text, latencyMs: performance.now() - started })
-        // The user kept talking while the field was filled, so the text may be missing words.
-        // The deferred `words` request re-decides with them.
-        if (changed()) {
-          this.gate(id, 'stale', 'new words arrived during the fill; discarding the filled text')
-          this.log.push({ role: 'event', kind: 'stale', detail: choice })
-          this.report(id, r, 'stale-discarded')
-          return 'stale'
-        }
-        // The user wants this but has not said the value yet ("called… um…"): wait for it.
-        // Not a step, so a long pause cannot trip the oscillation guard.
-        if (!args.text.trim()) {
-          this.actions--
-          this.recent = this.recent.slice(0, -1)
-          this.gate(id, 'no-value', 'text_gen found no value in what the user said yet → wait')
-          this.log.push({ role: 'event', kind: 'gated', detail: `no value for ${choice}` })
-          this.report(id, r, 'gated')
-          // Finished without saying it: ask for it rather than go quiet.
-          if (decidedEnded) return this.escalate(id, `The user seems to want "${choice}" but hasn't dictated what to type. If they described it, write it; if they gave nothing to go on, ask.`, r)
-          this.halt('idle')
-          return 'wait'
-        }
-        this.events.status?.('acting')
-      }
-      this.log.push({ role: 'assistant', origin: 'agent', toolCall: { id: callId, option: choice, nodeId: node.id, args }, decision: meta(r) })
-      const started = performance.now()
-      const out = await this.run(callId, () => this.world.perform(node, args))
-      this.events.debug?.({ type: 'act', tickId: id, option: choice, nodeId: node.id, args, ...out, latencyMs: performance.now() - started })
-      this.log.push({ role: 'tool', toolCallId: callId, content: out.observation ?? out.summary, summary: out.summary })
+    // Repeating a step only counts when it is chosen from the same screen:
+    // "volume up" four times is progress, bouncing between two screens is not.
+    const key = `${option}\n${screen.id}\n${screen.markdown}`
+    this.recent = [...this.recent, key].slice(-c.oscillation.window)
+    const repeats = this.recent.filter((x) => x === key).length
+    if (++this.steps > c.maxStepsPerUtterance || repeats >= c.oscillation.repeats) {
+      const looping = repeats >= c.oscillation.repeats
+      if (looping) this.gate(id, 'oscillation', `"${option}" chosen ${repeats}× from the same screen in the last ${c.oscillation.window} steps`)
+      else this.gate(id, 'step-cap', `more than ${c.maxStepsPerUtterance} steps this utterance`)
+      this.log.push({ role: 'event', kind: 'stuck', detail: looping ? 'it kept repeating the same step' : 'it took too many steps' })
+      this.report(id, d, 'stuck', 'forced-stop')
+      await this.finishTask('stuck')
+      return 'stuck'
     }
-    this.report(id, r, 'executed')
+
+    this.report(id, d, option, 'executed')
+    this.events.status?.('acting')
+    await this.step(id, option, target, {}, 'fast', decision)
     this.request('action')
-    return choice
+    return option
   }
 
-  // ── Escalation ──────────────────────────────────────────────────────────
+  /**
+   * The fast part chose a field: thinking decides what goes in it, in one call, and records whose
+   * words they are. Then the fast part carries on (Enter, Send, done). If what comes next commits,
+   * `confirm` sees whether the words were Stanley's own and reads them back before sending.
+   */
+  private async write(id: number, option: string, target: Target, decision: DecisionMeta): Promise<string> {
+    const context = narrate(this.log.entries, this.world.screen(), this.live())
+    this.events.status?.('writing')
+    const controller = new AbortController()
+    this.thinking = controller
+    const started = performance.now()
+    try {
+      const w = await this.thinker.write({ context, field: option, signal: controller.signal })
+      this.events.debug?.({ type: 'write', tickId: id, option, context, ...w, latencyMs: performance.now() - started, aborted: false })
+      const text = w.source === 'missing' ? '' : w.text.trim()
+      const say = w.say.trim()
+      if (text) {
+        this.steps++
+        this.events.status?.('acting')
+        await this.step(id, option, target, { text }, 'thinking', decision, w.source === 'stanley' ? 'stanley' : 'user')
+      }
+      if (say) {
+        this.log.push({ role: 'said', content: say })
+        this.events.said?.(say)
+        await this.finishTask('done')
+        return option
+      }
+      if (!text) {
+        // "Add one called… um": nothing to type yet while they're still talking.
+        if (!this.utteranceEnded) {
+          this.halt('listening')
+          return 'listen'
+        }
+        return this.think(id, `The next step is typing into [${option}], but there is nothing to type yet.`)
+      }
+      this.request('action')
+      return option
+    } catch (err) {
+      if (!controller.signal.aborted) throw err
+      this.events.debug?.({ type: 'write', tickId: id, option, context, latencyMs: performance.now() - started, aborted: true })
+      this.gate(id, 'stale', 'new words arrived while writing; re-deciding with them')
+      this.outcome = { outcome: 'stale-discarded' }
+      return 'stale'
+    } finally {
+      this.thinking = undefined
+    }
+  }
 
   /**
-   * Hands the turn to the escalation model. It drives the same options through `act`, under the
-   * same consequence check, and whatever text it writes is said to the user. Then the turn ends and
-   * the next one starts with Jev again, which sees what was said in the history.
+   * The fast part chose a button that commits. Consent is a judgement about the conversation, so
+   * thinking makes it, in one call: press now (then the fast part carries on), or say what is ready
+   * and ask.
    */
-  private async escalate(id: number, reason: string, r: ChoiceResult): Promise<string> {
-    const context = this.escalationContext()
-    const options = this.optionList(this.escalationOptions())
-    this.events.debug?.({ type: 'escalate', tickId: id, reason, context, options })
-    this.log.push({ role: 'assistant', origin: 'agent', toolCall: { id: `call-${id}`, option: 'escalate' }, decision: meta(r) })
-    if (!this.outcome) this.report(id, r, 'executed')
+  private async confirm(id: number, option: string, target: Target, decision: DecisionMeta): Promise<string> {
+    const context = narrate(this.log.entries, this.world.screen(), this.live())
     this.events.status?.('thinking')
     const controller = new AbortController()
-    this.escalation = controller
+    this.thinking = controller
+    const started = performance.now()
+    try {
+      const c = await this.thinker.confirm({ context, option, signal: controller.signal })
+      this.events.debug?.({ type: 'confirm', tickId: id, option, context, ...c, latencyMs: performance.now() - started, aborted: false })
+      if (c.press) {
+        this.steps++
+        this.events.status?.('acting')
+        await this.step(id, option, target, {}, 'thinking', decision)
+        this.request('action')
+        return option
+      }
+      const say = c.say.trim() || 'Should I go ahead?'
+      this.log.push({ role: 'said', content: say })
+      this.events.said?.(say)
+      await this.finishTask('done')
+      return 'asked'
+    } catch (err) {
+      if (!controller.signal.aborted) throw err
+      this.events.debug?.({ type: 'confirm', tickId: id, option, context, latencyMs: performance.now() - started, aborted: true })
+      this.gate(id, 'stale', 'new words arrived while confirming; re-deciding with them')
+      this.outcome = { outcome: 'stale-discarded' }
+      return 'stale'
+    } finally {
+      this.thinking = undefined
+    }
+  }
+
+  private async judge(id: number, option: string, node: AgentNode, screen: Screen): Promise<EffectVerdict> {
+    const started = performance.now()
+    const appId = screen.id.split(':')[0] ?? screen.id
+    const verdict = await this.effects.judge({ option, node, appId, screen: `## Screen: ${screen.title}\n${screen.markdown}` })
+    this.events.debug?.({ type: 'effect', tickId: id, option, latencyMs: performance.now() - started, ...verdict })
+    return verdict
+  }
+
+  /** Runs one step and logs it. A failure is logged as its result, then rethrown. */
+  private async step(tickId: number, option: string, target: Target, args: ActionArgs, by: Actor, decision?: DecisionMeta, wrote?: 'user' | 'stanley'): Promise<StepResult> {
+    const started = performance.now()
+    const entry = { role: 'step' as const, id: `step-${++this.stepCount}`, by, target: stepTarget(option, target), text: args.text, wrote, utteranceId: this.utteranceId, decision }
+    let result: StepResult
+    try {
+      if (target.kind === 'app') result = await this.world.open(target.app.id)
+      else if (target.kind === 'element') result = await this.world.perform(target.node, args)
+      else {
+        await this.world.global(target.kind)
+        result = { summary: target.kind === 'back' ? 'Went back' : 'Went home' }
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      this.log.push({ ...entry, result: { summary: message, error: true } })
+      throw err
+    }
+    this.log.push({ ...entry, result })
+    const nodeId = target.kind === 'element' ? target.node.id : undefined
+    this.events.debug?.({ type: 'act', tickId, option, nodeId, args, ...result, latencyMs: performance.now() - started })
+    return result
+  }
+
+  // ── Thinking ────────────────────────────────────────────────────────────
+
+  /**
+   * Hands the turn to the thinking model. It acts on the same options, and whatever it writes is
+   * said to the user. Then the task ends and the next turn starts with Jev again, which sees what
+   * was said in the conversation.
+   */
+  private async think(id: number, reason: string): Promise<string> {
+    const screen = this.world.screen()
+    const options = stepOptions(screen, this.world.appList(), this.config.thinkingElements)
+    const context = narrate(this.log.entries, screen, this.live())
+    const list = optionList(options)
+    this.events.debug?.({ type: 'think-start', tickId: id, reason, context, options: list })
+    this.events.status?.('thinking')
+    const controller = new AbortController()
+    this.thinking = controller
     const started = performance.now()
     let steps = 0
     try {
-      const { text } = await this.escalator.run({
+      const { text } = await this.thinker.run({
         context,
         reason,
-        options,
-        maxSteps: this.config.escalationSteps,
+        options: list,
+        maxSteps: this.config.thinkingSteps,
         signal: controller.signal,
-        act: (option, text) => this.escalationAct(id, ++steps, option, text, controller.signal),
+        act: (option, text) => this.thinkStep(id, ++steps, option, text, controller.signal),
       })
       const said = text.trim()
-      this.events.debug?.({ type: 'escalation-end', tickId: id, text: said, steps, latencyMs: performance.now() - started, aborted: false })
+      this.events.debug?.({ type: 'think-end', tickId: id, text: said, steps, latencyMs: performance.now() - started, aborted: false })
       if (said) {
         this.log.push({ role: 'said', content: said })
         this.events.said?.(said)
       }
+      // Nothing to do yet while the user is mid-turn ("add one called… um"): keep listening.
+      if (!said && steps === 0 && !this.utteranceEnded) {
+        this.halt('listening')
+        return 'listen'
+      }
       await this.finishTask('done')
-      return 'escalate'
+      return 'think'
     } catch (err) {
       if (!controller.signal.aborted) throw err
-      // Out of date, so it says nothing. Actions it already took stay done, and logged.
-      this.events.debug?.({ type: 'escalation-end', tickId: id, text: '', steps, latencyMs: performance.now() - started, aborted: true })
-      this.gate(id, 'stale', 'new words arrived while the escalation model worked; re-deciding with the whole turn')
-      this.log.push({ role: 'event', kind: 'stale', detail: 'escalate' })
-      this.report(id, r, 'stale-discarded')
+      // Out of date, so it says nothing. Steps it already took stay done, and logged.
+      this.events.debug?.({ type: 'think-end', tickId: id, text: '', steps, latencyMs: performance.now() - started, aborted: true })
+      this.gate(id, 'stale', 'new words arrived while thinking; re-deciding with the whole turn')
+      this.outcome = { outcome: 'stale-discarded' }
       return 'stale'
     } finally {
-      this.escalation = undefined
+      this.thinking = undefined
     }
   }
 
-  /** One `act` call by the escalation model. Returns what it sees next. */
-  private async escalationAct(id: number, step: number, option: string, text: string | undefined, signal: AbortSignal): Promise<string> {
+  /** One `act` call by the thinking model. Returns what it sees next. */
+  private async thinkStep(id: number, n: number, option: string, text: string | undefined, signal: AbortSignal): Promise<string> {
     signal.throwIfAborted()
-    const done = (result: string, blocked?: boolean) => {
-      this.events.debug?.({ type: 'escalation-step', tickId: id, option, text, result, blocked })
+    const done = (result: string) => {
+      this.events.debug?.({ type: 'think-step', tickId: id, option, text, result })
       return result
     }
-    const callId = `call-${id}-${step}`
-    if (option === 'show' || option === 'home' || option === 'back') {
-      this.log.push({ role: 'assistant', origin: 'agent', via: 'escalation', toolCall: { id: callId, option } })
-      await this.run(callId, () => this.world.global(option))
-      return done(this.screen())
-    }
-    const options = this.escalationOptions()
-    const node = options.nodes.get(option)
-    if (!node) return done(`There is no option "${option}" right now.\n\n${this.screen(options)}`)
+    const options = stepOptions(this.world.screen(), this.world.appList(), this.config.thinkingElements)
+    const name = resolveOption(options, option)
+    const target = name && options.targets.get(name)
+    if (!name || !target) return done(`There is no option [${option}] right now. Use a name exactly as listed.\n\n${this.screenText(options)}`)
+    option = name
     const args: ActionArgs = {}
-    if (node.kind === 'input') {
-      if (!text?.trim()) return done(`"${option}" types into a field: pass the text to type.`)
+    if (target.kind === 'element' && target.node.kind === 'input') {
+      if (text === undefined) return done(`"${option}" is a field: pass the text to type.`)
       args.text = text.trim()
     }
-    if (node.kind === 'action') {
-      const verdict = await this.consequence(id, option, options.criteria[option] ?? null, node, this.escalationContext(), signal)
-      if (!verdict.allowed) {
-        return done(`Not done: "${option}" ${describeEffect(verdict.effect)}, and the user hasn't explicitly asked for it. Show them what is ready and ask first.`, true)
-      }
-    }
-    this.events.status?.('acting')
-    this.log.push({ role: 'assistant', origin: 'agent', via: 'escalation', toolCall: { id: callId, option, nodeId: node.id, args } })
-    const out = await this.run(callId, () => this.world.perform(node, args))
-    this.log.push({ role: 'tool', toolCallId: callId, content: out.observation ?? out.summary, summary: out.summary })
+    this.events.status?.(args.text !== undefined ? 'writing' : 'acting')
+    const result = await this.step(id, option, target, args, 'thinking')
     this.events.status?.('thinking')
-    return done(`${out.observation ?? out.summary}\n\n${this.screen()}`)
+    return done(`${result.summary}\n\n${this.screenText()}`)
   }
 
-  /** History and screen for the escalation model, and the state for its consequence checks. */
-  private escalationContext(): string {
-    return toJevState('# Stanley session', this.log.entries, {
-      ...this.world.now(),
-      liveUtterance: fullText(this.transcript),
-      utteranceFinal: this.utteranceEnded,
-    })
+  private screenText(options?: OptionSet): string {
+    const screen = this.world.screen()
+    const list = optionList(options ?? stepOptions(screen, this.world.appList(), this.config.thinkingElements))
+    return `## Screen: ${screen.title} (${screen.visible ? 'in front of the user' : 'in the background'})\n${screen.markdown}\n\n## Options\n${list}`
   }
 
-  private escalationOptions(): OptionSet {
-    return buildOptions(this.world.tree(), this.world.currentNodeId(), this.config.escalationNodes)
-  }
-
-  /** What the escalation model can choose: every option but the decision loop's own controls. */
-  private optionList(options: OptionSet): string {
-    return Object.entries(options.criteria)
-      .filter(([name]) => !['wait', 'stop', 'escalate'].includes(name))
-      .map(([name, description]) => `- ${name}${description ? `: ${description}` : ''}`)
-      .join('\n')
-  }
-
-  private screen(options = this.escalationOptions()): string {
-    const now = this.world.now()
-    return `## Screen: ${now.surfaceTitle} (${now.visible ? 'visible to user' : 'hidden'})\n${now.surfaceMarkdown}\n\n## Options\n${this.optionList(options)}`
-  }
-
-  private async consequence(
-    id: number,
-    option: string,
-    description: string | null,
-    node: AgentNode,
-    state: string,
-    signal?: AbortSignal,
-  ): Promise<ConsequenceVerdict> {
-    const started = performance.now()
-    const verdict = await this.check.check({ state, option, description, node, signal })
-    this.events.debug?.({ type: 'check', tickId: id, option, latencyMs: performance.now() - started, ...verdict })
-    return verdict
-  }
-
-  /** Runs a logged tool call. A failure is logged as its result, so the call never dangles. */
-  private async run<T>(callId: string, fn: () => Promise<T>): Promise<T> {
-    try {
-      return await fn()
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      this.log.push({ role: 'tool', toolCallId: callId, content: `Error: ${message}`, summary: `Failed: ${message}` })
-      throw err
-    }
-  }
-
-  private logDecision(id: number, option: string, r: ChoiceResult): void {
-    this.log.push({ role: 'assistant', origin: 'agent', toolCall: { id: `call-${id}`, option }, decision: meta(r) })
-  }
+  // ── Helpers ─────────────────────────────────────────────────────────────
 
   private async finishTask(status: AgentStatus): Promise<void> {
     await this.world.global('show')
@@ -594,12 +612,12 @@ export class Agent {
     return !this.utteranceEnded && this.transcript.partial.trim() !== ''
   }
 
-  private gate(tickId: number, rule: Extract<AgentDebugEvent, { type: 'gate' }>['rule'], detail: string): void {
+  private gate(tickId: number, rule: GateRule, detail: string): void {
     this.events.debug?.({ type: 'gate', tickId, rule, detail })
   }
 
-  private fail(id: number, result: ChoiceResult | null, err: unknown): void {
-    this.report(id, result, 'error', String(err))
+  private fail(id: number, result: MultiChoiceResult | null, err: unknown): void {
+    this.report(id, result, 'error', 'error', String(err))
     this.events.debug?.({ type: 'tick-end', tickId: id, outcome: 'error', effective: 'error', detail: String(err) })
     this.halt('error')
   }
@@ -609,26 +627,57 @@ export class Agent {
     this.events.status?.(status)
   }
 
-  private report(id: number, r: ChoiceResult | null, outcome: TickOutcome, detail?: string): void {
-    const top = r
-      ? Object.entries(r.probabilities)
-          .sort(([, a], [, b]) => b - a)
-          .slice(0, 5)
-          .map(([option, p]) => ({ option, p }))
-      : []
+  private report(id: number, d: MultiChoiceResult | null, effective: string, outcome: TickOutcome, detail?: string): void {
+    const brief = (a: Answer | undefined) => a && { choice: a.choice, confidence: a.confidence }
+    const step = d?.answers.step
     this.outcome = { outcome, detail }
     this.events.tick?.({
       id,
-      top,
-      choice: r?.choice ?? '',
-      confidence: r?.confidence ?? 0,
-      latencyMs: r?.latencyMs ?? 0,
+      next: brief(d?.answers.next) ?? null,
+      step: step
+        ? {
+            ...brief(step)!,
+            top: Object.entries(step.probabilities)
+              .sort(([, a], [, b]) => b - a)
+              .slice(0, 5)
+              .map(([option, p]) => ({ option, p })),
+          }
+        : null,
+      effective,
+      latencyMs: d?.latencyMs ?? 0,
       outcome,
       detail,
     })
   }
 }
 
-function meta(r: ChoiceResult) {
-  return { confidence: r.confidence, probabilities: r.probabilities, latencyMs: r.latencyMs }
+/** What a step operated, in a form that reads without the screen it was on. */
+export function stepTarget(option: string, target: Target): StepTarget {
+  if (target.kind === 'app') return { kind: 'app', appId: target.app.id, title: target.app.title }
+  if (target.kind === 'element') return { kind: 'element', name: option, role: target.role, nodeKind: target.node.kind, nodeId: target.node.id }
+  return { kind: target.kind }
+}
+
+/** One option per line, the name in brackets as the conversation writes elements. */
+function optionList(options: OptionSet): string {
+  return Object.entries(options.criteria)
+    .map(([name, description]) => `- [${name}]${description ? ` ${description}` : ''}`)
+    .join('\n')
+}
+
+/**
+ * The option a language model meant. Exact first; then without brackets, quotes and case; then the
+ * one option whose name ends with or contains what it wrote. Models paraphrase long names.
+ */
+export function resolveOption(options: OptionSet, written: string): string | undefined {
+  if (options.targets.has(written)) return written
+  const norm = (s: string) => s.toLowerCase().replace(/^\[|\]$/g, '').replace(/["“”]/g, '').replace(/\s+/g, ' ').trim()
+  const want = norm(written)
+  const names = [...options.targets.keys()]
+  const exact = names.filter((n) => norm(n) === want)
+  if (exact.length === 1) return exact[0]
+  const ending = names.filter((n) => norm(n).endsWith(want))
+  if (ending.length === 1) return ending[0]
+  const containing = names.filter((n) => norm(n).includes(want) || want.includes(norm(n)))
+  return containing.length === 1 ? containing[0] : undefined
 }

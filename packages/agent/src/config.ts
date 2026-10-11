@@ -1,33 +1,34 @@
 export interface AgentConfig {
-  /** Once the user has finished speaking, a top choice below this confidence is treated as `wait`. */
-  minConfidence: number
-  /** The same gate while the user is still speaking: a guess must be surer, since waiting costs only a moment. */
-  speakingConfidence: number
-  /** P(destructive) + P(external) at or above this makes an action consequential (see consequence.ts). */
-  consequential: number
-  /** A consequential action runs only when P(the user explicitly asked for it) is at least this; otherwise it escalates. */
-  explicitAsk: number
-  /** A navigation computed from a stale transcript still runs at or above this confidence. */
+  /** While the user is speaking, `act` needs at least this confidence; below it Stanley listens. */
+  speakingAct: number
+  /** After they finish, `act` needs at least this confidence; below it thinking takes the turn. */
+  act: number
+  /** The chosen step needs at least this confidence; below it Stanley listens (mid-speech) or thinks. */
+  stepConfidence: number
+  /** P(commits) at or above this makes a button go to thinking: unsure counts as committing. */
+  commits: number
+  /** A navigation decided from a stale transcript still runs at or above this step confidence. */
   staleNavConfidence: number
-  maxActionsPerUtterance: number
-  /** Force stop when the same option is chosen from the same screen `repeats` times in the last `window` steps. */
+  maxStepsPerUtterance: number
+  /** Stop when the same step is chosen from the same screen `repeats` times in the last `window` steps. */
   oscillation: { repeats: number; window: number }
-  maxNodes: number
-  /** The escalation model handles more context, so it sees more nodes. */
-  escalationNodes: number
-  /** Tool steps per escalation. */
-  escalationSteps: number
+  /** Elements offered to Jev per tick. */
+  maxElements: number
+  /** Thinking handles more context, so it sees more elements. */
+  thinkingElements: number
+  /** Tool steps per thinking turn. */
+  thinkingSteps: number
 }
 
 export const defaultConfig: AgentConfig = {
-  minConfidence: 0.4,
-  speakingConfidence: 0.6,
-  consequential: 0.35,
-  explicitAsk: 0.8,
+  speakingAct: 0.6,
+  act: 0.4,
+  stepConfidence: 0.4,
+  commits: 0.3,
   staleNavConfidence: 0.8,
-  maxActionsPerUtterance: 15,
+  maxStepsPerUtterance: 15,
   oscillation: { repeats: 3, window: 6 },
-  maxNodes: 50,
-  escalationNodes: 150,
-  escalationSteps: 10,
+  maxElements: 50,
+  thinkingElements: 150,
+  thinkingSteps: 10,
 }

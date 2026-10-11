@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { Agent, createEscalator, createTextGen, toJevState, type AgentDeps, type Escalator, type TextGen, type TickReport } from '@stanley/agent'
+import { Agent, createThinker, type AgentDeps, type Thinker, type TickReport } from '@stanley/agent'
 import { createJevClient, type DecisionClient } from '@stanley/jev'
 import { Shell } from '../apps/desktop/src/main/shell'
 import { apps } from '../apps/desktop/src/main/apps'
@@ -11,7 +11,7 @@ const QUIET_MS = 500
 const MAX_SETTLE_MS = 120_000
 
 /** Paid model calls, so every run says what it spent. */
-export const usage = { jev: 0, jevInputTokens: 0, textGen: 0, escalations: 0 }
+export const usage = { jev: 0, jevInputTokens: 0, thinking: 0, writing: 0, confirming: 0 }
 
 export function loadEnv() {
   const envFile = join(import.meta.dirname, '..', '.env')
@@ -36,7 +36,7 @@ export function select<T>(items: T[], name: (t: T) => string, command: string): 
 }
 
 export function printUsage() {
-  console.log(`Paid calls: ${usage.jev} Jev (${usage.jevInputTokens.toLocaleString()} input tokens), ${usage.textGen} Haiku text_gen, ${usage.escalations} escalations`)
+  console.log(`Paid calls: ${usage.jev} Jev (${usage.jevInputTokens.toLocaleString()} input tokens), ${usage.thinking} thinking turns, ${usage.writing} writes, ${usage.confirming} confirms (Haiku)`)
 }
 
 export interface ScenarioResult {
@@ -81,23 +81,15 @@ export async function runScenario(scenario: Scenario, speak: (agent: Agent, utte
   }
 
   const failures = scenario.checks.map((c: Check) => c(shell, agent)).filter((r): r is string => typeof r === 'string')
-  return { ok: failures.length === 0, failures, ticks, said, settleMs, trace: traceOf(agent, shell) }
+  return { ok: failures.length === 0, failures, ticks, said, settleMs, trace: traceOf(agent) }
 }
 
 function makeAgent(shell: Shell, events: AgentDeps['events']): Agent {
-  return new Agent({
-    world: shell,
-    jev: countedJev(createJevClient()),
-    textGen: countedTextGen(createTextGen()),
-    escalator: countedEscalator(createEscalator()),
-    // `--no-check` lets every action through, to see how the decision loop does on its own.
-    ...(process.argv.includes('--no-check') && { check: { check: async () => ({ effect: 'none', effects: {}, consequential: false, allowed: true, cached: false }) } }),
-    events,
-  })
+  return new Agent({ world: shell, jev: countedJev(createJevClient()), thinker: countedThinker(createThinker()), events })
 }
 
-function traceOf(agent: Agent, shell: Shell): string {
-  return toJevState('', agent.log.entries, { ...shell.now(), liveUtterance: '', utteranceFinal: true }).trim()
+function traceOf(agent: Agent): string {
+  return agent.context()
 }
 
 /** Runs `tasks` with at most `limit` in flight. */
@@ -123,8 +115,10 @@ export function flag(name: string, fallback: number): number {
 export function report(label: string, result: ScenarioResult) {
   console.log(`\n${result.ok ? '✓' : '✗'} ${label}`)
   for (const t of result.ticks) {
-    const runnersUp = t.top.filter((o) => o.option !== t.choice).slice(0, 2).map((o) => `${o.option} ${o.p.toFixed(2)}`).join(', ')
-    console.log(`   ${t.outcome.padEnd(15)} ${t.choice}  c=${t.confidence.toFixed(2)}${runnersUp ? `  | ${runnersUp}` : ''}${t.detail ? ` (${t.detail})` : ''}`)
+    const next = t.next ? `${t.next.choice} ${t.next.confidence.toFixed(2)}` : '—'
+    const step = t.step ? `${t.step.choice} ${t.step.confidence.toFixed(2)}` : '—'
+    const runnersUp = t.step?.top.filter((o) => o.option !== t.step!.choice).slice(0, 2).map((o) => `${o.option} ${o.p.toFixed(2)}`).join(', ')
+    console.log(`   ${t.outcome.padEnd(15)} → ${t.effective.padEnd(10)} next: ${next.padEnd(12)} step: ${step}${runnersUp ? `  | ${runnersUp}` : ''}${t.detail ? ` (${t.detail})` : ''}`)
   }
   for (const text of result.said) console.log(`   said: "${text}"`)
   for (const f of result.failures) console.log(`   ! ${f}`)
@@ -143,30 +137,30 @@ export async function typeUtterance(agent: Agent, utterance: string) {
 }
 
 function countedJev(client: DecisionClient): DecisionClient {
+  const count = <T extends { usage?: { inputTokens?: number } }>(result: T) => {
+    usage.jev++
+    usage.jevInputTokens += result.usage?.inputTokens ?? 0
+    return result
+  }
   return {
-    async choose(req) {
-      usage.jev++
-      const result = await client.choose(req)
-      usage.jevInputTokens += result.usage?.inputTokens ?? 0
-      return result
-    },
+    choose: async (req) => count(await client.choose(req)),
+    decide: async (req) => count(await client.decide(req)),
   }
 }
 
-function countedTextGen(gen: TextGen): TextGen {
-  return {
-    fill(req) {
-      usage.textGen++
-      return gen.fill(req)
-    },
-  }
-}
-
-function countedEscalator(escalator: Escalator): Escalator {
+function countedThinker(thinker: Thinker): Thinker {
   return {
     run(req) {
-      usage.escalations++
-      return escalator.run(req)
+      usage.thinking++
+      return thinker.run(req)
+    },
+    write(req) {
+      usage.writing++
+      return thinker.write(req)
+    },
+    confirm(req) {
+      usage.confirming++
+      return thinker.confirm(req)
     },
   }
 }

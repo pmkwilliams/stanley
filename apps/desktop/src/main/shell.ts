@@ -1,4 +1,4 @@
-import type { World } from '@stanley/agent'
+import type { AppEntry, Screen, StepResult, World } from '@stanley/agent'
 import type { ActionArgs, AgentNode, AppContext, AppModule, Layout } from '@stanley/app-sdk'
 
 const SEP = ':'
@@ -22,46 +22,35 @@ export class Shell implements World {
     private onChange: () => void,
   ) {}
 
-  tree(): AgentNode {
-    return {
-      id: 'home',
-      kind: 'location',
-      label: 'home',
-      children: this.apps.map((app) => {
-        const state = this.surfaces.get(app.id)
-        return {
-          id: app.id,
-          kind: 'location',
-          label: app.title,
-          description: `Open the ${app.description}`,
-          children: state === undefined ? [] : prefix(app.id, app.nodes(state)),
-        }
-      }),
-    }
-  }
-
-  currentNodeId(): string {
-    if (!this.focus) return 'home'
-    const app = this.app(this.focus)
-    return `${app.id}${SEP}${app.current(this.surfaces.get(app.id))}`
-  }
-
-  now() {
+  /** The surface Stanley is working on (which may be hidden): what it reads and its elements. */
+  screen(): Screen {
     if (!this.focus) {
       const list = this.apps.map((a) => `- ${a.title}: ${a.description}`).join('\n')
-      return { surfaceTitle: 'Home', surfaceMarkdown: `# Home\n${list}`, visible: this.layout.visible === null }
+      return { id: 'home', title: 'Home', visible: this.layout.visible === null, markdown: `# Home\n${list}`, elements: [] }
     }
-    const app = this.app(this.focus)
+    return this.screenOf(this.focus)
+  }
+
+  /** An app's surface as a screen, whether or not Stanley is working on it. */
+  screenOf(appId: string): Screen {
+    const app = this.app(appId)
+    const state = this.surfaces.get(app.id)
+    if (state === undefined) return { id: app.id, title: app.title, visible: false, markdown: '', elements: [] }
     return {
-      surfaceTitle: app.title,
-      surfaceMarkdown: app.toMarkdown(this.surfaces.get(app.id)),
-      visible: this.layout.visible === this.focus,
+      id: `${app.id}${SEP}${app.current(state)}`,
+      title: app.title,
+      visible: this.layout.visible === app.id,
+      markdown: app.toMarkdown(state),
+      elements: prefix(app.id, app.nodes(state)),
     }
+  }
+
+  appList(): AppEntry[] {
+    return this.apps.map(({ id, title, description }) => ({ id, title, description }))
   }
 
   async perform(node: AgentNode, args: ActionArgs) {
     const sep = node.id.indexOf(SEP)
-    if (sep === -1) return this.open(node.id)
     return this.performIn(node.id.slice(0, sep), node.id.slice(sep + 1), args)
   }
 
@@ -76,7 +65,7 @@ export class Shell implements World {
   }
 
   /** Open (or switch to) an app's surface. `null` = home. */
-  async open(appId: string | null) {
+  async open(appId: string | null): Promise<StepResult> {
     if (appId === null) {
       this.navigate(null)
       this.onChange()

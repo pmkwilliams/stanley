@@ -1,85 +1,84 @@
 import type { AgentNode } from '@stanley/app-sdk'
+import type { AppEntry, Screen } from './world'
 
-export const GLOBALS = {
-  wait: 'The user is still saying the request: it is incomplete, or they are mid-thought. Keep listening before acting.',
-  stop: 'Everything the user asked for is done, or the next step needs more from the user: what to write, which one, or a go-ahead to send, delete or buy.',
-  show: 'Bring the screen the agent is working on to the front so the user can see it.',
-  home: 'Go to the home screen with the list of apps.',
-  back: 'Go back to the previous screen.',
-  escalate:
-    'Hand this turn to a smarter assistant that can reason, answer, explain and talk to the user. Choose it when the user asked a question or needs a reply, the request is complicated, or you are not sure what to do.',
-} as const
-
-export type GlobalOption = keyof typeof GLOBALS
+/** What a step does when chosen. */
+export type Target =
+  | { kind: 'element'; node: AgentNode; role: string }
+  | { kind: 'app'; app: AppEntry }
+  | { kind: 'back' }
+  | { kind: 'home' }
 
 export interface OptionSet {
-  /** Option name → description, sent as Jev `criteria`. */
+  /** Option name → description, sent to Jev as one question's options. */
   criteria: Record<string, string | null>
-  /** Option name → node, for non-global options. */
-  nodes: Map<string, AgentNode>
+  targets: Map<string, Target>
 }
 
-interface Indexed {
+export const NAVIGATION = {
+  back: 'Go back to the previous screen.',
+  home: 'Go to the home screen, which lists the apps.',
+} as const
+
+export function roleOf(node: AgentNode): string {
+  return node.role ?? { location: 'link', action: 'button', input: 'field', group: 'group' }[node.kind]
+}
+
+/** Navigation is cheap to undo, so it may run while the user is still speaking. */
+export function navigates(target: Target): boolean {
+  return target.kind !== 'element' || target.node.kind === 'location'
+}
+
+/** How an option reads to Jev: its role, then whatever the screen shows about it. */
+function describe(node: AgentNode): string {
+  const parts = [roleOf(node)]
+  if (node.kind === 'input') parts.push(node.value ? `containing "${node.value}"` : 'empty')
+  if (node.description) parts.push(node.description)
+  return parts.join(', ')
+}
+
+interface Flat {
   node: AgentNode
-  parent: string | null
-  depth: number
+  /** Labels of the containers it sits in, outermost first. */
   path: string[]
 }
 
-function index(root: AgentNode): Map<string, Indexed> {
-  const map = new Map<string, Indexed>()
-  const visit = (node: AgentNode, parent: Indexed | null) => {
-    const entry: Indexed = {
-      node,
-      parent: parent?.node.id ?? null,
-      depth: parent ? parent.depth + 1 : 0,
-      path: parent ? [...parent.path, node.label] : [],
-    }
-    map.set(node.id, entry)
-    node.children?.forEach((c) => visit(c, entry))
+function flatten(nodes: AgentNode[], path: string[] = [], out: Flat[] = []): Flat[] {
+  for (const node of nodes) {
+    if (node.kind !== 'group') out.push({ node, path })
+    if (node.children) flatten(node.children, [...path, node.label], out)
   }
-  visit(root, null)
-  return map
+  return out
+}
+
+/** `"Lunch Friday?" › Archive`: the element's label after the containers that tell it apart. */
+export function elementName(path: string[], node: AgentNode): string {
+  return [...path, node.label].join(' › ')
+}
+
+/** Finds an element on a screen by node id, with the name it has as an option. */
+export function findElement(screen: Screen, nodeId: string): { node: AgentNode; name: string } | undefined {
+  const hit = flatten(screen.elements).find((f) => f.node.id === nodeId)
+  return hit && { node: hit.node, name: elementName(hit.path, hit.node) }
 }
 
 /**
- * The `limit` nodes nearest `currentId`, by BFS over the tree as an undirected
- * graph. Ties (same distance) are broken by shallower depth.
+ * What Stanley can do next: the screen's elements in screen order (up to `limit`), the apps,
+ * and back / home. Names are unique; a clash gets a counter.
  */
-export function nearestNodes(root: AgentNode, currentId: string, limit: number): AgentNode[] {
-  const idx = index(root)
-  const start = idx.has(currentId) ? currentId : root.id
-  const dist = new Map<string, number>([[start, 0]])
-  const queue = [start]
-  while (queue.length) {
-    const id = queue.shift()!
-    const entry = idx.get(id)!
-    const neighbours = [...(entry.node.children?.map((c) => c.id) ?? []), ...(entry.parent ? [entry.parent] : [])]
-    for (const n of neighbours) {
-      if (dist.has(n)) continue
-      dist.set(n, dist.get(id)! + 1)
-      queue.push(n)
-    }
+export function stepOptions(screen: Screen, apps: AppEntry[], limit: number): OptionSet {
+  const criteria: Record<string, string | null> = {}
+  const targets = new Map<string, Target>()
+  const add = (name: string, description: string, target: Target) => {
+    let unique = name
+    for (let n = 2; unique in criteria; n++) unique = `${name} (${n})`
+    criteria[unique] = description
+    targets.set(unique, target)
   }
-  return [...dist.entries()]
-    .filter(([id]) => id !== start && id !== root.id)
-    .sort(([a, da], [b, db]) => da - db || idx.get(a)!.depth - idx.get(b)!.depth)
-    .slice(0, limit)
-    .map(([id]) => idx.get(id)!.node)
-}
-
-/** Globals + nearest nodes, with unique human-readable option names. */
-export function buildOptions(root: AgentNode, currentId: string, limit: number): OptionSet {
-  const idx = index(root)
-  const criteria: Record<string, string | null> = { ...GLOBALS }
-  const nodes = new Map<string, AgentNode>()
-  for (const node of nearestNodes(root, currentId, limit)) {
-    const path = idx.get(node.id)!.path
-    let name = path.join(' › ')
-    for (let n = 2; name in criteria; n++) name = `${path.join(' › ')} (${n})`
-    const verb = node.kind === 'location' ? 'Go to' : node.kind === 'input' ? 'Type into the field (does not submit), once the user has said what to type' : 'Do'
-    criteria[name] = [verb, node.description].filter(Boolean).join(': ')
-    nodes.set(name, node)
+  for (const { node, path } of flatten(screen.elements).slice(0, limit)) {
+    add(elementName(path, node), describe(node), { kind: 'element', node, role: roleOf(node) })
   }
-  return { criteria, nodes }
+  for (const app of apps) add(`open ${app.title}`, `app: ${app.description}`, { kind: 'app', app })
+  add('back', NAVIGATION.back, { kind: 'back' })
+  add('home', NAVIGATION.home, { kind: 'home' })
+  return { criteria, targets }
 }
