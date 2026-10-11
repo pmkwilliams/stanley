@@ -6,7 +6,8 @@ export const GLOBALS = {
   show: 'Bring the screen the agent is working on to the front so the user can see it.',
   home: 'Go to the home screen with the list of apps.',
   back: 'Go back to the previous screen.',
-  handoff: 'Pass the conversation to a more capable assistant: the request needs reasoning, writing, or a spoken answer.',
+  escalate:
+    'Hand this turn to a smarter assistant that can reason, answer, explain and talk to the user. Choose it when the user asked a question or needs a reply, the request is complicated, or you are not sure what to do.',
 } as const
 
 export type GlobalOption = keyof typeof GLOBALS
@@ -76,7 +77,7 @@ export function buildOptions(root: AgentNode, currentId: string, limit: number):
     const path = idx.get(node.id)!.path
     let name = path.join(' › ')
     for (let n = 2; name in criteria; n++) name = `${path.join(' › ')} (${n})`
-    const verb = node.kind === 'location' ? 'Go to' : node.kind === 'input' ? 'Fill in and submit, once the user has said what to fill in' : 'Do'
+    const verb = node.kind === 'location' ? 'Go to' : node.kind === 'input' ? 'Type into the field (does not submit), once the user has said what to type' : 'Do'
     criteria[name] = [verb, node.description].filter(Boolean).join(': ')
     nodes.set(name, node)
   }

@@ -21,10 +21,21 @@ const route = (appId: string, pattern: RegExp): Check => (shell) => {
 const state = (appId: string, test: (s: any) => boolean, what: string): Check => (shell) =>
   test(shell.surfaces.get(appId)) ? undefined : `expected ${what}`
 
-const onlyWaited: Check = (_, agent) => {
-  const acted = agent.log.entries.filter((e) => e.role === 'assistant' && e.origin === 'agent' && e.toolCall.option !== 'wait')
-  return acted.length === 0 ? undefined : `expected only waits, got ${acted.map((e) => (e.role === 'assistant' ? e.toolCall.option : '')).join(', ')}`
+/** Nothing in any app changed: only waits, an escalation, or something said. */
+const changedNothing: Check = (_, agent) => {
+  const acted = agent.log.entries.filter((e) => e.role === 'assistant' && e.origin === 'agent' && !['wait', 'escalate', 'stop'].includes(e.toolCall.option))
+  return acted.length === 0 ? undefined : `expected no actions, got ${acted.map((e) => (e.role === 'assistant' ? e.toolCall.option : '')).join(', ')}`
 }
+
+const said = (pattern = /\S/): Check => (_, agent) =>
+  agent.log.entries.some((e) => e.role === 'said' && pattern.test(e.content)) ? undefined : `expected Stanley to say something matching ${pattern}`
+
+const samsEmail = (s: any) => s?.emails?.find((e: any) => e.id === 'm1')
+const sentCount = (n: number): Check => (shell) => {
+  const sent = (shell.surfaces.get('email') as any)?.sent?.length ?? 0
+  return sent === n ? undefined : `expected ${n} sent, got ${sent}`
+}
+const draft = (test: (text: string | undefined) => boolean, what: string) => state('email', (s) => test(s?.drafts?.[samsEmail(s)?.id]), what)
 
 const actions = (max: number): Check => (_, agent) => {
   const n = agent.log.entries.filter((e) => e.role === 'assistant' && e.origin === 'agent').length
@@ -35,7 +46,7 @@ export const scenarios: Scenario[] = [
   {
     name: 'weather-denver',
     utterances: ["what's the weather in Denver"],
-    checks: [visible('weather'), state('weather', (s) => /denver/i.test(JSON.stringify(s?.result ?? s)), 'Denver weather loaded'), actions(6)],
+    checks: [visible('weather'), state('weather', (s) => /denver/i.test(JSON.stringify(s?.result ?? s)), 'Denver weather loaded'), actions(8)],
   },
   {
     name: 'inbox-walkthrough',
@@ -65,7 +76,37 @@ export const scenarios: Scenario[] = [
   {
     name: 'mid-thought-wait',
     utterances: ['um so I was thinking'],
-    checks: [visible(null), onlyWaited],
+    checks: [visible(null), changedNothing],
+  },
+  {
+    name: 'question-gets-an-answer',
+    utterances: ['what can you do for me'],
+    checks: [said(), changedNothing],
+  },
+  {
+    name: 'reply-drafts-not-sends',
+    utterances: ['open the email from Sam', "reply saying I'm in, see you Friday"],
+    checks: [draft((t) => !!t && /in/i.test(t), "a draft saying I'm in"), sentCount(0)],
+  },
+  {
+    name: 'draft-a-reply',
+    utterances: ['open the email from Sam', 'draft a reply saying sounds good'],
+    checks: [draft((t) => !!t && /sounds good/i.test(t), 'a "sounds good" draft'), sentCount(0)],
+  },
+  {
+    name: 'reply-and-send',
+    utterances: ['open the email from Sam', "reply saying I'm in and send it"],
+    checks: [sentCount(1), visible('email'), route('email', /^sent$/)],
+  },
+  {
+    name: 'draft-then-send',
+    utterances: ['open the email from Sam', 'reply saying sounds good', 'send it'],
+    checks: [sentCount(1)],
+  },
+  {
+    name: 'reply-without-content',
+    utterances: ['open the email from Sam', 'reply'],
+    checks: [sentCount(0), draft((t) => !t, 'no invented draft')],
   },
   {
     name: 'follow-up-across-tasks',

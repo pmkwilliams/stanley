@@ -28,6 +28,8 @@ export interface WeatherState {
   /** True while a lookup is in flight; perform always resolves with it cleared. */
   loading: boolean
   error: string | null
+  /** Text typed in the city box, not yet looked up. */
+  box: string
 }
 
 const GEOCODE_URL = 'https://geocoding-api.open-meteo.com/v1/search'
@@ -135,7 +137,7 @@ export const weatherApp = defineApp<WeatherState>({
   title: 'Weather',
   description: 'Weather: current conditions and 5-day forecast for any city',
 
-  init: () => ({ route: 'home', query: null, result: null, loading: false, error: null }),
+  init: () => ({ route: 'home', query: null, result: null, loading: false, error: null, box: '' }),
 
   current: (s) => s.route,
 
@@ -155,12 +157,13 @@ export const weatherApp = defineApp<WeatherState>({
         description: r ? `${deg(r.temperature)}, ${describeCode(r.code)}` : 'no city looked up yet',
         children: [
           {
-            id: 'location',
+            id: 'city',
             kind: 'input',
-            label: 'look up weather for a city',
-            description: 'search a city or place by name',
+            label: 'type a city',
+            description: 'type a city or place name into the search box',
             input: { instructions: 'The city name to look up, e.g. "Denver" or "Paris". Just the place name, nothing else.', placeholder: 'City name' },
           },
+          ...(s.box ? [{ id: 'location', kind: 'action' as const, label: 'look up the typed city', description: `get the weather for "${s.box}"` }] : []),
           ...days,
         ],
       },
@@ -170,23 +173,28 @@ export const weatherApp = defineApp<WeatherState>({
   async perform(s, nodeId, args, ctx) {
     if (nodeId === 'home') return { state: { ...s, route: 'home' }, summary: 'Opened weather overview' }
 
+    if (nodeId === 'city') {
+      const box = args.text?.trim() ?? ''
+      return { state: { ...s, box, route: 'home' }, summary: box ? `Typed "${box}" in the city box (not looked up yet)` : 'Cleared the city box' }
+    }
+
     if (nodeId === 'location') {
-      const query = args.text?.trim()
-      if (!query) return { state: s, summary: 'No city given; nothing looked up' }
+      const query = s.box.trim()
+      if (!query) return { state: s, summary: 'No city typed; nothing looked up' }
       try {
         const result = await lookup(ctx, query)
         if (!result) {
           const error = `Couldn't find a place called "${query}"`
-          return { state: { ...s, query, loading: false, error }, summary: error, observation: error }
+          return { state: { ...s, query, loading: false, error, box: '' }, summary: error, observation: error }
         }
         return {
-          state: { route: 'home', query, result, loading: false, error: null },
+          state: { route: 'home', query, result, loading: false, error: null, box: '' },
           summary: `Weather in ${result.place}: ${deg(result.temperature)}, ${describeCode(result.code)}`,
           observation: resultMarkdown(result),
         }
       } catch (err) {
         const error = `Weather lookup failed: ${err instanceof Error ? err.message : String(err)}`
-        return { state: { ...s, query, loading: false, error }, summary: error }
+        return { state: { ...s, query, loading: false, error, box: '' }, summary: error }
       }
     }
 
@@ -199,7 +207,7 @@ export const weatherApp = defineApp<WeatherState>({
   },
 
   toMarkdown(s) {
-    const notice = s.error ? `\n\n_${s.error}_` : ''
+    const notice = (s.error ? `\n\n_${s.error}_` : '') + (s.box ? `\n\nTyped in the city box (not looked up yet): ${s.box}` : '')
     if (!s.result) return `# Weather\n_No city looked up yet_${notice}`
     const day = s.route.startsWith('day/') ? s.result.days[Number(s.route.split('/')[1])] : undefined
     if (day) return `# Weather › ${s.result.place} › ${dayName(day.date)}\n${dayLine(day)}${notice}`

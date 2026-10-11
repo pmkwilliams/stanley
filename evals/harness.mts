@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { Agent, createTextGen, type TextGen, type TickReport } from '@stanley/agent'
+import { Agent, createEscalator, createTextGen, type Escalator, type TextGen, type TickReport } from '@stanley/agent'
 import { createJevClient, type DecisionClient } from '@stanley/jev'
 import { Shell } from '../apps/desktop/src/main/shell'
 import { apps } from '../apps/desktop/src/main/apps'
@@ -11,7 +11,7 @@ const QUIET_MS = 500
 const MAX_SETTLE_MS = 120_000
 
 /** Paid model calls, so every run says what it spent. */
-export const usage = { jev: 0, jevInputTokens: 0, textGen: 0 }
+export const usage = { jev: 0, jevInputTokens: 0, textGen: 0, escalations: 0 }
 
 export function loadEnv() {
   const envFile = join(import.meta.dirname, '..', '.env')
@@ -36,7 +36,7 @@ export function select<T>(items: T[], name: (t: T) => string, command: string): 
 }
 
 export function printUsage() {
-  console.log(`Paid calls: ${usage.jev} Jev (${usage.jevInputTokens.toLocaleString()} input tokens), ${usage.textGen} Haiku`)
+  console.log(`Paid calls: ${usage.jev} Jev (${usage.jevInputTokens.toLocaleString()} input tokens), ${usage.textGen} Haiku text_gen, ${usage.escalations} escalations`)
 }
 
 /**
@@ -48,11 +48,19 @@ export async function runScenario(scenario: Scenario, speak: (agent: Agent, utte
   const ticks: TickReport[] = []
   let busy = false
   let changedAt = 0
-  const agent = new Agent(shell, countedJev(createJevClient()), countedTextGen(createTextGen()), {
-    tick: (t) => ticks.push(t),
-    status: (s) => {
-      busy = s === 'guessing' || s === 'thinking' || s === 'writing' || s === 'acting'
-      changedAt = Date.now()
+  const said: string[] = []
+  const agent = new Agent({
+    world: shell,
+    jev: countedJev(createJevClient()),
+    textGen: countedTextGen(createTextGen()),
+    escalator: countedEscalator(createEscalator()),
+    events: {
+      tick: (t) => ticks.push(t),
+      said: (text) => said.push(text),
+      status: (s) => {
+        busy = s === 'guessing' || s === 'thinking' || s === 'writing' || s === 'acting'
+        changedAt = Date.now()
+      },
     },
   })
 
@@ -65,7 +73,7 @@ export async function runScenario(scenario: Scenario, speak: (agent: Agent, utte
   }
 
   const failures = scenario.checks.map((c: Check) => c(shell, agent)).filter((r): r is string => typeof r === 'string')
-  return { ok: failures.length === 0, failures, ticks }
+  return { ok: failures.length === 0, failures, ticks, said }
 }
 
 export function report(label: string, result: Awaited<ReturnType<typeof runScenario>>) {
@@ -73,6 +81,7 @@ export function report(label: string, result: Awaited<ReturnType<typeof runScena
   for (const t of result.ticks) {
     console.log(`   ${t.outcome.padEnd(15)} ${t.choice}  c=${t.confidence.toFixed(2)}${t.detail ? ` (${t.detail})` : ''}`)
   }
+  for (const text of result.said) console.log(`   said: "${text}"`)
   for (const f of result.failures) console.log(`   ! ${f}`)
 }
 
@@ -104,6 +113,15 @@ function countedTextGen(gen: TextGen): TextGen {
     fill(req) {
       usage.textGen++
       return gen.fill(req)
+    },
+  }
+}
+
+function countedEscalator(escalator: Escalator): Escalator {
+  return {
+    run(req) {
+      usage.escalations++
+      return escalator.run(req)
     },
   }
 }

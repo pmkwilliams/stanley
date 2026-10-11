@@ -27,6 +27,9 @@ export function toJevState(system: string, entries: LogEntry[], now: NowBlock): 
       case 'tool':
         lines.push(old ? `Result: ${e.summary}` : `Result:\n${e.content}`)
         break
+      case 'said':
+        lines.push(`Stanley said: "${e.content}"`)
+        break
       case 'event':
         if (e.kind === 'task-end') lines.push('— task complete —')
         break

@@ -1,6 +1,6 @@
 import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { Agent, createTextGen, defaultConfig, SYSTEM_PROMPT, type AgentStatus, type TextGen } from '@stanley/agent'
+import { Agent, createEscalator, createTextGen, defaultConfig, SYSTEM_PROMPT, type AgentStatus, type Escalator, type TextGen } from '@stanley/agent'
 import { createJevClient, createMockJevClient } from '@stanley/jev'
 import { SAMPLE_RATE, Transcriber, writeWav } from '@stanley/stt'
 import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, Menu, session } from 'electron'
@@ -32,6 +32,9 @@ let speaking = false
 /** Start/stop transitions run in order, so a quick re-press waits for the previous flush instead of interleaving with it. */
 let transitions = Promise.resolve()
 let status: AgentStatus = 'idle'
+/** What Stanley last said, until the user has answered it. */
+let said: Snapshot['said'] = null
+let utteranceStartedAt = 0
 let stt: Snapshot['stt'] = 'loading'
 let transcriber: Transcriber | null = null
 const transcript = { finalized: [] as string[], partial: '' }
@@ -52,6 +55,8 @@ const textGen: TextGen = mock
   ? { fill: async ({ context }) => context.split('\n').filter((l) => l.startsWith('User:')).at(-1)?.slice(6) ?? '' }
   : createTextGen()
 
+const escalator: Escalator = mock ? { run: async () => ({ text: "I'm offline, so I can't help with that one." }) } : createEscalator()
+
 const sessionsDir = join(app.getPath('userData'), 'sessions')
 mkdirSync(sessionsDir, { recursive: true })
 const sessionName = new Date().toISOString().replace(/[:.]/g, '-')
@@ -62,24 +67,29 @@ const appEvent = (event: AppDebugEvent) => debug.record({ source: 'app', event }
 appEvent({ type: 'session-start', session: sessionName, config: defaultConfig, systemPrompt: SYSTEM_PROMPT, mock })
 
 const jev = mock ? createMockJevClient() : createJevClient()
-const agent = new Agent(
-  shell,
+const agent = new Agent({
+  world: shell,
   jev,
   textGen,
-  {
+  escalator,
+  events: {
     status: (s) => {
       status = s
       appEvent({ type: 'status', status: s })
       sendSnapshot()
     },
+    said: (text) => {
+      said = { text, at: Date.now() }
+      sendSnapshot()
+    },
     debug: (event) => debug.record({ source: 'agent', event }),
   },
-  defaultConfig,
-  (entry) => {
+  config: defaultConfig,
+  sink: (entry) => {
     appendFileSync(sessionFile, JSON.stringify(entry) + '\n')
     debug.record({ source: 'log', event: entry })
   },
-)
+})
 
 function sendSnapshot() {
   const snapshot: Snapshot = {
@@ -92,6 +102,7 @@ function sendSnapshot() {
     utteranceOpen,
     transcript,
     status,
+    said,
     stt,
     mock,
     ptt,
@@ -143,6 +154,7 @@ function beginUtterance() {
   transcript.partial = ''
   clip = saveClips ? lead : null
   lead = []
+  utteranceStartedAt = Date.now()
   agent.utteranceStart()
   utteranceOpen = true
 }
@@ -152,6 +164,8 @@ function endUtterance() {
   if (!utteranceOpen) return
   utteranceOpen = false
   writeClip()
+  // Keep what Stanley said on screen while the user answers it; clear it once they have.
+  if (said && said.at < utteranceStartedAt) said = null
   agent.utteranceEnd()
   sendSnapshot()
 }

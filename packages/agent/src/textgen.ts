@@ -15,7 +15,8 @@ export function createTextGen(opts: { model?: string } = {}): TextGen {
         abortSignal: signal,
         system:
           'You fill a single input field for a voice assistant. Reply with only the text to type into the field. No quotes, no explanation. ' +
-          'If the user has not yet said what goes in the field (for example they stopped at "called…" or "um"), reply with nothing. Never invent a placeholder.',
+          "Use the user's own words; only tidy them (capitalization, punctuation, dropping filler like \"um\"). Never add details, sentences or sentiments they didn't say. " +
+          'If the user has not yet said what goes in the field (for example they said only "reply", or stopped at "called…" or "um"), reply with nothing. Never invent a placeholder.',
         prompt: `${context}\n\n## Field\n${instructions}`,
       })
       return text.trim()

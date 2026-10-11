@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { AgentNode } from '@stanley/app-sdk'
 import type { ChoiceRequest, ChoiceResult, DecisionClient } from '@stanley/jev'
-import { Agent, type AgentStatus, type TickReport, type World } from '../src/agent'
+import { Agent, type AgentDeps, type AgentStatus, type TickReport, type World } from '../src/agent'
+import type { ConsequenceCheck, ConsequenceVerdict } from '../src/consequence'
 import type { AgentDebugEvent } from '../src/debug'
+import type { EscalationRequest, Escalator } from '../src/escalate'
 
 const tree: AgentNode = {
   id: 'home',
@@ -53,6 +55,22 @@ function scripted(script: Script): DecisionClient & { calls: number } {
 }
 
 const textGen = { fill: async () => 'Buy eggs' }
+
+const verdict = (v: Partial<ConsequenceVerdict> = {}): ConsequenceVerdict => ({
+  effect: 'local',
+  effects: {},
+  consequential: false,
+  allowed: true,
+  cached: false,
+  ...v,
+})
+const allowAll: ConsequenceCheck = { check: async () => verdict() }
+/** Says nothing and does nothing; tests that need more pass their own. */
+const silent: Escalator = { run: async () => ({ text: '' }) }
+
+function make(world: World, jev: DecisionClient, gen: AgentDeps['textGen'], events: AgentDeps['events'] = {}, extra: Partial<AgentDeps> = {}) {
+  return new Agent({ world, jev, textGen: gen, events, escalator: silent, check: allowAll, ...extra })
+}
 const settle = () => new Promise((r) => setTimeout(r, 20))
 
 /** A partial as the transcriber delivers it once its words have held across two decodes. */
@@ -66,7 +84,7 @@ function setup(script: Script, worldOpts?: Parameters<typeof fakeWorld>[0]) {
   const jev = scripted(script)
   const ticks: TickReport[] = []
   const statuses: AgentStatus[] = []
-  const agent = new Agent(world, jev, textGen, { tick: (t) => ticks.push(t), status: (s) => statuses.push(s) })
+  const agent = make(world, jev, textGen, { tick: (t) => ticks.push(t), status: (s) => statuses.push(s) })
   return { agent, jev, performed, ticks, statuses }
 }
 
@@ -80,7 +98,7 @@ describe('Agent status', () => {
     expect(statuses).toEqual(['guessing', 'acting', 'thinking', 'writing', 'acting', 'thinking', 'done'])
   })
 
-  it('listens for more while the utterance is open, and did not get it once it ended', async () => {
+  it('listens for more while the utterance is open, and escalates instead of giving up once it ended', async () => {
     const { agent, statuses } = setup(() => ({ choice: 'wait' }))
     agent.utteranceStart()
     agent.segment('hmm')
@@ -88,7 +106,18 @@ describe('Agent status', () => {
     expect(statuses).toEqual(['guessing', 'listening'])
     agent.utteranceEnd()
     await settle()
-    expect(statuses.slice(2)).toEqual(['thinking', 'didnt-get-that'])
+    expect(statuses.slice(2)).toEqual(['thinking', 'thinking', 'done'])
+  })
+
+  it("did not get it when the utterance ended without any words", async () => {
+    const { agent, statuses } = setup(() => ({ choice: 'wait' }))
+    agent.utteranceStart()
+    say(agent, 'hmm let me think')
+    await settle()
+    agent.utteranceStart() // a new utterance, ended before anything was said
+    agent.utteranceEnd()
+    await settle()
+    expect(statuses.at(-1)).toBe('didnt-get-that')
   })
 })
 
@@ -115,26 +144,30 @@ describe('Agent loop', () => {
     expect(performed).toEqual(['todo', 'todo:add=Buy eggs', 'show'])
   })
 
-  it('waits through a long pause until the user says the value', async () => {
+  it('waits through a pause until the user says the value, and asks for it once they finish without it', async () => {
     const { world, performed } = fakeWorld()
     const ticks: TickReport[] = []
     const statuses: AgentStatus[] = []
+    const reasons: string[] = []
+    const escalator: Escalator = { run: async ({ reason }) => (reasons.push(reason), { text: 'What should it be called?' }) }
     const jev = scripted(() => ({ choice: performed.some((p) => p.startsWith('todo:add')) ? 'stop' : 'To-do › add task' }))
     const gen = { fill: async ({ context }: { context: string }) => (context.includes('get eggs') ? 'Get eggs' : '') }
-    const agent = new Agent(world, jev, gen, { tick: (t) => ticks.push(t), status: (s) => statuses.push(s) })
+    const agent = make(world, jev, gen, { tick: (t) => ticks.push(t), status: (s) => statuses.push(s) }, { escalator })
     agent.utteranceStart()
     agent.segment('create a new to-do called')
     await settle()
     agent.segment('um')
     await settle()
+    expect(statuses.at(-1)).toBe('idle')
+    expect(reasons).toEqual([])
     agent.utteranceEnd() // the pause outlasts the silence timeout
     await settle()
-    expect(performed).toEqual([])
-    expect(statuses.at(-1)).toBe('idle')
+    expect(performed).toEqual(['show'])
+    expect(reasons[0]).toContain("hasn't said what to type")
     agent.utteranceStart()
     agent.segment('get eggs')
     await settle()
-    expect(performed).toEqual(['todo:add=Get eggs', 'show'])
+    expect(performed).toEqual(['show', 'todo:add=Get eggs', 'show'])
     expect(ticks.map((t) => t.outcome)).not.toContain('forced-stop')
   })
 
@@ -146,7 +179,7 @@ describe('Agent loop', () => {
     const plan = ['To-do › add task', 'To-do › add task', 'To-do › add task', 'stop']
     const ticks: TickReport[] = []
     const gen = { fill: () => new Promise<string>((r) => (release = r)) }
-    const agent = new Agent(world, scripted((_, i) => ({ choice: plan[i]! })), gen, { tick: (t) => ticks.push(t) })
+    const agent = make(world, scripted((_, i) => ({ choice: plan[i]! })), gen, { tick: (t) => ticks.push(t) })
     agent.utteranceStart()
     agent.segment('add new to do called')
     await settle()
@@ -333,7 +366,7 @@ describe('Agent task boundaries', () => {
 describe('Agent debug trace', () => {
   function traced(script: Script, world = fakeWorld().world) {
     const events: AgentDebugEvent[] = []
-    const agent = new Agent(world, scripted(script), textGen, { debug: (e) => events.push(e) })
+    const agent = make(world, scripted(script), textGen, { debug: (e) => events.push(e) })
     return { agent, events, of: <T extends AgentDebugEvent['type']>(type: T) => events.filter((e): e is Extract<AgentDebugEvent, { type: T }> => e.type === type) }
   }
 
@@ -393,11 +426,135 @@ describe('Agent debug trace', () => {
     const world = { ...fakeWorld().world, perform: async () => Promise.reject(new Error('boom')) }
     const statuses: string[] = []
     const events: AgentDebugEvent[] = []
-    const agent = new Agent(world, scripted(() => ({ choice: 'Email' })), textGen, { debug: (e) => events.push(e), status: (s) => statuses.push(s) })
+    const agent = make(world, scripted(() => ({ choice: 'Email' })), textGen, { debug: (e) => events.push(e), status: (s) => statuses.push(s) })
     agent.utteranceStart()
     say(agent, 'open email')
     await settle()
     expect(events.find((e) => e.type === 'tick-end')).toMatchObject({ outcome: 'error', detail: 'Error: boom' })
     expect(statuses.at(-1)).toBe('error')
+  })
+})
+
+describe('Agent consequences', () => {
+  it('escalates an action the user has not explicitly asked for instead of doing it', async () => {
+    const { world, performed } = fakeWorld()
+    const runs: EscalationRequest[] = []
+    const escalator: Escalator = { run: async (req) => (runs.push(req), { text: 'Delete it?' }) }
+    const check: ConsequenceCheck = { check: async () => verdict({ effect: 'destructive', consequential: true, asked: 0.2, allowed: false }) }
+    const ticks: TickReport[] = []
+    const agent = make(world, scripted(() => ({ choice: 'Email › delete' })), textGen, { tick: (t) => ticks.push(t) }, { escalator, check })
+    agent.utteranceStart()
+    agent.segment('that email is junk')
+    await settle()
+    expect(performed).toEqual(['show'])
+    expect(ticks[0]!.outcome).toBe('gated')
+    expect(runs[0]!.reason).toContain('Email › delete')
+  })
+
+  it('does an action the user explicitly asked for', async () => {
+    const { world, performed } = fakeWorld()
+    const plan = ['Email › delete', 'stop']
+    const check: ConsequenceCheck = { check: async () => verdict({ effect: 'destructive', consequential: true, asked: 0.95, allowed: true }) }
+    const agent = make(world, scripted((_, i) => ({ choice: plan[i]! })), textGen, {}, { check })
+    agent.utteranceStart()
+    agent.segment('delete that email')
+    await settle()
+    expect(performed).toEqual(['email:delete', 'show'])
+  })
+
+  it('asks Jev what an action does once per action, and whether it was asked for only when it matters', async () => {
+    const { createConsequenceCheck } = await import('../src/consequence')
+    const questions: string[] = []
+    const jev: DecisionClient = {
+      async choose(req) {
+        questions.push(req.instructions)
+        const p = 'external' in req.options ? { none: 0.1, local: 0.1, destructive: 0.1, external: 0.7 } : { yes: 0.9, no: 0.1 }
+        return { choice: Object.entries(p).sort(([, a], [, b]) => b - a)[0]![0], probabilities: p, confidence: 0.9, latencyMs: 1 }
+      },
+    }
+    const check = createConsequenceCheck(jev, { consequential: 0.35, explicitAsk: 0.8 })
+    const node = { id: 'email:send', kind: 'action' as const, label: 'send' }
+    const first = await check.check({ state: 'send it', option: 'Email › send', description: null, node })
+    const second = await check.check({ state: 'send it', option: 'Email › send', description: null, node })
+    expect(first).toMatchObject({ effect: 'external', consequential: true, asked: 0.9, allowed: true, cached: false })
+    expect(second.cached).toBe(true)
+    expect(questions.filter((q) => q.startsWith('What would'))).toHaveLength(1)
+    expect(questions.filter((q) => q.startsWith('Has the user'))).toHaveLength(2)
+  })
+})
+
+describe('Agent escalation', () => {
+  function escalating(run: Escalator['run'], script: Script = () => ({ choice: 'escalate' }), check = allowAll) {
+    const { world, performed } = fakeWorld()
+    const said: string[] = []
+    const statuses: AgentStatus[] = []
+    const events: AgentDebugEvent[] = []
+    const jev = scripted(script)
+    const agent = make(world, jev, textGen, { said: (t) => said.push(t), status: (s) => statuses.push(s), debug: (e) => events.push(e) }, { escalator: { run }, check })
+    return { agent, jev, performed, said, statuses, events }
+  }
+
+  it('lets the escalation model act on the same options and says its text', async () => {
+    const { agent, performed, said, statuses } = escalating(async ({ act, options }) => {
+      expect(options).toContain('To-do › add task')
+      expect(options).not.toContain('wait')
+      await act('To-do')
+      await act('To-do › add task', 'Call mom')
+      return { text: 'Added it.' }
+    })
+    agent.utteranceStart()
+    agent.segment('can you remind me to call mom')
+    await settle()
+    expect(performed).toEqual(['todo', 'todo:add=Call mom', 'show'])
+    expect(said).toEqual(['Added it.'])
+    expect(agent.log.entries.filter((e) => e.role === 'said')).toMatchObject([{ content: 'Added it.' }])
+    expect(statuses.at(-1)).toBe('done')
+  })
+
+  it('refuses the escalation model an action the user has not asked for', async () => {
+    let result = ''
+    const check: ConsequenceCheck = { check: async () => verdict({ effect: 'external', consequential: true, asked: 0.1, allowed: false }) }
+    const { agent, performed } = escalating(
+      async ({ act }) => {
+        result = await act('Email › delete')
+        return { text: 'Should I delete it?' }
+      },
+      undefined,
+      check,
+    )
+    agent.utteranceStart()
+    agent.segment('what about that email')
+    await settle()
+    expect(result).toContain('Not done')
+    expect(performed).toEqual(['show'])
+  })
+
+  it('only hands over at a pause, never mid-word', async () => {
+    let runs = 0
+    const { agent } = escalating(async () => (runs++, { text: '' }))
+    agent.utteranceStart()
+    say(agent, 'what is the capital of')
+    await settle()
+    expect(runs).toBe(0)
+    agent.segment('what is the capital of France')
+    await settle()
+    expect(runs).toBe(1)
+  })
+
+  it('drops its run when the user says more, and re-decides with the whole turn', async () => {
+    const contexts: string[] = []
+    const { agent, said, events } = escalating(async ({ context, signal }) => {
+      contexts.push(context)
+      if (contexts.length === 1) await new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason)))
+      return { text: 'Paris.' }
+    })
+    agent.utteranceStart()
+    agent.segment('what is the capital')
+    await settle()
+    agent.segment('of France')
+    await settle()
+    expect(said).toEqual(['Paris.'])
+    expect(contexts[1]).toContain('of France')
+    expect(events.filter((e) => e.type === 'escalation-end').map((e) => (e as { aborted: boolean }).aborted)).toEqual([true, false])
   })
 })

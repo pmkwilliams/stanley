@@ -26,6 +26,8 @@ export interface EmailState {
   /** `inbox`, `sent` or `email/<id>` */
   route: string
   nextSentId: number
+  /** Unsent reply text per email id. Typing a reply never sends it; `send` does. */
+  drafts: Record<string, string>
 }
 
 const seed: Email[] = [
@@ -135,45 +137,53 @@ export const emailApp = defineApp<EmailState>({
   title: 'Email',
   description: 'Email inbox: read, archive, delete and reply to messages',
 
-  init: () => ({ emails: structuredClone(seed), sent: [], route: 'inbox', nextSentId: 1 }),
+  init: () => ({ emails: structuredClone(seed), sent: [], route: 'inbox', nextSentId: 1, drafts: {} }),
 
   current: (s) => s.route,
 
   nodes(s) {
     const inbox = s.emails.filter((e) => !e.archived)
     const unread = inbox.filter((e) => !e.read).length
-    const items: AgentNode[] = inbox.map((e) => ({
-      id: `email/${e.id}`,
-      kind: 'location',
-      label: `"${e.subject}" from ${e.from}`,
-      description: `${e.read ? 'read' : 'unread'} email, ${formatDate(e.date)}`,
-      children: [
-        {
-          id: `email/${e.id}/reply`,
-          kind: 'input',
-          label: `reply to ${e.from}`,
-          description: `send a reply to "${e.subject}"`,
-          input: {
-            instructions: `The body of a short reply to ${e.from} about "${e.subject}": one to three sentences in the user's voice, no greeting line or signature.`,
+    const items: AgentNode[] = inbox.map((e) => {
+      const draft = s.drafts[e.id]
+      const send: AgentNode[] = draft
+        ? [{ id: `email/${e.id}/send`, kind: 'action', label: `send the reply to ${e.from}`, description: `send the drafted reply: "${draft}"` }]
+        : []
+      return {
+        id: `email/${e.id}`,
+        kind: 'location',
+        label: `"${e.subject}" from ${e.from}`,
+        description: `${e.read ? 'read' : 'unread'} email, ${formatDate(e.date)}${draft ? ', reply drafted' : ''}`,
+        children: [
+          {
+            id: `email/${e.id}/reply`,
+            kind: 'input',
+            label: draft ? `rewrite the reply to ${e.from}` : `write a reply to ${e.from}`,
+            description: `type the reply to "${e.subject}" into the reply box`,
+            input: {
+              instructions: `The reply to ${e.from} about "${e.subject}", as the user said it: keep their words. If they only described it ("say I'm in"), write it briefly in the first person. No greeting line or signature, and nothing they didn't say.`,
+              placeholder: `Reply to ${e.from}`,
+            },
           },
-        },
-        { id: `email/${e.id}/unread`, kind: 'action', label: `mark "${e.subject}" unread` },
-        {
-          id: `email/${e.id}/archive`,
-          kind: 'action',
-          label: `archive "${e.subject}"`,
-          description: 'remove from the inbox',
-          destructive: true,
-        },
-        {
-          id: `email/${e.id}/delete`,
-          kind: 'action',
-          label: `delete "${e.subject}"`,
-          description: 'permanently delete the email',
-          destructive: true,
-        },
-      ],
-    }))
+          ...send,
+          { id: `email/${e.id}/unread`, kind: 'action', label: `mark "${e.subject}" unread` },
+          {
+            id: `email/${e.id}/archive`,
+            kind: 'action',
+            label: `archive "${e.subject}"`,
+            description: 'remove from the inbox',
+            destructive: true,
+          },
+          {
+            id: `email/${e.id}/delete`,
+            kind: 'action',
+            label: `delete "${e.subject}"`,
+            description: 'permanently delete the email',
+            destructive: true,
+          },
+        ],
+      }
+    })
     return [
       { id: 'inbox', kind: 'location', label: 'inbox', description: `${unread} unread of ${inbox.length} emails`, children: items },
       { id: 'sent', kind: 'location', label: 'sent mail', description: `${s.sent.length} sent replies` },
@@ -205,11 +215,20 @@ export const emailApp = defineApp<EmailState>({
       return { state: { ...s, emails: s.emails.filter((e) => e.id !== id), route: 'inbox' }, summary: `Deleted ${label}` }
     }
     if (verb === 'reply') {
-      const body = args.text?.trim()
-      if (!body) return { state: s, summary: 'No reply text given; nothing sent' }
+      const body = args.text?.trim() ?? ''
+      const { [id!]: _, ...rest } = s.drafts
+      const drafts = body ? { ...s.drafts, [id!]: body } : rest
+      const summary = body ? `Drafted a reply to ${email.from} (not sent): "${body}"` : `Cleared the reply to ${email.from}`
+      return { state: { ...s, drafts, route: `email/${id}` }, summary }
+    }
+    if (verb === 'send') {
+      const body = s.drafts[id!]?.trim()
+      if (!body) return { state: s, summary: `No reply drafted to ${email.from}; nothing sent` }
       const reply = { id: `s${s.nextSentId}`, to: email.from, subject: `Re: ${email.subject}`, date: localNow(), body }
+      const { [id!]: _, ...drafts } = s.drafts
+      // Show the sent mail, so it is clear the reply went out.
       return {
-        state: { ...s, sent: [...s.sent, reply], nextSentId: s.nextSentId + 1 },
+        state: { ...s, sent: [...s.sent, reply], nextSentId: s.nextSentId + 1, drafts, route: 'sent' },
         summary: `Reply sent to ${email.from}: "${reply.subject}"`,
       }
     }
@@ -222,7 +241,11 @@ export const emailApp = defineApp<EmailState>({
       return `# Email › Sent\n${sent || '_No sent mail_'}`
     }
     const open = s.route.startsWith('email/') ? s.emails.find((e) => `email/${e.id}` === s.route) : undefined
-    if (open) return `# Email › ${open.subject}\nFrom: ${open.from} <${open.address}>\nDate: ${formatDate(open.date)}\n\n${open.body}`
+    if (open) {
+      const draft = s.drafts[open.id]
+      const reply = draft ? `\n\n## Reply draft (not sent)\n${draft}` : ''
+      return `# Email › ${open.subject}\nFrom: ${open.from} <${open.address}>\nDate: ${formatDate(open.date)}\n\n${open.body}${reply}`
+    }
     const list = s.emails
       .filter((e) => !e.archived)
       .map((e) => `- ${e.read ? '' : '**[unread]** '}"${e.subject}" from ${e.from}, ${formatDate(e.date)}`)

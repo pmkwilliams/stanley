@@ -11,6 +11,8 @@ export interface TodoState {
   /** `list` or `item/<id>` */
   route: string
   nextId: number
+  /** Text in the "add a task" box, not yet added. */
+  newTitle: string
 }
 
 const seed: Todo[] = [
@@ -25,7 +27,7 @@ export const todoApp = defineApp<TodoState>({
   title: 'To-do',
   description: 'To-do list: add, complete and delete tasks',
 
-  init: () => ({ todos: structuredClone(seed), route: 'list', nextId: seed.length + 1 }),
+  init: () => ({ todos: structuredClone(seed), route: 'list', nextId: seed.length + 1, newTitle: '' }),
 
   current: (s) => s.route,
 
@@ -48,12 +50,13 @@ export const todoApp = defineApp<TodoState>({
         description: 'all tasks',
         children: [
           {
-            id: 'add',
+            id: 'title',
             kind: 'input',
-            label: 'add task',
-            description: 'create a new task',
-            input: { instructions: 'The title of the new to-do item, short and imperative.' },
+            label: 'type a new task',
+            description: 'type the title of a new task into the "add a task" box',
+            input: { instructions: 'The title of the new to-do item, short and imperative, in the words the user used.', placeholder: 'Add a task' },
           },
+          ...(s.newTitle ? [{ id: 'add', kind: 'action' as const, label: 'add the typed task', description: `add "${s.newTitle}" to the list` }] : []),
           ...items,
         ],
       },
@@ -63,12 +66,16 @@ export const todoApp = defineApp<TodoState>({
   async perform(s, nodeId, args) {
     if (nodeId === 'list') return { state: { ...s, route: 'list' }, summary: 'Opened to-do list' }
 
+    if (nodeId === 'title') {
+      const newTitle = args.text?.trim() ?? ''
+      return { state: { ...s, newTitle, route: 'list' }, summary: newTitle ? `Typed new task "${newTitle}" (not added yet)` : 'Cleared the new task box' }
+    }
     if (nodeId === 'add') {
-      const title = args.text?.trim()
-      if (!title) return { state: s, summary: 'No title given; nothing added' }
+      const title = s.newTitle.trim()
+      if (!title) return { state: s, summary: 'No task typed; nothing added' }
       const todo = { id: `t${s.nextId}`, title, done: false }
       return {
-        state: { ...s, todos: [...s.todos, todo], nextId: s.nextId + 1, route: 'list' },
+        state: { ...s, todos: [...s.todos, todo], nextId: s.nextId + 1, route: 'list', newTitle: '' },
         summary: `Added to-do "${title}"`,
       }
     }
@@ -91,7 +98,8 @@ export const todoApp = defineApp<TodoState>({
   toMarkdown(s) {
     const open = s.route.startsWith('item/') ? s.todos.find((t) => `item/${t.id}` === s.route) : undefined
     const list = s.todos.map((t) => `- [${t.done ? 'x' : ' '}] ${t.title}`).join('\n') || '_No tasks_'
-    return open ? `# To-do › ${open.title}\nStatus: ${open.done ? 'done' : 'open'}` : `# To-do\n${list}`
+    const box = s.newTitle ? `\n\nNew task box (not added yet): ${s.newTitle}` : ''
+    return open ? `# To-do › ${open.title}\nStatus: ${open.done ? 'done' : 'open'}` : `# To-do\n${list}${box}`
   },
 })
 

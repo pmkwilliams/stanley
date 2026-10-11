@@ -3,7 +3,6 @@
   import { dayName, describeCode, type WeatherState } from './core'
 
   let { data, perform }: AppUiProps<WeatherState> = $props()
-  let draft = $state('')
   /** Local "in flight" flag: perform is fire-and-forget, so clear it when new state arrives. */
   let pending = $state(false)
 
@@ -12,19 +11,21 @@
     pending = false
   })
 
+  /** The box's text lives in app state, shared with the agent. */
   function search(e: SubmitEvent) {
     e.preventDefault()
-    if (!draft.trim()) return
+    const text = new FormData(e.currentTarget as HTMLFormElement).get('city')?.toString() ?? ''
+    if (!text.trim()) return
     pending = true
-    perform('location', { text: draft })
-    draft = ''
+    perform('city', { text })
+    perform('location')
   }
 </script>
 
 <section class="app">
   <h1>Weather</h1>
   <form onsubmit={search}>
-    <input placeholder="Search a city" bind:value={draft} />
+    <input name="city" placeholder="Search a city" value={data.box} onchange={(e) => perform('city', { text: e.currentTarget.value })} />
   </form>
 
   {#if data.loading || pending}
