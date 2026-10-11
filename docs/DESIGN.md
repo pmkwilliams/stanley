@@ -335,7 +335,8 @@ Working, verified end to end:
 - Parakeet + Silero live transcription: partials every ~430 ms, segments at pauses, silence
   auto-end at 2 s; model loads in ~1.3 s. Verified by streaming synthesized speech through the app.
 - All five apps; background work with a single reveal; debug window decision timeline.
-- Evals, 3 runs each: demo apps 75/75 (25 scenarios), fixture websites 36/36 (12), live websites 4/4.
+- Evals: demo apps 75/75 (25 scenarios × 3), fixture websites 45/45 (15 × 3), live websites 8/8
+  (4 × 2), synthetic voice through the real transcriber 25/25.
 
 Not yet verified / known gaps:
 - Real microphone capture (needs macOS mic permission for the dev Electron binary; a packaged app
