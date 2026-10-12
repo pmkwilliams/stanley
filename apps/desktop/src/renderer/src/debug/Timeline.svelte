@@ -64,6 +64,21 @@
     if (e.source === 'agent' && e.event.type === 'say') {
       return { who: 'say', text: `${e.event.result}: "${e.event.text}"`, tone: e.event.result === 'dropped' ? 'muted' : undefined }
     }
+    if (e.source === 'agent' && e.event.type === 'cut') {
+      return { who: 'cut', text: `heard "${e.event.spoken}" of "${e.event.text}"`, tone: 'strong' }
+    }
+    if (e.source === 'agent' && e.event.type === 'overlap') {
+      const ev = e.event
+      const verdict = ev.verdict ? ` · ${ev.verdict.choice} ${(ev.verdict.probabilities[ev.verdict.choice]! * 100).toFixed(0)}% in ${ms(ev.verdict.latencyMs)}` : ''
+      const text = `${ev.action}${ev.heard ? `: "${ev.heard}"` : ''}${ev.echo ? ` · echo "${ev.echo}"` : ''}${verdict}${ev.reason ? ` · ${ev.reason}` : ''}`
+      return { who: 'overlap', text, tone: ev.action === 'cut' ? 'strong' : ev.action === 'duck' ? 'muted' : undefined }
+    }
+    if (e.source === 'tts') {
+      const ev = e.event
+      if (ev.type === 'synth') return { who: 'voice', text: `"${ev.text}" · ${ms(ev.audioMs)} audio in ${ms(ev.synthMs)} · ${ms(ev.queuedMs)} queued ahead`, tone: 'muted' }
+      if (ev.type === 'stop') return { who: 'voice', text: `stopped after "${ev.spoken}"` }
+      return { who: 'voice', text: `couldn't say "${ev.text}": ${ev.error}`, tone: 'bad' }
+    }
     if (e.source === 'app') {
       const ev = e.event
       switch (ev.type) {
@@ -79,6 +94,8 @@
           return { who: 'user', text: `clicked ${ev.option} → ${ev.summary}` }
         case 'stt-state':
           return { who: 'stt', text: `${ev.stt}${ev.error ? ` — ${ev.error}` : ''}`, tone: ev.error ? 'bad' : undefined }
+        case 'tts-state':
+          return { who: 'voice', text: `${ev.tts}${ev.error ? ` — ${ev.error}` : ''}`, tone: ev.error ? 'bad' : undefined }
       }
     }
     return { who: e.source, text: '' }

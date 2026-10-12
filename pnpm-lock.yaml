@@ -47,6 +47,9 @@ importers:
       '@stanley/stt':
         specifier: workspace:*
         version: link:../../packages/stt
+      '@stanley/tts':
+        specifier: workspace:*
+        version: link:../../packages/tts
       ai:
         specifier: 7.0.137
         version: 7.0.137(zod@4.6.5)
@@ -204,6 +207,12 @@ importers:
       onnxruntime-node:
         specifier: ^1.30.0
         version: 1.30.0
+      sherpa-onnx-node:
+        specifier: 1.13.8
+        version: 1.13.8
+
+  packages/tts:
+    dependencies:
       sherpa-onnx-node:
         specifier: 1.13.8
         version: 1.13.8

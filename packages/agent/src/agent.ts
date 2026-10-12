@@ -57,7 +57,14 @@ export interface AgentEvents {
   tick(report: TickReport): void
   status(status: AgentStatus): void
   debug(event: AgentDebugEvent): void
-  /** Stanley says something to the user: shown on screen now, spoken later. */
+  /**
+   * Stanley is saying something: `text` is all of reply `id` so far, `done` once it is complete.
+   * Sent as thinking writes it, once the user's turn is over, so it can be spoken and shown as it comes.
+   */
+  speak(id: number, text: string, done: boolean): void
+  /** Stop saying reply `id`: it went out of date. The host reports what was heard with `cutOff`. */
+  hush(id: number): void
+  /** Stanley said something: a whole reply, once complete. */
   said(text: string): void
   /**
    * The agent judged the user finished, and ended the utterance before the silence backstop.
@@ -135,6 +142,23 @@ interface Held {
   run(): Promise<string>
 }
 
+/**
+ * Something Stanley says. Thinking streams it in as it writes; it is said once the user's turn is
+ * over (`released`), and words they add before then make it moot (`dropped`).
+ */
+interface Reply {
+  id: number
+  text: string
+  done: boolean
+  released: boolean
+  dropped: boolean
+  /** In the conversation: complete, or as far as it got before the user cut in. */
+  logged: boolean
+  /** The words it answers. */
+  seen: TranscriptSnapshot
+  utteranceId: number
+}
+
 export class Agent {
   readonly log: MessageLog
   readonly config: AgentConfig
@@ -166,8 +190,11 @@ export class Agent {
   /** Jev's latest P(finished saying what's needed), with the words it saw. */
   private heard: { seen: TranscriptSnapshot; p: number } | null = null
   private held: Held | null = null
-  /** Something to say, waiting for the user to finish. */
-  private unsaid: { text: string; seen: TranscriptSnapshot; utteranceId: number } | null = null
+  /** The latest thing Stanley says, from when thinking starts writing it. */
+  private reply: Reply | null = null
+  /** Replies handed to the host to say, most recent last, in case the user cuts in on one. */
+  private told: Reply[] = []
+  private replyCount = 0
   private endTimer?: ReturnType<typeof setTimeout>
   /** When the agent last ended the user's turn itself; 0 once anything else ended or started one. */
   private endedByAgentAt = 0
@@ -197,6 +224,28 @@ export class Agent {
     return narrate(this.log.entries, await this.world.screen(), this.live())
   }
 
+  /** The conversation alone, without the screen, and without reply `except` (the one being said). */
+  conversation(except?: number): string {
+    const entries = this.log.entries.filter((e) => !((e.role === 'said' || e.role === 'cut') && e.id === except))
+    return narrate(entries, null, this.live())
+  }
+
+  /**
+   * The user cut in while Stanley was saying reply `id`, or the host stopped it: they heard only
+   * `spoken` of it. The conversation keeps what they heard, and whatever thinking is still writing
+   * for it is moot.
+   */
+  cutOff(id: number, spoken: string): void {
+    const reply = this.told.find((r) => r.id === id)
+    if (!reply) return
+    if (reply.done && spoken.trim() === reply.text) return
+    if (!reply.logged) this.logSaid(reply)
+    reply.dropped = true
+    this.log.push({ role: 'cut', id, spoken: spoken.trim() })
+    this.events.debug?.({ type: 'cut', id, spoken: spoken.trim(), text: reply.text })
+    if (this.reply === reply) this.thinking?.abort()
+  }
+
   // ── Transcript input ────────────────────────────────────────────────────
 
   utteranceStart(): void {
@@ -224,7 +273,7 @@ export class Agent {
     this.heard = null
     this.held = null
     clearTimeout(this.endTimer)
-    this.dropUnsaid()
+    this.dropStale()
     this.openTask()
   }
 
@@ -239,7 +288,7 @@ export class Agent {
   partial(text: string, words?: HeardWord[]): void {
     text = markUnsure(text, words, this.config.unsureWord)
     this.transcript = { ...this.transcript, previous: this.transcript.partial, partial: text }
-    this.dropUnsaid()
+    this.dropStale()
     this.request('words')
   }
 
@@ -249,7 +298,7 @@ export class Agent {
     text = markUnsure(text, words, this.config.unsureWord)
     this.transcript = { finalized: [...this.transcript.finalized, text], partial: '', previous: '' }
     this.log.push({ role: 'user', content: text, utteranceId: this.utteranceId })
-    this.dropUnsaid()
+    this.dropStale()
     this.scheduleEnd()
     this.request('words')
   }
@@ -258,8 +307,11 @@ export class Agent {
     if (this.utteranceEnded) return
     this.utteranceEnded = true
     clearTimeout(this.endTimer)
-    if (this.unsaid && !hasNewWords(this.transcript, this.unsaid.seen) && this.unsaid.utteranceId === this.utteranceId) this.sayNow(this.unsaid.text)
-    this.unsaid = null
+    const reply = this.reply
+    if (reply && !reply.released && !reply.dropped) {
+      if (reply.utteranceId === this.utteranceId && !hasNewWords(this.transcript, reply.seen)) this.release(reply)
+      else this.drop(reply)
+    }
     this.request('end')
   }
 
@@ -626,11 +678,13 @@ export class Agent {
     const controller = new AbortController()
     this.thinking = controller
     const started = performance.now()
+    const reply = this.begin()
     try {
-      const w = await this.thinker.write({ context, field: option, signal: controller.signal })
+      const w = await this.thinker.write({ context, field: option, signal: controller.signal, onSay: (delta) => this.stream(reply, delta) })
       this.events.debug?.({ type: 'write', tickId: id, option, context, ...w, latencyMs: performance.now() - started, aborted: false })
-      return await this.applyWrite(id, option, target, decision, w)
+      return await this.applyWrite(id, option, target, decision, w, reply)
     } catch (err) {
+      this.drop(reply)
       if (!controller.signal.aborted) throw err
       this.events.debug?.({ type: 'write', tickId: id, option, context, latencyMs: performance.now() - started, aborted: true })
       this.gate(id, 'stale', 'new words arrived while writing; re-deciding with them')
@@ -646,7 +700,7 @@ export class Agent {
    * retyped as they go on, which is live dictation. Words Stanley composed wait until the user
    * finishes the thought, since more words would change them.
    */
-  private async applyWrite(id: number, option: string, target: Target, decision: DecisionMeta, w: Writing): Promise<string> {
+  private async applyWrite(id: number, option: string, target: Target, decision: DecisionMeta, w: Writing, reply: Reply): Promise<string> {
     const text = w.source === 'missing' || w.source === 'unclear' ? '' : unmarked(w.text).replace(/\s+/g, ' ').trim()
     // Misheard words are never typed: ask what was meant, quoting what was heard.
     if (w.source === 'unclear') {
@@ -656,26 +710,27 @@ export class Agent {
         this.halt('listening')
         return 'listen'
       }
-      this.say(w.say.trim() || `Sorry, I didn't catch what to put in ${option.split(' › ').at(-1)}. Could you say it again?`)
+      this.finish(reply, w.say.trim() || `Sorry, I didn't catch what to put in ${option.split(' › ').at(-1)}. Could you say it again?`)
       await this.finishTask('done')
       return 'asked'
     }
     if (text && w.source === 'stanley' && !this.thoughtDone()) {
-      return this.hold(id, 'thought', 'thought-open', `words Stanley wrote for [${option}] wait until the user finishes the thought`, () => this.applyWrite(id, option, target, decision, w))
+      return this.hold(id, 'thought', 'thought-open', `words Stanley wrote for [${option}] wait until the user finishes the thought`, () => this.applyWrite(id, option, target, decision, w, reply))
     }
     let say = w.say.trim()
     // Prose Stanley composed is read back word for word before anything can send it. A value
     // (a number, a choice from a list, a word or two) is just filling in what was asked.
     const prose = target.kind === 'element' && target.role !== 'combobox' && text.split(/\s+/).length > 3
-    if (w.source === 'stanley' && prose && !say.includes(text)) say = `I wrote: "${text}" Should I go ahead?`
+    // What thinking said may already be playing, so the words go after it.
+    if (w.source === 'stanley' && prose && !say.includes(text)) say = `${say ? `${say} ` : ''}I wrote: "${text}"${say.endsWith('?') ? '' : ' Should I go ahead?'}`
     // Re-deciding after more words often lands on the same text: retyping it isn't a step.
     const unchanged = !!text && target.kind === 'element' && text === (target.node.value ?? '')
     if (text && !unchanged) {
       this.events.status?.('acting')
       await this.attempt(id, option, target, { text }, 'thinking', decision, w.source === 'stanley' ? 'stanley' : 'user')
     }
+    this.finish(reply, say)
     if (say) {
-      this.say(say)
       await this.finishTask('done')
       return option
     }
@@ -714,19 +769,22 @@ export class Agent {
     const controller = new AbortController()
     this.thinking = controller
     const started = performance.now()
+    const reply = this.begin()
     try {
-      const c = await this.thinker.confirm({ context, option, signal: controller.signal })
+      const c = await this.thinker.confirm({ context, option, signal: controller.signal, onSay: (delta) => this.stream(reply, delta) })
       this.events.debug?.({ type: 'confirm', tickId: id, option, context, ...c, latencyMs: performance.now() - started, aborted: false })
       if (c.press) {
+        this.finish(reply, '')
         this.events.status?.('acting')
         await this.attempt(id, option, target, {}, 'thinking', decision)
         this.request('action')
         return option
       }
-      this.say(c.say.trim() || 'Should I go ahead?')
+      this.finish(reply, c.say.trim() || 'Should I go ahead?')
       await this.finishTask('done')
       return 'asked'
     } catch (err) {
+      this.drop(reply)
       if (!controller.signal.aborted) throw err
       this.events.debug?.({ type: 'confirm', tickId: id, option, context, latencyMs: performance.now() - started, aborted: true })
       this.gate(id, 'stale', 'new words arrived while confirming; re-deciding with them')
@@ -788,6 +846,7 @@ export class Agent {
     const controller = new AbortController()
     this.thinking = controller
     const started = performance.now()
+    const reply = this.begin()
     let steps = 0
     try {
       const { text } = await this.thinker.run({
@@ -796,11 +855,12 @@ export class Agent {
         options: list,
         maxSteps: this.config.thinkingSteps,
         signal: controller.signal,
+        onText: (delta) => this.stream(reply, delta),
         act: (option, text) => (steps++, this.thinkStep(id, option, text, controller.signal)),
       })
       const said = text.trim()
       this.events.debug?.({ type: 'think-end', tickId: id, text: said, steps, latencyMs: performance.now() - started, aborted: false })
-      if (said) this.say(said)
+      this.finish(reply, said)
       // Nothing to do yet while the user is mid-turn ("add one called… um"): keep listening.
       if (!said && steps === 0 && !this.thoughtDone()) {
         this.halt('listening')
@@ -809,8 +869,9 @@ export class Agent {
       await this.finishTask('done')
       return 'think'
     } catch (err) {
+      this.drop(reply)
       if (!controller.signal.aborted) throw err
-      // Out of date, so it says nothing. Steps it already took stay done, and logged.
+      // Out of date, so it says nothing more. Steps it already took stay done, and logged.
       this.events.debug?.({ type: 'think-end', tickId: id, text: '', steps, latencyMs: performance.now() - started, aborted: true })
       this.gate(id, 'stale', 'new words arrived while thinking; re-deciding with the whole turn')
       this.outcome = { outcome: 'stale-discarded' }
@@ -944,23 +1005,72 @@ export class Agent {
     }, endIn)
   }
 
-  /** Says something once the user has finished; words they add first make it moot. */
+  /** Says something, all at once. */
   private say(text: string): void {
-    if (this.utteranceEnded) return this.sayNow(text)
-    this.unsaid = { text, seen: structuredClone(this.transcript), utteranceId: this.utteranceId }
-    this.events.debug?.({ type: 'say', text, result: 'held' })
+    this.finish(this.begin(), text)
   }
 
-  private sayNow(text: string): void {
-    this.log.push({ role: 'said', content: text })
-    this.events.said?.(text)
-    if (this.unsaid?.text === text) this.events.debug?.({ type: 'say', text, result: 'said' })
+  /**
+   * Starts something to say, for thinking to stream into. It is said once the user has finished
+   * (at once, if they have); words they add first make it moot.
+   */
+  private begin(): Reply {
+    if (this.reply && !this.reply.released) this.drop(this.reply)
+    const reply: Reply = { id: ++this.replyCount, text: '', done: false, released: false, dropped: false, logged: false, seen: structuredClone(this.transcript), utteranceId: this.utteranceId }
+    this.reply = reply
+    if (this.utteranceEnded) this.release(reply)
+    return reply
   }
 
-  private dropUnsaid(): void {
-    if (!this.unsaid || (this.unsaid.utteranceId === this.utteranceId && !hasNewWords(this.transcript, this.unsaid.seen))) return
-    this.events.debug?.({ type: 'say', text: this.unsaid.text, result: 'dropped' })
-    this.unsaid = null
+  private stream(reply: Reply, delta: string): void {
+    if (reply.dropped || reply.done) return
+    reply.text += delta
+    if (reply.released && reply.text.trim()) this.events.speak?.(reply.id, reply.text, false)
+  }
+
+  /** All of what to say: '' for nothing. */
+  private finish(reply: Reply, text: string): void {
+    if (reply.dropped || reply.done) return
+    reply.text = text.trim()
+    reply.done = true
+    if (!reply.text) return this.drop(reply, false)
+    if (reply.released) this.tell(reply)
+    else this.events.debug?.({ type: 'say', text: reply.text, result: 'held' })
+  }
+
+  /** The user's turn is over: say what there is so far, and the rest as it comes. */
+  private release(reply: Reply): void {
+    reply.released = true
+    this.told = [...this.told.slice(-4), reply]
+    if (reply.done) this.events.debug?.({ type: 'say', text: reply.text, result: 'said' })
+    if (reply.text.trim()) this.tell(reply)
+  }
+
+  private tell(reply: Reply): void {
+    this.events.speak?.(reply.id, reply.text, reply.done)
+    if (reply.done && !reply.logged) this.logSaid(reply)
+  }
+
+  private logSaid(reply: Reply): void {
+    reply.logged = true
+    this.log.push({ role: 'said', content: reply.text, id: reply.id })
+    if (reply.done) this.events.said?.(reply.text)
+  }
+
+  /** Nothing more of it is said. If some of it may have been, the host stops it and reports what was heard. */
+  private drop(reply: Reply, trace = true): void {
+    if (reply.dropped || reply.logged) return
+    reply.dropped = true
+    if (trace && reply.text) this.events.debug?.({ type: 'say', text: reply.text, result: 'dropped' })
+    if (reply.released && reply.text.trim()) this.events.hush?.(reply.id)
+  }
+
+  /** What Stanley was going to say once the user finished is moot once they say more. */
+  private dropStale(): void {
+    const reply = this.reply
+    if (!reply || reply.released || reply.dropped) return
+    if (reply.utteranceId === this.utteranceId && !hasNewWords(this.transcript, reply.seen)) return
+    this.drop(reply)
   }
 
   private gate(tickId: number, rule: GateRule, detail: string): void {

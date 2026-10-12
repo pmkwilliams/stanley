@@ -35,8 +35,10 @@ export type Message =
       heardWords?: number
       decision?: DecisionMeta
     }
-  /** What Stanley said to the user (shown on screen; spoken later). */
-  | { role: 'said'; content: string }
+  /** What Stanley said to the user: shown on screen and read aloud. `id` is the reply's. */
+  | { role: 'said'; content: string; id?: number }
+  /** The user cut in while Stanley was saying reply `id`: only `spoken` of it was heard. */
+  | { role: 'cut'; id: number; spoken: string }
   | { role: 'event'; kind: 'task-start' | 'task-end' | 'stuck'; detail?: string }
 
 export type LogEntry = Message & { at: number }

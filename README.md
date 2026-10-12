@@ -11,7 +11,7 @@ See [docs/DESIGN.md](docs/DESIGN.md).
 
 ```sh
 pnpm install
-pnpm models          # Parakeet TDT 0.6B v2 + Silero VAD (~640 MB) into ./models
+pnpm models          # Parakeet TDT 0.6B v2, Silero VAD, Smart Turn, Kokoro (~1 GB) into ./models
 cp .env.example .env # AI_GATEWAY_API_KEY, PARALLEL_API_KEY
 pnpm dev
 ```
@@ -40,6 +40,7 @@ packages/agent     Agent loop, conversation, options, thinking, guardrails
 packages/jev       Jev via Vercel AI Gateway + mock
 packages/browser   Any web page as a screen (generic extractor + Playwright world)
 packages/stt       sherpa-onnx Parakeet + Silero VAD
+packages/tts       sherpa-onnx Kokoro: Stanley's voice
 packages/app-*     Demo apps: ./core (headless) + ./ui (Svelte)
 evals              Headless scenario + speech evals (see evals/README.md)
 ```

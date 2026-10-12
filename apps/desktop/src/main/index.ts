@@ -1,8 +1,9 @@
 import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { Agent, createThinker, defaultConfig, findElement, screenVocabulary, SYSTEM_PROMPT, type AgentStatus, type Thinker } from '@stanley/agent'
+import { Agent, BargeIn, createThinker, defaultConfig, findElement, screenVocabulary, SYSTEM_PROMPT, type AgentStatus, type Overheard, type Thinker } from '@stanley/agent'
 import { createJevClient, createMockJevClient, type DecisionClient } from '@stanley/jev'
 import { SAMPLE_RATE, Transcriber, writeWav } from '@stanley/stt'
+import { KOKORO, loadKokoro, Speaker } from '@stanley/tts'
 import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, Menu, session } from 'electron'
 import type { AppDebugEvent, ReplayRequest, Snapshot } from '../shared/ipc'
 import { apps } from './apps'
@@ -37,6 +38,9 @@ let said: Snapshot['said'] = null
 let utteranceStartedAt = 0
 let stt: Snapshot['stt'] = 'loading'
 let transcriber: Transcriber | null = null
+let tts: Snapshot['tts'] = 'loading'
+/** Stanley's voice, once Kokoro has loaded. */
+let speaker: Speaker | null = null
 const transcript = { finalized: [] as string[], partial: '' }
 
 /** Debug › Save Utterances as Eval Clips: each spoken utterance is written to evals/speech/clips. */
@@ -109,9 +113,15 @@ const agent = new Agent({
       appEvent({ type: 'status', status: s })
       sendSnapshot()
     },
-    said: (text) => {
+    // Shown as it is written, and spoken as it comes.
+    speak: (id, text, done) => {
       said = { text, at: Date.now() }
+      speaker?.update(id, text, done)
       sendSnapshot()
+    },
+    hush: (id) => {
+      const spoken = speaker?.stop(id)
+      if (spoken !== null && spoken !== undefined) agent.cutOff(id, spoken)
     },
     debug: (event) => debug.record({ source: 'agent', event }),
     // Words and voice both say the user finished: end the utterance now, not at the silence backstop.
@@ -129,6 +139,50 @@ const agent = new Agent({
   },
 })
 
+/**
+ * While Stanley talks, what the mic hears goes here first: Stanley's own voice is taken out, it
+ * lowers its voice when the user starts, and stops for them if they want to be heard.
+ */
+const bargeIn = new BargeIn({
+  jev,
+  conversation: (except) => agent.conversation(except),
+  speech: () => speaker?.position() ?? null,
+  events: {
+    duck: (on) => {
+      speaker?.duck(on)
+      sendSnapshot()
+    },
+    cut: (heard) => cutIn(heard),
+    // Not for Stanley, so not context for what the user says next either.
+    dismiss: () => transcriber?.endUtterance(),
+    debug: (event) => debug.record({ source: 'agent', event }),
+  },
+})
+
+/** Speech is heard over Stanley: until it is settled, it is the barge-in's, not the agent's. */
+const overheard = () => !!speaker?.speaking || bargeIn.busy
+
+/** Stops Stanley talking. The conversation keeps only what the user heard of each reply. */
+function stopTalking() {
+  for (const { id, spoken } of speaker?.stopAll() ?? []) agent.cutOff(id, spoken ?? '')
+}
+
+/** The user cut in on Stanley: it stops, and their words so far start a new utterance. */
+function cutIn(heard: Overheard) {
+  stopTalking()
+  beginUtterance()
+  agent.voice(speaking)
+  for (const s of heard.segments) {
+    transcript.finalized.push(s.text)
+    agent.segment(s.text, s.words)
+  }
+  if (heard.partial) {
+    transcript.partial = heard.partial.text
+    agent.partial(heard.partial.text, heard.partial.words)
+  }
+  sendSnapshot()
+}
+
 function sendSnapshot() {
   const snapshot: Snapshot = {
     layout: shell.layout,
@@ -141,7 +195,10 @@ function sendSnapshot() {
     transcript,
     status,
     said,
+    talking: !!speaker?.speaking,
+    ducked: !!speaker?.ducked,
     stt,
+    tts,
     mock,
     ptt,
   }
@@ -241,12 +298,14 @@ async function loadStt() {
       { modelsDir },
       {
         partial: (text, words) => {
+          if (overheard()) return bargeIn.partial(text, words)
           if (!utteranceOpen) beginUtterance()
           transcript.partial = text
           agent.partial(text, words)
           sendSnapshot()
         },
         segment: (text, words) => {
+          if (overheard()) return bargeIn.segment(text, words)
           if (!utteranceOpen) beginUtterance()
           transcript.finalized.push(text)
           transcript.partial = ''
@@ -256,9 +315,12 @@ async function loadStt() {
         speaking: (on) => {
           speaking = on
           agent.voice(on)
+          if (on ? overheard() : bargeIn.busy) bargeIn.voice(on)
           sendSnapshot()
         },
-        pause: (turn) => agent.pause(turn),
+        pause: (turn) => {
+          if (!overheard()) agent.pause(turn)
+        },
         silence: () =>
           transition(() => {
             endUtterance()
@@ -272,6 +334,36 @@ async function loadStt() {
   } catch (err) {
     console.error('STT failed to load', err)
     setStt('error', String(err))
+  }
+}
+
+function setTts(state: Snapshot['tts'], error?: string) {
+  tts = state
+  appEvent({ type: 'tts-state', tts: state, error })
+  sendSnapshot()
+}
+
+async function loadTts() {
+  const modelsDir = join(root, 'models')
+  if (!existsSync(join(modelsDir, KOKORO))) return setTts('missing-models')
+  try {
+    const synth = await loadKokoro(modelsDir, { voice: process.env.STANLEY_VOICE })
+    speaker = new Speaker(synth, {
+      audio: (piece) => win?.webContents.send('speech:audio', piece),
+      stop: (reply) => win?.webContents.send('speech:stop', reply),
+      volume: (level) => win?.webContents.send('speech:volume', level),
+      speaking: (on) => {
+        // The user may already be talking as Stanley starts: it starts quietly, and judges them.
+        if (on && speaking) bargeIn.voice(true)
+        if (!on) bargeIn.speechEnded()
+        sendSnapshot()
+      },
+      debug: (event) => debug.record({ source: 'tts', event }),
+    })
+    setTts('ready')
+  } catch (err) {
+    console.error('TTS failed to load', err)
+    setTts('error', String(err))
   }
 }
 
@@ -346,6 +438,8 @@ ipcMain.on('audio', (_, chunk: Float32Array) => {
   if (accepting) transcriber?.accept(chunk)
   else held.push(chunk)
 })
+ipcMain.on('speech:started', (_, reply: number, seq: number) => speaker?.started(reply, seq))
+ipcMain.on('speech:ended', (_, reply: number, seq: number) => speaker?.ended(reply, seq))
 ipcMain.on('toggle-listening', () => toggleListening('button'))
 ipcMain.on('open', async (_, appId: string | null) => {
   const result = await shell.open(appId)
@@ -369,6 +463,9 @@ ipcMain.on('perform', async (_, appId: string, nodeId: string, args) => {
 })
 ipcMain.on('say', (_, text: string) => {
   appEvent({ type: 'typed', text })
+  // Typing over Stanley cuts in, like speaking over it.
+  bargeIn.cancel()
+  stopTalking()
   // With the mic on, typed text is its own utterance and the mic stays on.
   if (listening) {
     return transition(() => {
@@ -408,6 +505,7 @@ app.whenReady().then(() => {
   ptt = PTT_SHORTCUTS.find((key) => globalShortcut.register(key, () => toggleListening('ptt'))) ?? null
   if (!ptt) console.warn('No push-to-talk shortcut could be registered:', PTT_SHORTCUTS.join(', '))
   void loadStt()
+  void loadTts()
 })
 
 app.on('will-quit', () => globalShortcut.unregisterAll())

@@ -1,12 +1,13 @@
 import type { Snapshot } from '../../shared/ipc'
 
 /**
- * What the presence wave shows: the ear (mic, VAD, utterance) and the brain (agent status) combined.
- * Working states win, so the person can tell the agent is doing something even while it listens;
- * the voice level is layered on top of every state.
+ * What the presence wave shows: Stanley's voice, the ear (mic, VAD, utterance) and the brain (agent
+ * status) combined. Stanley talking wins, then working states, so the person can tell the agent is
+ * doing something even while it listens; the user's voice level is layered on top of every state.
  */
 export type Presence =
   | 'off'
+  | 'speaking'
   | 'armed'
   | 'hearing'
   | 'trailing'
@@ -19,9 +20,10 @@ export type Presence =
   | 'stuck'
   | 'error'
 
-type Inputs = Pick<Snapshot, 'listening' | 'speaking' | 'utteranceOpen' | 'transcript' | 'status' | 'stt'>
+type Inputs = Pick<Snapshot, 'listening' | 'speaking' | 'utteranceOpen' | 'transcript' | 'status' | 'stt' | 'talking'>
 
 export function presence(s: Inputs): Presence {
+  if (s.talking) return 'speaking'
   if (s.status === 'thinking' || s.status === 'writing' || s.status === 'acting') return s.status
   if (s.status === 'guessing') return 'guessing'
   if (!s.listening || s.stt !== 'ready') return 'off'
@@ -86,7 +88,7 @@ export interface Style {
   shimmer: number
   /** A bright spot sweeping back and forth: deciding. */
   scan: number
-  /** Short rhythmic pulses: typing. */
+  /** Pulsing with Stanley's voice: speaking. */
   pulse: number
   /** Energy flowing in one direction: doing. */
   travel: number
@@ -111,9 +113,14 @@ export const STYLES: Record<Presence, Style> = {
     ...ARMED, amp: 0.07, blur: 16, speed: 0.9, freq: 2.6, coherence: 0.9, h0: 200, h1: 275, h2: 320, sat: 85, lit: 60, alpha: 0.72,
     width: 0.42, voice: 0.7, breathe: 0, scan: 1,
   },
+  // Thinking's shape in warmer colors: typing is part of the same work, not a new state of mind.
   writing: {
-    ...ARMED, amp: 0.08, blur: 14, speed: 1.1, freq: 3.5, coherence: 0.8, h0: 175, h1: 300, h2: 340, sat: 90, lit: 60, alpha: 0.75,
-    width: 0.55, voice: 0.7, breathe: 0, pulse: 1,
+    ...ARMED, amp: 0.07, blur: 16, speed: 0.9, freq: 2.6, coherence: 0.9, h0: 175, h1: 300, h2: 340, sat: 88, lit: 60, alpha: 0.72,
+    width: 0.42, voice: 0.7, breathe: 0, scan: 1,
+  },
+  speaking: {
+    ...ARMED, amp: 0.08, blur: 14, speed: 0.8, freq: 3.2, coherence: 0.85, h0: 190, h1: 262, h2: 325, sat: 88, lit: 62, alpha: 0.75,
+    width: 0.58, voice: 0.6, breathe: 0, pulse: 1,
   },
   acting: {
     ...ARMED, amp: 0.11, blur: 16, speed: 1.2, freq: 2.2, coherence: 0.85, h0: 100, h1: 130, h2: 345, sat: 90, lit: 55, alpha: 0.8,
@@ -127,6 +134,9 @@ export const STYLES: Record<Presence, Style> = {
 
 /** Mic loudness, 0–1, written by the capture callback and read every frame. */
 export const mic = { level: 0 }
+
+/** Stanley's own loudness, 0–1, read every frame. Set once its voice is playing (see voice.ts). */
+export const voiceOut = { level: () => 0 }
 
 /** RMS of a chunk → 0–1, mapping −50 dBFS (room noise) to 0 and −15 dBFS (close speech) to 1. */
 export function loudness(chunk: Float32Array): number {

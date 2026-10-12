@@ -401,7 +401,8 @@ describe('Agent writing', () => {
     agent.segment('reply with something funny')
     agent.utteranceEnd()
     await settle()
-    expect(said).toEqual(['I wrote: "Ramen? I was born ready." Should I go ahead?'])
+    // What thinking said may already be playing, so the words follow it.
+    expect(said).toEqual(['I drafted something playful. I wrote: "Ramen? I was born ready." Should I go ahead?'])
   })
 
   it('fills in a short value without reading it back, even when thinking calls it its own', async () => {
@@ -811,5 +812,98 @@ describe('Agent debug trace', () => {
     await settle()
     say(agent, 'open')
     expect(debug.filter((e) => e.type === 'request').map((e) => (e.type === 'request' ? e.result : ''))).toContain('no-new-words')
+  })
+})
+
+describe('Agent speaking', () => {
+  /** A thinking turn that writes `pieces`, waiting for `go()` before the last one; it stops if aborted. */
+  function streaming(pieces: string[]) {
+    let go!: () => void
+    const run: Thinker['run'] = async ({ onText, signal }) => {
+      for (const p of pieces.slice(0, -1)) onText?.(p)
+      await new Promise<void>((resolve, reject) => {
+        go = resolve
+        signal.addEventListener('abort', () => reject(new Error('aborted')))
+      })
+      onText?.(pieces.at(-1)!)
+      return { text: pieces.join('') }
+    }
+    return { run, go: () => go() }
+  }
+
+  function speaking(script: Script, run: Thinker['run']) {
+    const spoken: { id: number; text: string; done: boolean }[] = []
+    const hushed: number[] = []
+    const said: string[] = []
+    const debug: AgentDebugEvent[] = []
+    const events = { speak: (id: number, text: string, done: boolean) => spoken.push({ id, text, done }), hush: (id: number) => hushed.push(id), said: (t: string) => said.push(t), debug: (e: AgentDebugEvent) => debug.push(e) }
+    return { ...setup(script, { thinker: { run }, deps: { events } }), spoken, hushed, said, debug }
+  }
+
+  it('says what thinking writes as it writes it, once the user has finished', async () => {
+    const t = streaming(['It is sunny', ' in Denver.', ' And warm.'])
+    const { agent, spoken, said } = speaking(() => ({ next: 'think' }), t.run)
+    agent.utteranceStart()
+    agent.segment("what's the weather")
+    agent.utteranceEnd()
+    await settle()
+    expect(spoken.map((s) => s.text)).toEqual(['It is sunny', 'It is sunny in Denver.'])
+    t.go()
+    await settle()
+    expect(spoken.at(-1)).toEqual({ id: 1, text: 'It is sunny in Denver. And warm.', done: true })
+    expect(said).toEqual(['It is sunny in Denver. And warm.'])
+  })
+
+  it("holds what thinking writes until the user's turn is over", async () => {
+    const t = streaming(['It is sunny.', ''])
+    const { agent, spoken } = speaking(() => ({ next: 'think' }), t.run)
+    agent.utteranceStart()
+    spoke(agent, "what's the weather")
+    await settle()
+    t.go()
+    await settle()
+    expect(spoken).toEqual([])
+    agent.utteranceEnd()
+    await settle()
+    expect(spoken).toEqual([{ id: 1, text: 'It is sunny.', done: true }])
+  })
+
+  it('keeps only what the user heard when they cut in', async () => {
+    const { agent, said } = speaking(() => ({ next: 'think' }), async () => ({ text: 'Your next meeting is at three, with Sam.' }))
+    agent.utteranceStart()
+    agent.segment("what's next")
+    agent.utteranceEnd()
+    await settle()
+    expect(said).toHaveLength(1)
+    agent.cutOff(1, 'Your next meeting is at three,')
+    expect(agent.conversation()).toContain('Stanley started to say: "Your next meeting is at three," but the user cut in.')
+    expect(agent.conversation()).not.toContain('with Sam')
+  })
+
+  it('stops thinking that is still writing what the user cut in on', async () => {
+    const t = streaming(['Your next meeting', ' is at three.'])
+    const { agent, said, debug } = speaking(() => ({ next: 'think' }), t.run)
+    agent.utteranceStart()
+    agent.segment("what's next")
+    agent.utteranceEnd()
+    await settle()
+    agent.cutOff(1, 'Your next')
+    await settle()
+    expect(debug.some((e) => e.type === 'think-end' && e.aborted)).toBe(true)
+    expect(said).toEqual([])
+    expect(agent.conversation()).toContain('Stanley started to say: "Your next" but the user cut in.')
+  })
+
+  it('hushes a reply that went out of date while it was being said', async () => {
+    const t = streaming(['It is sunny', ' today.'])
+    const { agent, hushed } = speaking((_, i) => (i === 0 ? { next: 'think' } : { next: 'listen' }), t.run)
+    agent.utteranceStart()
+    agent.segment("what's the weather")
+    agent.utteranceEnd()
+    await settle()
+    agent.utteranceStart()
+    say(agent, 'in Paris')
+    await settle()
+    expect(hushed).toEqual([1])
   })
 })

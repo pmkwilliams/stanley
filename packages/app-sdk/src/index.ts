@@ -81,6 +81,8 @@ export interface AppUiProps<S> {
   /** Named `data`, not `state`, to avoid clashing with the `$state` rune. */
   data: S
   perform: (nodeId: string, args?: ActionArgs) => void
+  /** How loud the app's own sound may be, 0–1: lowered while Stanley talks. */
+  volume?: number
 }
 
 export interface Surface<S = unknown> {

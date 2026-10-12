@@ -169,7 +169,8 @@ One model, one prompt (`THINKING_PROMPT`), the same conversation, three ways in:
   draft is not. When the user already asked for exactly this, it presses: asking again only slows
   them down.
 - **run** (a short tool loop over `act(option, text?)`, the same options as Jev): for `think` turns.
-  It answers, asks, or works the screen itself. Its text is speech: shown now, spoken later.
+  It answers, asks, or works the screen itself. Its text is speech: streamed, shown and spoken as it
+  is written (see **Speaking**).
 
 Whatever thinking does is dropped if the user says more while it works (steps already taken stay
 done and logged; it says nothing). Jev then re-decides with everything they said. After a `run`, the
@@ -318,17 +319,63 @@ next, which is how the desktop app would drive real sites.
   segments are never revised — the agent has already acted on them.
 - Mic capture in the renderer (`getUserMedia`, 16 kHz mono PCM via AudioWorklet) → IPC → main.
 
+### Speaking
+
+Stanley talks back with **Kokoro 82M v1.0** (Apache-2.0, voice `af_heart`, `STANLEY_VOICE` picks
+another) through sherpa-onnx in main, 6 threads: ~200 ms + ~0.23× the audio's length on an M1 Pro.
+Without the model, what it says is only shown.
+
+- **Streamed.** Thinking streams its text (`streamText`; `write`/`confirm` stream their `say`
+  field). A reply waits for the user's turn to end, as before, then goes out as it is written
+  (`speak` events); words the user adds first drop it.
+- **Cut into pieces** (`Segmenter`). The first piece is short so speech starts quickly: a sentence
+  or clause within 60 characters, else a break before a new phrase ("…built in 1889 | by Gustave
+  Eiffel"). After that nothing is rushed: the next piece is cut only when the audio queued ahead is
+  about to run out (its estimated synthesis time + 300 ms), as large as fits (≤ 400 characters), at
+  the latest sentence end. Kokoro reads more naturally with more at once, and there are fewer seams.
+- **Played in the renderer** through Web Audio, so Chromium's echo cancellation on the mic hears it.
+  The player reports each piece's start and end; main knows how much is queued and how much of a
+  reply has been said, to the word. Music plays at a quarter of its volume while Stanley talks.
+- **What was heard is what was said.** When a reply is stopped, the conversation keeps only the
+  words played (`cut`): "Stanley started to say: "…" but the user cut in."
+
+Measured: the first words play ~0.4–1.3 s after Haiku's first text, depending on the first piece.
+Kokoro reads `&` as "and" and pauses at parentheses, but reads `/` as "slash" and `°F` as "degrees F".
+
+### Barge-in
+
+Assumes speakers. While Stanley talks, what the mic hears goes to `BargeIn` instead of the agent
+until it is settled:
+
+1. **Its own voice is taken out.** Runs of two or more heard words that match, in order, what
+   Stanley was just saying are echo. A single word ("yes", "send") stays the user's.
+2. **It ducks at once.** The VAD hearing speech lowers Stanley to 30% while the words come in.
+3. **Jev judges the words**: `acknowledging` ("mm-hm", mid-sentence), `interrupting` ("wait", a
+   correction, a new request), `answering` (as Stanley finishes asking), or `elsewhere` (someone
+   else, noise, echo). It sees the conversation, what Stanley has said and has still to say, and the
+   words, and is asked again as more come. P(interrupting + answering) ≥ 0.5 stops Stanley;
+   P(acknowledging + elsewhere) ≥ 0.6 brings it back up. Four words not judged a go-on stop it
+   without waiting. Unsure when the user goes quiet: whichever it leaned to.
+4. **Stopping** stops playback, aborts thinking still writing the reply, logs what was heard, and
+   starts a new utterance with the user's words. **Going on** forgets the words, also as decoding
+   context for what comes next. Words heard as Stanley finishes are the user's next turn.
+
+Measured with injected speech: "Wait, stop." ducked at speech onset, was judged `interrupting` (1.00)
+in ~560 ms, and stopped Stanley 0.6 s after the user started.
+
 ## Presence
 
 The system shows itself as a glowing wave, not an avatar: across the centre with no window open,
-docked to the bottom edge under one. It combines two tracks that run at once:
+docked to the bottom edge under one. It combines Stanley's voice with two tracks that run at once:
+- **Voice** (main → snapshot): `talking`, from Stanley's first words to its last.
 - **Ear** (main → snapshot): `listening`, `speaking` (VAD), `utteranceOpen`.
 - **Brain** (`AgentStatus`): `guessing` (deciding mid-utterance before acting on it), `thinking`,
   `writing` (typing into a field), `acting`, `listening` (waiting for more words), `done`,
   `didnt-get-that`, `stuck`, `error`.
 
-`presence()` (renderer) picks one: work wins over the ear, so it reads as working while you talk; the
-mic level is layered on every state. Shape = focus (diffuse → gathered), color = whose turn (cool = on
+`presence()` (renderer) picks one: Stanley talking wins (`speaking`, pulsing with its voice, softer
+as it ducks), then work wins over the ear, so it reads as working while you talk; the mic level is
+layered on every state. Writing is thinking's shape in warmer colors. Shape = focus (diffuse → gathered), color = whose turn (cool = on
 you, violet/spectrum = on the task, amber = trouble), motion = energy (breathing, voice-reactive,
 scanning, pulsing, flowing). Guesses are held ~1.5 s through gaps between ticks; outcomes fade to armed.
 
@@ -441,6 +488,7 @@ packages/agent        loop, tick scheduler, message log, conversation, guardrail
 packages/jev          Jev client (AI SDK decide) + mock
 packages/browser      any web page as a screen: generic extractor + Playwright World
 packages/stt          sherpa-onnx + Parakeet + Silero VAD → partial/final events; Smart Turn on pauses
+packages/tts          Kokoro via sherpa-onnx; segmenter; speaker (pacing, what was said)
 packages/app-todo     ./core (headless) + ./ui (Svelte)
 packages/app-email    ″
 packages/app-weather  ″
@@ -457,5 +505,5 @@ Electron 44 · electron-vite 5 · Vite 7 · Svelte 5 · TypeScript 5.9 · pnpm.
 
 ### Config / secrets
 
-`.env` (gitignored): `AI_GATEWAY_API_KEY`, `PARALLEL_API_KEY`. `pnpm models` downloads Parakeet +
-Silero into `models/` (gitignored).
+`.env` (gitignored): `AI_GATEWAY_API_KEY`, `PARALLEL_API_KEY`. `pnpm models` downloads Parakeet,
+Silero, Smart Turn and Kokoro into `models/` (gitignored).

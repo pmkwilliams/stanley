@@ -2,6 +2,7 @@ import type { AgentConfig, AgentDebugEvent, AgentStatus, LogEntry } from '@stanl
 import type { ActionArgs, Layout } from '@stanley/app-sdk'
 import type { DecideRequest, MultiChoiceResult } from '@stanley/jev'
 import type { SttDebugEvent } from '@stanley/stt'
+import type { Piece, TtsDebugEvent } from '@stanley/tts'
 
 export interface Snapshot {
   layout: Layout
@@ -17,9 +18,15 @@ export interface Snapshot {
   utteranceOpen: boolean
   transcript: { finalized: string[]; partial: string }
   status: AgentStatus
-  /** What Stanley last said to the user (spoken later); null once the user has answered. */
+  /** What Stanley last said to the user, as far as it has been written; null once the user has answered. */
   said: { text: string; at: number } | null
+  /** Stanley is talking: from its first words until its last, pauses included. */
+  talking: boolean
+  /** Stanley lowered its voice: the user may be cutting in. */
+  ducked: boolean
   stt: 'ready' | 'loading' | 'missing-models' | 'error'
+  /** Stanley's voice. Without it, what it says is only shown. */
+  tts: 'ready' | 'loading' | 'missing-models' | 'error'
   mock: boolean
   /** Registered push-to-talk accelerator, or null if none could be registered. */
   ptt: string | null
@@ -32,11 +39,13 @@ export type AppDebugEvent =
   | { type: 'typed'; text: string }
   | { type: 'manual'; option: string; summary: string }
   | { type: 'stt-state'; stt: Snapshot['stt']; error?: string }
+  | { type: 'tts-state'; tts: Snapshot['tts']; error?: string }
 
 /** One line of a session's debug JSONL, and one message to the debug window. */
 export type DebugEvent = { seq: number; at: number } & (
   | { source: 'agent'; event: AgentDebugEvent }
   | { source: 'stt'; event: SttDebugEvent }
+  | { source: 'tts'; event: TtsDebugEvent }
   /** The agent's message log, as the agent believes things happened. */
   | { source: 'log'; event: LogEntry }
   | { source: 'app'; event: AppDebugEvent }
@@ -71,6 +80,15 @@ export interface StanleyApi {
   onSnapshot(cb: (s: Snapshot) => void): () => void
   onListening(cb: (listening: boolean) => void): () => void
   audio(chunk: Float32Array): void
+  /** Stanley's voice: a piece of audio to play after the ones before it. */
+  onSpeech(cb: (piece: Piece) => void): () => void
+  /** Stop playing a reply now. */
+  onSpeechStop(cb: (reply: number) => void): () => void
+  /** Play Stanley's voice at this fraction of full volume. */
+  onSpeechVolume(cb: (level: number) => void): () => void
+  /** The player started or finished a piece. */
+  speechStarted(reply: number, seq: number): void
+  speechEnded(reply: number, seq: number): void
   toggleListening(): void
   perform(appId: string, nodeId: string, args?: ActionArgs): void
   open(appId: string | null): void

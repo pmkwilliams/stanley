@@ -16,6 +16,8 @@
       }
       case 'said':
         return `Stanley said: "${e.content}"`
+      case 'cut':
+        return `the user cut in; heard: "${e.spoken}"`
       case 'event':
         return `${e.kind}${e.detail ? `: ${e.detail}` : ''}`
     }

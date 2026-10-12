@@ -66,3 +66,18 @@ export type AgentDebugEvent =
   | { type: 'turn-resumed'; afterEndMs: number }
   /** Something to say was held until the user finished, then said or dropped. */
   | { type: 'say'; text: string; result: 'held' | 'said' | 'dropped' }
+  /** The user cut in on reply `id`, or it was stopped: they heard only `spoken` of `text`. */
+  | { type: 'cut'; id: number; spoken: string; text: string }
+  /**
+   * Speech heard while Stanley was talking (`heard`, its own echo taken out), and what came of it:
+   * Stanley lowered its voice, Jev judged the words, Stanley stopped for them, or went on.
+   */
+  | {
+      type: 'overlap'
+      action: 'duck' | 'judged' | 'cut' | 'go-on'
+      heard: string
+      /** Words taken out as Stanley's own voice picked up by the mic. */
+      echo?: string
+      verdict?: { choice: string; probabilities: Record<string, number>; latencyMs: number }
+      reason?: string
+    }

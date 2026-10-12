@@ -9,6 +9,7 @@ const ear: Parameters<typeof presence>[0] = {
   transcript: { finalized: [], partial: '' },
   status: 'idle',
   stt: 'ready',
+  talking: false,
 }
 
 describe('presence', () => {
@@ -18,6 +19,11 @@ describe('presence', () => {
     expect(presence({ ...ear, speaking: true, utteranceOpen: true })).toBe('hearing')
     expect(presence({ ...ear, utteranceOpen: true })).toBe('armed')
     expect(presence({ ...ear, utteranceOpen: true, transcript: said, status: 'listening' })).toBe('trailing')
+  })
+
+  it('shows Stanley talking over everything else', () => {
+    expect(presence({ ...ear, talking: true, status: 'thinking' })).toBe('speaking')
+    expect(presence({ ...ear, talking: true, speaking: true, utteranceOpen: true })).toBe('speaking')
   })
 
   it('shows work over the ear, so it still reads as working while you talk', () => {

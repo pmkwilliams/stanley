@@ -1,7 +1,7 @@
 node_modules/
 out/
 dist/
-models/
+models
 .env
 .env.*
 !.env.example

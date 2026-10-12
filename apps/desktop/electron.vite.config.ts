@@ -7,6 +7,7 @@ const bundled = [
   '@stanley/app-sdk',
   '@stanley/jev',
   '@stanley/stt',
+  '@stanley/tts',
   '@stanley/app-todo',
   '@stanley/app-email',
   '@stanley/app-weather',

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import type { Snapshot } from '../../shared/ipc'
-  import { mic, presence, Settler, STYLES, type Presence, type Style } from './presence'
+  import { mic, presence, Settler, STYLES, voiceOut, type Presence, type Style } from './presence'
 
   /** `docked` moves the wave from the centre of the screen to its bottom edge, under an open window. */
   let { snapshot, docked }: { snapshot: Snapshot; docked: boolean } = $props()
@@ -21,7 +21,9 @@
     /** Wave phase, accumulated so easing `speed` between states never jumps it (`time * speed` would, more so the longer it runs). */
     let drift = 0
     /** One-shot effects, decaying from 1: `exhale` when a task is done, `wobble` when it didn't get that. */
-    let exhale = 0, wobble = 0, typing = 0, nextKey = 0
+    let exhale = 0, wobble = 0
+    /** Stanley's voice, smoothed. */
+    let talk = 0
 
     // The aurora is drawn per pixel into a coarse buffer, then scaled up: soft by construction, and cheap.
     const buffer = document.createElement('canvas')
@@ -51,7 +53,7 @@
       a += voice * p.voice * 0.09 * (0.65 + 0.35 * Math.sin(u * 13 + time * 9 + i * 1.3))
       a += p.scan * 0.07 * Math.exp(-(((u - scanAt()) / 0.07) ** 2))
       a += p.travel * 0.05 * (0.5 + 0.5 * Math.sin((u * 2.5 - time * 0.8) * 6.28)) ** 6
-      a *= 1 + p.pulse * 0.6 * typing
+      a *= 1 + p.pulse * 0.9 * talk
       a += wobble * 0.07 * Math.sin(u * 10 - time * 16) * (u < 0.5 ? 1 : 0.35)
       a += exhale * 0.09
       return envelope(u, p) * a * (0.6 + 0.4 * wave)
@@ -97,11 +99,9 @@
       drift += dt * cur.speed
       exhale *= Math.exp(-dt * 2)
       wobble *= Math.exp(-dt * 1.6)
-      if (time > nextKey) {
-        typing = 1
-        nextKey = time + 0.08 + Math.random() * 0.22
-      }
-      typing *= Math.exp(-dt * 14)
+      // Quick to rise and a little slower to fall, like a level meter: syllables read as pulses.
+      const out = voiceOut.level()
+      talk += (out - talk) * ease(out > talk ? 30 : 10)
 
       const p = cur
       const base = H * (0.5 + 0.5 * dock)
@@ -121,7 +121,7 @@
 
       const data = image.data
       data.fill(0)
-      const drawn = Math.min(1, p.alpha * 1.9 * (1 + exhale * 0.8) * (1 + p.pulse * 0.5 * typing))
+      const drawn = Math.min(1, p.alpha * 1.9 * (1 + exhale * 0.8) * (1 + p.pulse * 0.5 * talk))
       for (let cx = 0; cx < bw; cx++) {
         const u = (cx + 0.5) / bw
         const env = envelope(u, p)

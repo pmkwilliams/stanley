@@ -1,4 +1,5 @@
 export * from './agent'
+export * from './barge'
 export * from './config'
 export * from './debug'
 export * from './effects'

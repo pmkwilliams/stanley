@@ -4,13 +4,23 @@
   import { scale } from 'svelte/transition'
   import { startMic } from './mic'
   import Presence from './Presence.svelte'
-  import { loudness, mic } from './presence'
+  import { loudness, mic, voiceOut } from './presence'
   import { backgrounds, surfaces } from './surfaces'
+  import { startVoice } from './voice'
 
   let snapshot = $state<Snapshot | null>(null)
   let stopMic: (() => void) | null = null
   /** Bumped on every listening change, so a mic that finishes starting after a newer change is stopped. */
   let micRequest = 0
+
+  $effect(() => {
+    const voice = startVoice()
+    voiceOut.level = voice.level
+    return () => {
+      voiceOut.level = () => 0
+      voice.stop()
+    }
+  })
 
   $effect(() => {
     const offs = [
@@ -74,7 +84,7 @@
 {#if snapshot}
   {#each Object.entries(backgrounds) as [appId, Background] (appId)}
     {#if snapshot.surfaces[appId] !== undefined}
-      <Background data={snapshot.surfaces[appId]} perform={(nodeId: string, args?: { text?: string }) => window.stanley.perform(appId, nodeId, args)} />
+      <Background data={snapshot.surfaces[appId]} perform={(nodeId: string, args?: { text?: string }) => window.stanley.perform(appId, nodeId, args)} volume={snapshot.talking ? 0.25 : 1} />
     {/if}
   {/each}
 {/if}

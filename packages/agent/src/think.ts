@@ -1,4 +1,4 @@
-import { generateText, jsonSchema, Output, stepCountIs, tool } from 'ai'
+import { jsonSchema, Output, stepCountIs, streamText, tool } from 'ai'
 
 export interface ThinkRequest {
   /** The conversation and the screen, as every model reads it. */
@@ -11,6 +11,8 @@ export interface ThinkRequest {
   act(option: string, text?: string): Promise<string>
   maxSteps: number
   signal: AbortSignal
+  /** Each piece of text as it is written, so it can be spoken before the turn is over. */
+  onText?(delta: string): void
 }
 
 export interface WriteRequest {
@@ -18,6 +20,8 @@ export interface WriteRequest {
   /** The field's option name, e.g. `"Lunch Friday?" › Reply to Sam Lee`. */
   field: string
   signal: AbortSignal
+  /** Each piece of `say` as it is written. */
+  onSay?(delta: string): void
 }
 
 /**
@@ -38,6 +42,8 @@ export interface ConfirmRequest {
   /** The button's option name. */
   option: string
   signal: AbortSignal
+  /** Each piece of `say` as it is written, once it is clear the button won't be pressed. */
+  onSay?(delta: string): void
 }
 
 /** Whether to press a button that commits something, now. When not, what to say instead. */
@@ -60,8 +66,9 @@ You are Stanley, a voice assistant that operates apps and websites on the user's
 
 You act through the \`act\` tool, which runs one of the listed options: open an app, open a link, press a button, type into a field, go back or go home. Each result tells you what is on screen now and which options come next.
 
-Everything you write as text is spoken to the user and shown on screen. So:
-- Write only what you would say out loud: short and natural, usually one sentence, no markdown or lists.
+Everything you write as text is read aloud to the user by text-to-speech as you write it, and shown on screen. So:
+- Write it the way you would say it out loud: no markdown, lists or other formatting.
+- Keep it brief when you can: listening takes longer than reading.
 - Don't narrate your steps. Take them.
 - Say nothing when there is nothing worth saying. Don't confirm what the screen already shows.
 
@@ -87,8 +94,8 @@ The user's words come from speech recognition, which marks a word it was unsure 
 export function createThinker(opts: { model?: string } = {}): Thinker {
   const model = opts.model ?? 'anthropic/claude-haiku-5.5'
   return {
-    async run({ context, reason, options, act, maxSteps, signal }) {
-      const result = await generateText({
+    async run({ context, reason, options, act, maxSteps, signal, onText }) {
+      const result = streamText({
         model,
         abortSignal: signal,
         system: THINKING_PROMPT,
@@ -110,11 +117,25 @@ export function createThinker(opts: { model?: string } = {}): Thinker {
         },
         stopWhen: stepCountIs(maxSteps),
       })
-      return { text: result.steps.map((s) => s.text.trim()).filter(Boolean).join(' ') }
+      // Text from separate steps (before and after a tool call) reads as one reply.
+      let text = ''
+      let stepEnded = false
+      for await (const part of result.stream) {
+        if (part.type === 'error') throw part.error
+        if (part.type === 'finish-step') stepEnded = true
+        if (part.type !== 'text-delta' || !part.text) continue
+        let delta = part.text
+        if (stepEnded && text.trim() && !/\s$/.test(text) && !/^\s/.test(delta)) delta = ` ${delta}`
+        stepEnded = false
+        text += delta
+        onText?.(delta)
+      }
+      signal.throwIfAborted()
+      return { text: text.trim() }
     },
 
-    async write({ context, field, signal }) {
-      const { output } = await generateText({
+    async write({ context, field, signal, onSay }) {
+      const result = streamText({
         model,
         abortSignal: signal,
         system: THINKING_PROMPT,
@@ -143,11 +164,11 @@ export function createThinker(opts: { model?: string } = {}): Thinker {
           additionalProperties: false,
         }) }),
       })
-      return output
+      return streamSay(result, signal, onSay)
     },
 
-    async confirm({ context, option, signal }) {
-      const { output } = await generateText({
+    async confirm({ context, option, signal, onSay }) {
+      const result = streamText({
         model,
         abortSignal: signal,
         system: THINKING_PROMPT,
@@ -156,13 +177,34 @@ export function createThinker(opts: { model?: string } = {}): Thinker {
           type: 'object',
           properties: {
             press: { type: 'boolean', description: 'Press it now.' },
-            say: { type: 'string', description: 'When not pressing, what to say to the user: what is on screen and ready, and a short question. Only describe what the screen shows. Otherwise empty.' },
+            say: { type: 'string', description: 'When not pressing, what to say to the user: what is on screen and ready, and a question. Only describe what the screen shows. Otherwise empty.' },
           },
           required: ['press', 'say'],
           additionalProperties: false,
         }) }),
       })
-      return output
+      return streamSay(result, signal, onSay, (partial) => partial.press === false)
     },
   }
+}
+
+/**
+ * The finished output of a structured call, passing each new piece of its `say` field to `onSay`
+ * as it streams in, once `speaks` agrees (fields stream in schema order).
+ */
+async function streamSay<T extends { say: string }>(
+  result: { partialOutputStream: AsyncIterable<Partial<T> | undefined>; output: PromiseLike<T> },
+  signal: AbortSignal,
+  onSay?: (delta: string) => void,
+  speaks: (partial: Partial<T>) => boolean = () => true,
+): Promise<T> {
+  let said = ''
+  for await (const partial of result.partialOutputStream) {
+    const say = partial && speaks(partial) && typeof partial.say === 'string' ? partial.say : ''
+    if (say.length <= said.length || !say.startsWith(said)) continue
+    onSay?.(say.slice(said.length))
+    said = say
+  }
+  signal.throwIfAborted()
+  return await result.output
 }

@@ -10,7 +10,8 @@ export interface LiveUtterance {
 
 /**
  * The conversation every model reads: what the user said, as turns; what Stanley did, as
- * outcomes; what Stanley said; then the screen once. Decisions that changed nothing (listening,
+ * outcomes; what Stanley said, as far as the user heard it; then the screen once (unless `screen`
+ * is null). Decisions that changed nothing (listening,
  * finishing, discarded or gated guesses) and which model took a step are left out. Those are the
  * agent's mechanics and live in the debug trace.
  *
@@ -18,7 +19,7 @@ export interface LiveUtterance {
  * exception is a step that changed something before the user finished: the turn is split there
  * ("User: …", the step, "User (went on): …"), so a correction later in the sentence reads as one.
  */
-export function narrate(entries: LogEntry[], screen: Screen, live?: LiveUtterance, maxTurns = 20): string {
+export function narrate(entries: LogEntry[], screen: Screen | null, live?: LiveUtterance, maxTurns = 20): string {
   const segments = new Map<number, string[]>()
   for (const e of entries) if (e.role === 'user') segments.set(e.utteranceId, [...(segments.get(e.utteranceId) ?? []), e.content])
   const wordsOf = (utteranceId: number) => {
@@ -39,6 +40,8 @@ export function narrate(entries: LogEntry[], screen: Screen, live?: LiveUtteranc
   })
 
   const lines: string[] = []
+  /** Where each reply Stanley said was told, so being cut off can amend it. */
+  const said = new Map<number, { line: number; content: string }>()
   /** Where each of the user's turns starts in `lines`. */
   const turns: number[] = []
   const printed = new Map<number, number>()
@@ -65,7 +68,15 @@ export function narrate(entries: LogEntry[], screen: Screen, live?: LiveUtteranc
         tellUpTo(e.utteranceId, early ? e.heardWords! : Math.max(printed.get(e.utteranceId) ?? 0, firstPart(e.utteranceId)))
       }
       lines.push(describeStep(e))
-    } else if (e.role === 'said') lines.push(`Stanley said: "${e.content}"`)
+    } else if (e.role === 'said') {
+      if (e.id !== undefined) said.set(e.id, { line: lines.length, content: e.content })
+      lines.push(`Stanley said: "${e.content}"`)
+    } else if (e.role === 'cut') {
+      // What the user heard is what was said: the rest of the reply never reached them.
+      const reply = said.get(e.id)
+      const spoken = e.spoken.trim()
+      if (reply) lines[reply.line] = spoken ? `Stanley started to say: "${spoken}" but the user cut in.` : `Stanley was going to say: "${reply.content}" but the user cut in before any of it.`
+    }
     else if (e.role === 'event' && e.kind === 'stuck') lines.push(`Stanley stopped: ${e.detail ?? 'it got stuck'}.`)
     // The utterance's last entry: whatever the user said after the last step follows it.
     const id = e.role === 'user' || e.role === 'step' ? e.utteranceId : undefined
@@ -75,8 +86,10 @@ export function narrate(entries: LogEntry[], screen: Screen, live?: LiveUtteranc
 
   // A long session keeps only its recent turns, so what the models read stays small and fast.
   const kept = turns.length > maxTurns ? ['(earlier conversation left out)', ...lines.slice(turns[turns.length - maxTurns])] : lines
+  const conversation = ['## Conversation', ...(kept.length ? kept : ['(nothing yet)'])]
+  if (!screen) return conversation.join('\n')
   const where = screen.visible ? 'in front of the user' : "in the background, the user can't see it"
-  return ['## Conversation', ...(kept.length ? kept : ['(nothing yet)']), '', `## Screen: ${screen.title} (${where})`, screen.markdown].join('\n')
+  return [...conversation, '', `## Screen: ${screen.title} (${where})`, screen.markdown].join('\n')
 }
 
 /** A step that changed something: typing, or pressing a button. Opening things only looks. */

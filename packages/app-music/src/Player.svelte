@@ -14,7 +14,7 @@
     pulse: new URL('../assets/pulse.wav', import.meta.url).href,
   }
 
-  let { data, perform }: AppUiProps<MusicState> = $props()
+  let { data, perform, volume = 1 }: AppUiProps<MusicState> = $props()
   let audio: HTMLAudioElement | undefined = $state()
 
   let track = $derived(data.tracks.find((t) => t.id === data.currentId))
@@ -29,7 +29,7 @@
   })
 
   $effect(() => {
-    if (audio) audio.volume = data.volume
+    if (audio) audio.volume = data.volume * volume
   })
 </script>
 

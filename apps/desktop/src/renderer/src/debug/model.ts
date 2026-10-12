@@ -91,7 +91,7 @@ export function buildModel(events: DebugEvent[]): DebugModel {
         continue
       }
       // Turn-taking isn't part of one tick: it shows as a row of its own.
-      if (ev.type === 'turn' || ev.type === 'turn-end' || ev.type === 'turn-resumed' || ev.type === 'say') {
+      if (ev.type === 'turn' || ev.type === 'turn-end' || ev.type === 'turn-resumed' || ev.type === 'say' || ev.type === 'cut' || ev.type === 'overlap') {
         model.rows.push({ kind: 'event', event: e, category: undefined })
         continue
       }
