@@ -7,6 +7,8 @@ export interface Screen {
   title: string
   /** In front of the user, or being worked on in the background. */
   visible: boolean
+  /** The address of the web page it shows, if it shows one. */
+  url?: string
   /** What a person would read on it. */
   markdown: string
   /** Its interactive elements, as an accessibility tree would describe them. */
@@ -24,6 +26,8 @@ export interface StepResult {
   summary: string
   /** Fuller content the step produced, for the debug window. The models read the screen instead. */
   observation?: string
+  /** `openUrl`: the title of the page that opened. */
+  title?: string
 }
 
 /** What the agent can see and do. Implemented by the desktop shell (and, later, by browser and OS adapters). */
@@ -33,5 +37,7 @@ export interface World {
   appList(): AppEntry[]
   open(appId: string): Promise<StepResult>
   perform(node: AgentNode, args: ActionArgs): Promise<StepResult>
+  /** Opens a web page by its address, as typing it into a browser would. Without it, pages Stanley found can't be opened. */
+  openUrl?(url: string): Promise<StepResult>
   global(option: 'show' | 'home' | 'back'): Promise<void>
 }

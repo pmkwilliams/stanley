@@ -9,6 +9,12 @@ export interface ThinkRequest {
   options: string
   /** Runs one option and returns what the model should see next: the result, the screen and the new options. */
   act(option: string, text?: string): Promise<string>
+  /** Searches the web in the background and returns what it found. Absent without web access. */
+  search?(query: string): Promise<string>
+  /** Reads a web page in the background and returns its text. Absent without web access. */
+  fetch?(url: string): Promise<string>
+  /** Puts a web page on screen by its address, and returns what is on screen then. Absent when pages can't be opened. */
+  openPage?(url: string): Promise<string>
   maxSteps: number
   signal: AbortSignal
   /** Each piece of text as it is written, so it can be spoken before the turn is over. */
@@ -82,6 +88,12 @@ How to act:
 - If the request is unclear, ask one short question instead of guessing.
 - Do what the user asked for, then stop.`
 
+/** For thinking turns that can look things up: the confirming and writing parts never search. */
+export const WEB = `## The web
+You can also look things up in the background: \`search\` searches the web and \`fetch\` reads a page by its address. Neither changes the screen. \`open_page\` puts a page on screen by its address: one found or read earlier in the conversation, or any other.
+
+A question only needs an answer: look it up in the background and say it. When the user wants to see something, put it on screen: open the page that shows it best, searching first if no page in the conversation does.`
+
 /**
  * For the parts that act on the user's words (writing, thinking turns). Confirming a press
  * doesn't get it: unsure words never reach a press that commits (see `Agent.confirm`), and the
@@ -94,12 +106,50 @@ The user's words come from speech recognition, which marks a word it was unsure 
 export function createThinker(opts: { model?: string } = {}): Thinker {
   const model = opts.model ?? 'anthropic/claude-haiku-5.5'
   return {
-    async run({ context, reason, options, act, maxSteps, signal, onText }) {
+    async run({ context, reason, options, act, search, fetch, openPage, maxSteps, signal, onText }) {
+      const web = {
+        ...(search && {
+          search: tool({
+            description: "Search the web in the background. Returns the pages found, each with its title, address and an excerpt. The screen doesn't change.",
+            inputSchema: jsonSchema<{ query: string }>({
+              type: 'object',
+              properties: { query: { type: 'string', description: 'What to search for.' } },
+              required: ['query'],
+              additionalProperties: false,
+            }),
+            execute: ({ query }) => search(query),
+          }),
+        }),
+        ...(fetch && {
+          fetch: tool({
+            description: "Read a web page in the background by its address. Returns the page's text. The screen doesn't change.",
+            inputSchema: jsonSchema<{ url: string }>({
+              type: 'object',
+              properties: { url: { type: 'string', description: 'The full address, starting with https://.' } },
+              required: ['url'],
+              additionalProperties: false,
+            }),
+            execute: ({ url }) => fetch(url),
+          }),
+        }),
+        ...(openPage && {
+          open_page: tool({
+            description: 'Put a web page on screen, in front of the user, by its address. Returns what is on screen then.',
+            inputSchema: jsonSchema<{ url: string }>({
+              type: 'object',
+              properties: { url: { type: 'string', description: 'The full address, starting with https://.' } },
+              required: ['url'],
+              additionalProperties: false,
+            }),
+            execute: ({ url }) => openPage(url),
+          }),
+        }),
+      }
       const result = streamText({
         model,
         abortSignal: signal,
         system: THINKING_PROMPT,
-        prompt: `${context}\n\n${MISHEARD}\n\n## Why you are needed\n${reason}\n\n## Options\n${options}`,
+        prompt: `${context}\n\n${MISHEARD}\n\n${search ? `${WEB}\n\n` : ''}## Why you are needed\n${reason}\n\n## Options\n${options}`,
         tools: {
           act: tool({
             description: 'Run one of the listed options. Pass `text` for options that type into a field.',
@@ -114,6 +164,7 @@ export function createThinker(opts: { model?: string } = {}): Thinker {
             }),
             execute: ({ option, text }) => act(option, text),
           }),
+          ...web,
         },
         stopWhen: stepCountIs(maxSteps),
       })

@@ -35,6 +35,16 @@ const either = (...checks: Check[]): Check => (shell, agent) => {
   return failures.some((f) => !f) ? undefined : failures.join(' / ')
 }
 
+/** The Web app shows a page whose address or title matches. */
+const webPage = (pattern: RegExp): Check => (shell) => {
+  const s = shell.surfaces.get('web') as { route?: string; pages?: { url: string; title: string }[] } | undefined
+  const page = s?.route?.startsWith('page/') ? s.pages?.[Number(s.route.slice(5))] : undefined
+  return page && (pattern.test(page.url) || pattern.test(page.title)) ? undefined : `expected a web page ~ ${pattern}, got ${page ? page.url : 'none'}`
+}
+
+/** Thinking searched the web in the background. */
+const searched: Check = (_, agent) => (agent.log.entries.some((e) => e.role === 'search' && !e.error) ? undefined : 'expected a web search')
+
 const said = (pattern = /\S/): Check => (_, agent) =>
   agent.log.entries.some((e) => e.role === 'said' && pattern.test(e.content)) ? undefined : `expected Stanley to say something matching ${pattern}`
 
@@ -293,6 +303,36 @@ export const scenarios: Scenario[] = [
     name: 'reply-unsure-word-reads-back',
     utterances: ['open the email from Sam', "reply saying I'm in, see you fry(?) day(?)"],
     checks: [sentCount(0), said(/\?/)],
+  },
+  {
+    // A question is answered from a background search; nothing opens on screen.
+    name: 'lookup-in-background',
+    utterances: ['who is the current CEO of Microsoft'],
+    checks: [searched, said(/\w{3,}/), changedNothing],
+  },
+  {
+    // "that" is whatever was just answered: a page about it goes on screen.
+    name: 'show-me-the-answer',
+    utterances: ["what's the tallest building in the world", 'show me that'],
+    checks: [visible('web'), webPage(/burj|khalifa/i)],
+  },
+  {
+    // The user names the kind of page they want; the search already found one.
+    name: 'show-a-named-source',
+    utterances: ['who painted the Mona Lisa', 'pull up the wikipedia article about him'],
+    checks: [visible('web'), webPage(/wikipedia\.org.*leonardo/i)],
+  },
+  {
+    // A source that wasn't among the first answer's results: found, then put on screen.
+    name: 'show-an-official-source',
+    utterances: ['who is the governor of California', 'show me an official source'],
+    checks: [visible('web'), webPage(/\.gov\b/i)],
+  },
+  {
+    // From one page to another, with no search box on screen.
+    name: 'show-from-a-page',
+    utterances: ['show me the wikipedia page for the Eiffel Tower', 'now show me George Washington'],
+    checks: [visible('web'), webPage(/george_washington|george washington/i)],
   },
   {
     name: 'arithmetic-answer',

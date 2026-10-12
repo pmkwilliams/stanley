@@ -1,188 +1,66 @@
-import { defineApp, type AgentNode, type AppContext } from '@stanley/app-sdk'
-
-export interface SearchResult {
-  title: string
-  url: string
-  domain: string
-  /** First search excerpt, trimmed. */
-  excerpt: string
-}
-
-export interface WebPage {
-  url: string
-  title: string
-  markdown: string
-}
+import { defineApp } from '@stanley/app-sdk'
+import { clip, domainOf, parallelWeb, type PageContent } from './parallel'
 
 export interface WebState {
-  /** `home`, `results` or `page/<n>` (index into `results`) */
+  /** `home` (no page open yet) or `page/<n>` (index into `pages`). */
   route: string
-  query: string
-  results: SearchResult[]
-  page: WebPage | null
+  /** Pages opened this session, in order. Going back reopens one without reading it again. */
+  pages: PageContent[]
   error: string | null
-  /** Text typed in the search box, not yet searched. */
-  box: string
 }
-
-// Parallel REST API, https://docs.parallel.ai/api-reference/search/search and .../extract/extract
-const SEARCH_URL = 'https://api.parallel.ai/v1/search'
-const EXTRACT_URL = 'https://api.parallel.ai/v1/extract'
-const MAX_RESULTS = 8
-const EXCERPT_CHARS = 500
-const PAGE_CHARS = 6000
-
-interface ParallelSearchResponse {
-  results: { url: string; title?: string | null; publish_date?: string | null; excerpts: string[] }[]
-}
-
-interface ParallelExtractResponse {
-  results: { url: string; title?: string | null; excerpts: string[]; full_content?: string | null }[]
-  errors: { url: string; error_type: string; http_status_code: number | null; content: string | null }[]
-}
-
-const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max).trimEnd()}…` : text)
-const oneLine = (text: string) => text.replace(/\s+/g, ' ').trim()
-
-function domainOf(url: string): string {
-  try {
-    return new URL(url).hostname.replace(/^www\./, '')
-  } catch {
-    return url
-  }
-}
-
-async function parallel<T>(ctx: AppContext, url: string, key: string, body: unknown): Promise<T> {
-  const res = await ctx.fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': key },
-    body: JSON.stringify(body),
-  })
-  if (!res.ok) {
-    const err = (await res.json().catch(() => null)) as { error?: { message?: string } } | null
-    throw new Error(`Parallel ${res.status}${err?.error?.message ? `: ${err.error.message}` : ''}`)
-  }
-  return (await res.json()) as T
-}
-
-async function search(ctx: AppContext, key: string, query: string): Promise<SearchResult[]> {
-  const data = await parallel<ParallelSearchResponse>(ctx, SEARCH_URL, key, {
-    objective: query,
-    search_queries: [query],
-    mode: 'fast',
-    advanced_settings: { max_results: MAX_RESULTS },
-  })
-  return data.results.map((r) => ({
-    title: r.title?.trim() || domainOf(r.url),
-    url: r.url,
-    domain: domainOf(r.url),
-    excerpt: clip(oneLine(r.excerpts.join(' ')), EXCERPT_CHARS),
-  }))
-}
-
-async function extract(ctx: AppContext, key: string, url: string, objective: string): Promise<{ title?: string; markdown: string }> {
-  const data = await parallel<ParallelExtractResponse>(ctx, EXTRACT_URL, key, {
-    urls: [url],
-    objective,
-    advanced_settings: { full_content: { max_chars_per_result: PAGE_CHARS } },
-  })
-  const page = data.results[0]
-  if (!page) throw new Error(data.errors[0] ? `${data.errors[0].error_type} (${data.errors[0].http_status_code ?? 'no status'})` : 'no content')
-  return { title: page.title ?? undefined, markdown: clip(page.full_content || page.excerpts.join('\n\n'), PAGE_CHARS) }
-}
-
-const resultsMarkdown = (s: WebState) =>
-  s.results.map((r, i) => `${i + 1}. **${r.title}** (${r.domain})\n   ${r.url}\n   ${r.excerpt}`).join('\n') || '_No results_'
 
 const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err))
 
+const current = (s: WebState): PageContent | null => (s.route.startsWith('page/') ? (s.pages[Number(s.route.slice(5))] ?? null) : null)
+
+/**
+ * Shows web pages Stanley opens. It has no search box: Stanley searches in the background and opens
+ * what it found here, by address (`openUrl`).
+ */
 export const webApp = defineApp<WebState>({
   id: 'web',
   title: 'Web',
-  description: 'Web search and page reader',
+  description: 'Web browser: shows the web pages Stanley opens',
 
-  init: () => ({ route: 'home', query: '', results: [], page: null, error: null, box: '' }),
+  init: () => ({ route: 'home', pages: [], error: null }),
 
   current: (s) => s.route,
 
-  nodes(s) {
-    // As on screen: an open page shows only a back button over the page; otherwise the search box
-    // (Enter searches) and any results.
-    if (s.route.startsWith('page/') && s.page) return [{ id: 'results', kind: 'location', role: 'button', label: 'Back to results' }]
-    const field: AgentNode = {
-      id: 'box',
-      kind: 'input',
-      label: 'Search the web',
-      value: s.box,
-      children: s.box ? [{ id: 'search', kind: 'action', role: 'key', label: 'press Enter' }] : [],
-    }
-    const results: AgentNode[] = s.route === 'results'
-      ? s.results.map((r, i) => ({ id: `page/${i}`, kind: 'location', label: r.title, description: r.excerpt ? `${r.domain}: ${clip(r.excerpt, 120)}` : r.domain }))
-      : []
-    return [field, ...results]
+  // The page itself is shown as text (`toMarkdown`); its links aren't elements.
+  nodes: () => [],
+
+  url: (s) => current(s)?.url,
+
+  async perform(s, nodeId) {
+    // Going back reopens an earlier route.
+    if (nodeId === 'home') return { state: { ...s, route: 'home' }, summary: 'Opened Web' }
+    const page = nodeId.startsWith('page/') ? s.pages[Number(nodeId.slice(5))] : undefined
+    if (!page) return { state: s, summary: `Unknown action ${nodeId}` }
+    return { state: { ...s, route: nodeId, error: null }, summary: `Opened "${page.title}" (${domainOf(page.url)})` }
   },
 
-  async perform(s, nodeId, args, ctx) {
-    if (nodeId === 'home') return { state: { ...s, route: 'home', page: null }, summary: 'Opened web search' }
-    if (nodeId === 'results') return { state: { ...s, route: 'results', page: null }, summary: `Back to results for "${s.query}"` }
-
+  async openUrl(s, url, ctx) {
     const key = ctx.env.PARALLEL_API_KEY
-
-    if (nodeId === 'box') {
-      const box = args.text?.trim() ?? ''
-      // The search box is on the search page, so typing leaves an open page.
-      const onPage = s.route.startsWith('page/')
-      const state = { ...s, box, route: onPage ? 'home' : s.route, page: onPage ? null : s.page }
-      return { state, summary: box ? `Typed "${box}" in the search box (not searched yet)` : 'Cleared the search box' }
-    }
-
-    if (nodeId === 'search') {
-      const query = s.box.trim()
-      if (!query) return { state: s, summary: 'Nothing typed in the search box; nothing searched' }
-      // On failure keep the previous query with its results, so they are never labelled with the new one.
-      if (!key) {
-        const error = 'Web search unavailable: PARALLEL_API_KEY is not set'
-        return { state: { ...s, error }, summary: error }
-      }
-      try {
-        const results = await search(ctx, key, query)
-        const next = { ...s, route: 'results', query, results, page: null, error: null, box: '' }
-        return { state: next, summary: `Searched "${query}": ${results.length} results`, observation: `# Results for "${query}"\n${resultsMarkdown(next)}` }
-      } catch (err) {
-        const error = `Web search failed: ${errorText(err)}`
-        return { state: { ...s, error }, summary: error }
-      }
-    }
-
-    const [, n] = nodeId.split('/')
-    const result = s.results[Number(n)]
-    if (!nodeId.startsWith('page/') || !result) return { state: s, summary: `Unknown action ${nodeId}` }
-
-    // Without a key (or if Extract fails) still open the page; the agent gets the search excerpt instead.
-    const fallback = { ...s, route: nodeId, page: { url: result.url, title: result.title, markdown: result.excerpt } }
+    const open = (page: PageContent, error: string | null) => ({ ...s, route: `page/${s.pages.length}`, pages: [...s.pages, page], error })
+    // Without the reader the page still opens; Stanley just can't read it.
     if (!key) {
-      return { state: fallback, summary: `Opened "${result.title}" (page reader unavailable)`, observation: `# ${result.title}\n${result.url}\n\n${result.excerpt}` }
+      const error = 'Page reader unavailable: PARALLEL_API_KEY is not set'
+      return { state: open({ url, title: domainOf(url), markdown: '' }, error), summary: `Opened ${domainOf(url)}; ${error}`, title: domainOf(url) }
     }
     try {
-      const page = await extract(ctx, key, result.url, s.query)
-      const title = page.title || result.title
-      return {
-        state: { ...s, route: nodeId, page: { url: result.url, title, markdown: page.markdown }, error: null },
-        summary: `Opened "${title}" (${result.domain})`,
-        observation: `# ${title}\n${result.url}\n\n${page.markdown}`,
-      }
+      const page = await parallelWeb(key, ctx.fetch).fetch(url)
+      return { state: open(page, null), summary: `Opened "${page.title}" (${domainOf(page.url)})`, observation: `# ${page.title}\n${page.url}\n\n${page.markdown}`, title: page.title }
     } catch (err) {
       const error = `Couldn't read page: ${errorText(err)}`
-      return { state: { ...fallback, error }, summary: `Opened "${result.title}"; ${error}`, observation: `# ${result.title}\n${result.url}\n\n${result.excerpt}` }
+      return { state: open({ url, title: domainOf(url), markdown: '' }, error), summary: `Opened ${domainOf(url)}; ${error}`, title: domainOf(url) }
     }
   },
 
   toMarkdown(s) {
     const notice = s.error ? `\n\n_${s.error}_` : ''
-    if (s.route.startsWith('page/') && s.page) return `# Web › ${s.page.title}\n${s.page.url}\n\n${clip(s.page.markdown, 1500)}${notice}`
-    const box = `\n[Search the web: ${s.box || 'empty'}]`
-    if (s.route === 'results') return `# Web › Results for "${s.query}"${box}\n${resultsMarkdown(s)}${notice}`
-    return `# Web${box}${notice}`
+    const page = current(s)
+    if (page) return `# Web › ${page.title}\n${page.url}\n\n${clip(page.markdown, 1500)}${notice}`
+    return `# Web\nNo page open.${notice}`
   },
 })
 

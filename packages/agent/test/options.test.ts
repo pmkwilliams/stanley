@@ -52,6 +52,32 @@ describe('stepOptions', () => {
   })
 })
 
+describe('stepOptions with known web pages', () => {
+  const pages = [
+    { url: 'https://en.wikipedia.org/wiki/Eiffel_Tower', title: 'Eiffel Tower', latest: true },
+    { url: 'https://www.toureiffel.paris/en', title: 'Eiffel Tower', latest: true },
+    { url: 'https://en.wikipedia.org/wiki/Louvre', title: 'Louvre - Wikipedia', latest: false },
+  ]
+
+  it('offers each page after the screen, told apart by site when titles clash', () => {
+    const options = stepOptions(screen, [], 50, '', pages)
+    expect(Object.keys(options.criteria).slice(5, 8)).toEqual(['open page: Eiffel Tower (en.wikipedia.org)', 'open page: Eiffel Tower (toureiffel.paris)', 'open page: Louvre - Wikipedia'])
+    expect(options.criteria['open page: Louvre - Wikipedia']).toBe('web page on en.wikipedia.org')
+    expect(options.targets.get('open page: Louvre - Wikipedia')).toEqual({ kind: 'page', url: 'https://en.wikipedia.org/wiki/Louvre', title: 'Louvre - Wikipedia' })
+    expect(navigates(options.targets.get('open page: Louvre - Wikipedia')!)).toBe(true)
+  })
+
+  it("doesn't offer the page already on screen", () => {
+    const options = stepOptions({ ...screen, url: 'https://en.wikipedia.org/wiki/Louvre#History' }, [], 50, '', pages)
+    expect(Object.keys(options.criteria).filter((n) => n.includes('Louvre'))).toEqual([])
+  })
+
+  it('ranks pages with the screen when there are too many, by the words the user said', () => {
+    const options = stepOptions(screen, [], 2, 'show me the louvre', pages)
+    expect(Object.keys(options.criteria)).toEqual(['Inbox (5)', 'open page: Louvre - Wikipedia', 'back', 'home'])
+  })
+})
+
 describe('findElement', () => {
   it('finds an element by id with its option name', () => {
     expect(findElement(screen, 'email:m1/reply')?.name).toBe('"Lunch Friday?" › Reply to Sam')

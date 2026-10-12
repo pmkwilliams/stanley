@@ -1,4 +1,5 @@
 import type { LogEntry, StepTarget } from './log'
+import { shortUrl } from './web'
 import type { Screen } from './world'
 
 /** The utterance being heard right now, including words not yet finalized. */
@@ -10,8 +11,8 @@ export interface LiveUtterance {
 
 /**
  * The conversation every model reads: what the user said, as turns; what Stanley did, as
- * outcomes; what Stanley said, as far as the user heard it; then the screen once (unless `screen`
- * is null). Decisions that changed nothing (listening,
+ * outcomes; what it found on the web; what Stanley said, as far as the user heard it; then the
+ * screen once (unless `screen` is null). Decisions that changed nothing (listening,
  * finishing, discarded or gated guesses) and which model took a step are left out. Those are the
  * agent's mechanics and live in the debug trace.
  *
@@ -31,7 +32,7 @@ export function narrate(entries: LogEntry[], screen: Screen | null, live?: LiveU
   const splits = new Map<number, number[]>()
   const last = new Map<number, number>()
   entries.forEach((e, i) => {
-    const id = e.role === 'user' ? e.utteranceId : e.role === 'step' ? e.utteranceId : undefined
+    const id = utteranceOf(e)
     if (id === undefined) return
     last.set(id, i)
     if (e.role !== 'step' || !changes(e) || e.heardWords === undefined) return
@@ -68,6 +69,9 @@ export function narrate(entries: LogEntry[], screen: Screen | null, live?: LiveU
         tellUpTo(e.utteranceId, early ? e.heardWords! : Math.max(printed.get(e.utteranceId) ?? 0, firstPart(e.utteranceId)))
       }
       lines.push(describeStep(e))
+    } else if (e.role === 'search' || e.role === 'read') {
+      if (e.utteranceId !== undefined) tellUpTo(e.utteranceId, Math.max(printed.get(e.utteranceId) ?? 0, firstPart(e.utteranceId)))
+      lines.push(...describeLookup(e))
     } else if (e.role === 'said') {
       if (e.id !== undefined) said.set(e.id, { line: lines.length, content: e.content })
       lines.push(`Stanley said: "${e.content}"`)
@@ -79,7 +83,7 @@ export function narrate(entries: LogEntry[], screen: Screen | null, live?: LiveU
     }
     else if (e.role === 'event' && e.kind === 'stuck') lines.push(`Stanley stopped: ${e.detail ?? 'it got stuck'}.`)
     // The utterance's last entry: whatever the user said after the last step follows it.
-    const id = e.role === 'user' || e.role === 'step' ? e.utteranceId : undefined
+    const id = utteranceOf(e)
     if (id !== undefined && last.get(id) === i && id !== live?.utteranceId) tellUpTo(id, Infinity)
   })
   if (live) tellUpTo(live.utteranceId, Infinity)
@@ -90,6 +94,34 @@ export function narrate(entries: LogEntry[], screen: Screen | null, live?: LiveU
   if (!screen) return conversation.join('\n')
   const where = screen.visible ? 'in front of the user' : "in the background, the user can't see it"
   return [...conversation, '', `## Screen: ${screen.title} (${where})`, screen.markdown].join('\n')
+}
+
+/**
+ * The entries `narrate` keeps for a long session: from the first words of its last `maxTurns`
+ * utterances on. What the models no longer read, Stanley no longer offers (see `knownPages`).
+ */
+export function recentEntries(entries: LogEntry[], maxTurns = 20): LogEntry[] {
+  const starts: number[] = []
+  const seen = new Set<number>()
+  entries.forEach((e, i) => {
+    if (e.role !== 'user' || seen.has(e.utteranceId)) return
+    seen.add(e.utteranceId)
+    starts.push(i)
+  })
+  return starts.length > maxTurns ? entries.slice(starts[starts.length - maxTurns]) : entries
+}
+
+function utteranceOf(e: LogEntry): number | undefined {
+  return e.role === 'user' || e.role === 'step' || e.role === 'search' || e.role === 'read' ? e.utteranceId : undefined
+}
+
+/** A search lists what it found, so a page can be opened later; a read names the page. */
+function describeLookup(e: Extract<LogEntry, { role: 'search' | 'read' }>): string[] {
+  if (e.role === 'read') return [`Stanley read "${e.title}" (${shortUrl(e.url)})${e.error ? `: failed (${e.error})` : ''}.`]
+  const head = `Stanley searched the web for "${e.query}"`
+  if (e.error) return [`${head}: failed (${e.error}).`]
+  if (!e.results.length) return [`${head}: nothing found.`]
+  return [`${head}:`, ...e.results.map((r) => `- "${r.title}" (${shortUrl(r.url)})${r.summary ? `: ${r.summary}` : ''}`)]
 }
 
 /** A step that changed something: typing, or pressing a button. Opening things only looks. */
@@ -108,6 +140,8 @@ function describeStep(e: Extract<LogEntry, { role: 'step' }>): string {
       return `${who} went back${outcome}.`
     case 'home':
       return `${who} went home${outcome}.`
+    case 'page':
+      return `${who} opened the page "${t.title}" (${shortUrl(t.url)})${outcome}.`
   }
   if (t.nodeKind === 'input') {
     if (e.wrote === 'stanley') return `${who} wrote its own words into [${t.name}]${outcome}: "${e.text}"`
@@ -125,5 +159,8 @@ function describeStep(e: Extract<LogEntry, { role: 'step' }>): string {
 }
 
 export function targetOf(target: StepTarget): string {
-  return target.kind === 'element' ? target.name : target.kind === 'app' ? `open ${target.title}` : target.kind
+  if (target.kind === 'element') return target.name
+  if (target.kind === 'app') return `open ${target.title}`
+  if (target.kind === 'page') return `open page: ${target.title}`
+  return target.kind
 }

@@ -5,10 +5,11 @@ import type { AgentDebugEvent, GateRule, RequestResult, TickReason } from './deb
 import { createEffectJudge, type EffectJudge, type EffectVerdict } from './effects'
 import { markUnsure, unmarked, type HeardWord } from './heard'
 import { MessageLog, type Actor, type DecisionMeta, type LogEntry, type StepTarget } from './log'
-import { narrate, type LiveUtterance } from './narrate'
+import { narrate, recentEntries, type LiveUtterance } from './narrate'
 import { navigates, stepOptions, type OptionSet, type Target } from './options'
 import type { Thinker, Writing } from './think'
 import { fullText, hasNewWords, type TranscriptSnapshot } from './transcript'
+import { knownPages, sameUrl, shortUrl, type KnownPage, type WebTools } from './web'
 import type { Screen, StepResult, World } from './world'
 
 export type TickOutcome = 'executed' | 'stale-discarded' | 'gated' | 'forced-stop' | 'error'
@@ -80,6 +81,8 @@ export interface AgentDeps {
   thinker: Thinker
   /** Judges what a button does. Defaults to one cached Jev question per button (see effects.ts). */
   effects?: EffectJudge
+  /** Background web search and page reading for thinking. Without it, thinking only has the screen. */
+  web?: WebTools
   events?: Partial<AgentEvents>
   config?: AgentConfig
   sink?: (entry: LogEntry) => void
@@ -98,14 +101,16 @@ Stanley acts while the user is still talking, so later words can take back or ch
 
 The user's words come from speech recognition, which can mishear. A word followed by (?) is one it was unsure of; read it as what the user most likely said, given the conversation and the screen.
 
-The screen is the app Stanley is working on, which may be in the background. Elements are written in [brackets]. A link opens something, a button does something, and a field holds text that the thinking part types.`
+The screen is the app Stanley is working on, which may be in the background. Elements are written in [brackets]. A link opens something, a button does something, and a field holds text that the thinking part types.
+
+Web pages Stanley found or read are listed in the conversation, and each can be put on screen with its "open page" step. Finding something new on the web is the thinking part's job.`
 
 type Next = 'listen' | 'act' | 'think' | 'done'
 
 export const NEXT: Record<Next, string> = {
   listen: "The user is still saying what they want, and it isn't clear yet what to do.",
   act: 'Take a step on the screen that moves toward what the user asked for.',
-  think: 'The next part needs words or judgement: typing text, answering, asking the user, getting their go-ahead, or working out what they mean.',
+  think: 'The next part needs words or judgement: typing text, answering, looking something up, asking the user, getting their go-ahead, or working out what they mean.',
   done: 'What the user asked for is done or showing on the screen, nothing Stanley did goes against what they now want, and any question they asked has been answered out loud.',
 }
 export const NEXT_INSTRUCTIONS = 'What should Stanley do now?'
@@ -202,12 +207,14 @@ export class Agent {
   private jev: DecisionClient
   private thinker: Thinker
   private effects: EffectJudge
+  private web?: WebTools
   private events: Partial<AgentEvents>
 
   constructor(deps: AgentDeps) {
     this.world = deps.world
     this.jev = deps.jev
     this.thinker = deps.thinker
+    this.web = deps.web
     this.events = deps.events ?? {}
     this.config = deps.config ?? defaultConfig
     this.effects = deps.effects ?? createEffectJudge(deps.jev, this.config.commits)
@@ -386,6 +393,11 @@ export class Agent {
     return unmarked(this.log.entries.findLast((e) => e.role === 'user')?.content ?? '')
   }
 
+  /** Web pages Stanley can open: what it found or read, while the models still read about it. */
+  private pages(): KnownPage[] {
+    return this.world.openUrl ? knownPages(recentEntries(this.log.entries)) : []
+  }
+
   private live(): LiveUtterance | undefined {
     return this.utteranceId ? { utteranceId: this.utteranceId, text: fullText(this.transcript), ended: this.utteranceEnded } : undefined
   }
@@ -410,7 +422,7 @@ export class Agent {
       // A decision is a guess until the person finishes or the agent has started acting on it.
       this.events.status?.(!seenEnded && this.steps === 0 ? 'guessing' : 'thinking')
       const screen = await this.world.screen()
-      const options = stepOptions(screen, this.world.appList(), this.config.maxElements, this.focus())
+      const options = stepOptions(screen, this.world.appList(), this.config.maxElements, this.focus(), this.pages())
       const state = `${SYSTEM_PROMPT}\n\n${narrate(this.log.entries, screen, this.live())}`
       const questions: Record<string, Question> = {
         next: { instructions: NEXT_INSTRUCTIONS, options: NEXT },
@@ -814,6 +826,7 @@ export class Agent {
     try {
       if (target.kind === 'app') result = await this.world.open(target.app.id)
       else if (target.kind === 'element') result = await this.world.perform(target.node, args)
+      else if (target.kind === 'page') result = await this.world.openUrl!(target.url)
       else {
         await this.world.global(target.kind)
         result = { summary: target.kind === 'back' ? 'Went back' : 'Went home' }
@@ -823,6 +836,8 @@ export class Agent {
       this.log.push({ ...entry, result: { summary: message, error: true } })
       throw err
     }
+    // A page is logged under the title it opened with, which the address alone doesn't give.
+    if (entry.target.kind === 'page' && result.title) entry.target = { ...entry.target, title: result.title }
     this.log.push({ ...entry, result })
     const nodeId = target.kind === 'element' ? target.node.id : undefined
     this.events.debug?.({ type: 'act', tickId, option, nodeId, args, ...result, latencyMs: performance.now() - started })
@@ -857,6 +872,11 @@ export class Agent {
         signal: controller.signal,
         onText: (delta) => this.stream(reply, delta),
         act: (option, text) => (steps++, this.thinkStep(id, option, text, controller.signal)),
+        ...(this.web && {
+          search: (query: string) => (steps++, this.search(id, query, controller.signal)),
+          fetch: (url: string) => (steps++, this.read(id, url, controller.signal)),
+        }),
+        ...(this.world.openUrl && { openPage: (url: string) => (steps++, this.openPage(id, url, controller.signal)) }),
       })
       const said = text.trim()
       this.events.debug?.({ type: 'think-end', tickId: id, text: said, steps, latencyMs: performance.now() - started, aborted: false })
@@ -907,6 +927,63 @@ export class Agent {
     }
     this.events.status?.('thinking')
     return done(`${outcome}\n\n${await this.screenText()}`)
+  }
+
+  /**
+   * A web search by the thinking model. What it found goes in the conversation, cut to a line each,
+   * so any of it can be opened later; thinking gets the full excerpts.
+   */
+  private async search(id: number, query: string, signal: AbortSignal): Promise<string> {
+    signal.throwIfAborted()
+    const utteranceId = this.utteranceId || undefined
+    const trace = (result: string) => (this.events.debug?.({ type: 'think-step', tickId: id, option: 'search', text: query, result }), result)
+    try {
+      const results = await this.web!.search(query, signal)
+      const summary = (excerpt: string) => clip(excerpt.replace(/\s+/g, ' ').trim(), 100)
+      this.log.push({ role: 'search', query, results: results.map((r) => ({ url: r.url, title: r.title, summary: summary(r.excerpt) })), utteranceId })
+      if (!results.length) return trace(`Nothing found for "${query}".`)
+      const list = results.map((r, i) => `${i + 1}. "${r.title}"\n   ${r.url}\n   ${r.excerpt}`).join('\n')
+      return trace(`Found for "${query}":\n${list}`)
+    } catch (err) {
+      if (signal.aborted) throw err
+      const error = err instanceof Error ? err.message : String(err)
+      this.log.push({ role: 'search', query, results: [], error, utteranceId })
+      return trace(`The search failed: ${error}`)
+    }
+  }
+
+  /** A page read by the thinking model. The conversation keeps which page; thinking gets its text. */
+  private async read(id: number, url: string, signal: AbortSignal): Promise<string> {
+    signal.throwIfAborted()
+    const utteranceId = this.utteranceId || undefined
+    const trace = (result: string) => (this.events.debug?.({ type: 'think-step', tickId: id, option: 'fetch', text: url, result }), result)
+    try {
+      const page = await this.web!.fetch(url, signal)
+      this.log.push({ role: 'read', url: page.url, title: page.title, utteranceId })
+      return trace(`# ${page.title}\n${page.url}\n\n${page.markdown}`)
+    } catch (err) {
+      if (signal.aborted) throw err
+      const error = err instanceof Error ? err.message : String(err)
+      this.log.push({ role: 'read', url, title: url, error, utteranceId })
+      return trace(`Couldn't read it: ${error}`)
+    }
+  }
+
+  /** Thinking puts a page on screen by its address: any page, not only ones offered as options. */
+  private async openPage(id: number, url: string, signal: AbortSignal): Promise<string> {
+    signal.throwIfAborted()
+    const known = knownPages(recentEntries(this.log.entries)).find((p) => sameUrl(p.url, url))
+    this.events.status?.('acting')
+    let outcome: string
+    try {
+      outcome = (await this.step(id, `open page: ${url}`, { kind: 'page', url, title: known?.title ?? shortUrl(url) }, {}, 'thinking')).summary
+    } catch (err) {
+      outcome = `That failed: ${err instanceof Error ? err.message : String(err)}`
+    }
+    this.events.status?.('thinking')
+    const result = `${outcome}\n\n${await this.screenText()}`
+    this.events.debug?.({ type: 'think-step', tickId: id, option: 'open_page', text: url, result })
+    return result
   }
 
   private async screenText(options?: OptionSet): Promise<string> {
@@ -1114,6 +1191,8 @@ export class Agent {
   }
 }
 
+const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max).trimEnd()}…` : text)
+
 /** P(finished) from Jev's `heard` answer, or null when the decision didn't include it. */
 function heardOf(d: MultiChoiceResult): number | null {
   const heard = d.answers.heard
@@ -1125,6 +1204,7 @@ function heardOf(d: MultiChoiceResult): number | null {
 export function stepTarget(option: string, target: Target): StepTarget {
   if (target.kind === 'app') return { kind: 'app', appId: target.app.id, title: target.app.title }
   if (target.kind === 'element') return { kind: 'element', name: option, role: target.role, nodeKind: target.node.kind, nodeId: target.node.id }
+  if (target.kind === 'page') return { kind: 'page', url: target.url, title: target.title }
   return { kind: target.kind }
 }
 

@@ -31,7 +31,7 @@ export class Shell implements World {
   /** `screen()`, synchronously: the shell's surfaces are in memory. */
   screenNow(): Screen {
     if (!this.focus) {
-      const list = this.apps.map((a) => `- ${a.title}: ${a.description}`).join('\n')
+      const list = this.appList().map((a) => `- ${a.title}: ${a.description}`).join('\n')
       return { id: 'home', title: 'Home', visible: this.layout.visible === null, markdown: `# Home\n${list}`, elements: [] }
     }
     return this.screenOf(this.focus)
@@ -46,13 +46,18 @@ export class Shell implements World {
       id: `${app.id}${SEP}${app.current(state)}`,
       title: app.title,
       visible: this.layout.visible === app.id,
+      url: app.url?.(state),
       markdown: app.toMarkdown(state),
       elements: prefix(app.id, app.nodes(state)),
     }
   }
 
+  /**
+   * Apps Stanley can open. Not the one web pages open in: on its own it shows nothing, and the
+   * pages Stanley found are offered to open directly.
+   */
   appList(): AppEntry[] {
-    return this.apps.map(({ id, title, description }) => ({ id, title, description }))
+    return this.apps.filter((a) => !a.openUrl).map(({ id, title, description }) => ({ id, title, description }))
   }
 
   async perform(node: AgentNode, args: ActionArgs) {
@@ -80,6 +85,20 @@ export class Shell implements World {
       this.navigate(appId)
       this.onChange()
       return { summary: `Opened ${app.title}`, observation: app.toMarkdown(this.surfaces.get(appId)) }
+    })
+  }
+
+  /** Opens a web page in the app that shows them. */
+  async openUrl(url: string): Promise<StepResult> {
+    const app = this.apps.find((a) => a.openUrl)
+    if (!app) throw new Error('No app opens web pages')
+    return this.serial(app.id, async () => {
+      await this.ensure(app)
+      const result = await app.openUrl!(this.surfaces.get(app.id), url, this.ctx)
+      this.surfaces.set(app.id, result.state)
+      this.navigate(app.id)
+      this.onChange()
+      return { summary: result.summary, observation: result.observation, title: result.title }
     })
   }
 

@@ -11,7 +11,7 @@ over a few demo apps, which stand in for arbitrary apps and websites.
 - Push-to-talk (global toggle) with live transcription.
 - An agent that works from what is on screen, so it carries over to arbitrary apps and websites.
 - Background work: the agent can operate on surfaces the user can't see and reveal the result.
-- Toy apps: To-do, Email, Weather, Music, Web (search + webview).
+- Toy apps: To-do, Email, Weather, Music, Web (a page viewer; searching happens in the background).
 - A debug window that explains every decision.
 
 **Not in v1**: wake phrase, multi-window layouts, spoken responses (Stanley's replies are text on
@@ -51,11 +51,16 @@ Each tick the world provides (`World` in `packages/agent/src/world.ts`):
   `Blue ceramic mug › Add to cart`).
 - **Apps** that can be opened from anywhere, plus `back` (the previous screen, like a browser's
   back button) and `home`.
+- **Known web pages**: every page a background search found or thinking read, while the
+  conversation still shows it, as `open page: <title>` (told apart by site when titles repeat).
+  Opening one is a single navigation step, like typing its address into a browser
+  (`World.openUrl`). The page already on screen isn't offered.
 
-Only what is on the current screen is offered. The agent can't reach into a screen it isn't on,
-because on a real website it can't either: to archive an email it opens the email, then presses
-Archive. On a long page, Jev gets what is in view plus the elements that match the user's words
-(`stepOptions`), and can scroll.
+Apart from known pages, only what is on the current screen is offered. The agent can't reach into a
+screen it isn't on, because on a real website it can't either: to archive an email it opens the
+email, then presses Archive. When there are more elements and pages than the limit, `stepOptions`
+keeps those matching the user's words first, then what is in view or was found last; the agent can
+scroll for the rest.
 
 Apps describe their screens with `nodes(state)`: `location` = link, `action` = button, `input` =
 field, `group` = a container that only gives context. Labels are what the UI shows (`Send reply`,
@@ -170,7 +175,11 @@ One model, one prompt (`THINKING_PROMPT`), the same conversation, three ways in:
   them down.
 - **run** (a short tool loop over `act(option, text?)`, the same options as Jev): for `think` turns.
   It answers, asks, or works the screen itself. Its text is speech: streamed, shown and spoken as it
-  is written (see **Speaking**).
+  is written (see **Speaking**). With web access it also has `search(query)` and `fetch(url)`, which
+  look things up in the background without changing the screen. A question is answered from a
+  lookup; something the user wants to see goes on screen with `open page`. What they found stays in
+  the conversation (below), so the fast part can open any of it later ("show me that", "the
+  Wikipedia one") without searching again.
 
 Whatever thinking does is dropped if the user says more while it works (steps already taken stay
 done and logged; it says nothing). Jev then re-decides with everything they said. After a `run`, the
@@ -224,7 +233,7 @@ count grew, or a segment finalized.
 | Oscillation: same step from the same screen N times in the last M steps → stop | 3 in 6 |
 | Stale navigation still runs at step confidence ≥ | 0.8 |
 | `think` with a field step at least this sure is handled as writing | 0.9 |
-| Elements offered per tick / to thinking | 50 / 150 |
+| Elements and known pages offered per tick / to thinking | 150 / 300 |
 | Thinking tool steps | 10 |
 | Thought finished: `heard` / voice / `heard` without Smart Turn | 0.6 / 0.5 / 0.85 |
 | Utterance ends this long after a pause: both finished / mixed / either says more (< 0.25) | 0.25 / 1 / 2.6 s |
@@ -270,6 +279,13 @@ Stanley said: "I wrote "Ramen? I was born ready." Should I send it?"
   anything Stanley did for it, marked `(still speaking)` while the utterance is open.
 - **Steps are outcomes**: links opened, text typed (and whose words), buttons pressed with the
   app's result summary.
+- **Lookups keep what they found**: a search lists each page's title, address and a line of its
+  excerpt; a read names the page. Page text isn't kept: thinking reads it in the turn it fetched it.
+  ```
+  Stanley searched the web for "first president of the United States":
+  - "George Washington - Wikipedia" (en.wikipedia.org/wiki/George_Washington): George Washington…
+  Stanley read "George Washington - Wikipedia" (en.wikipedia.org/wiki/George_Washington).
+  ```
 - **Not included**: listen/done decisions, discarded or gated decisions, retries, and which model
   took a step. Those are the agent's mechanics; the debug trace has them.
 - **The screen appears once**, at the end. Earlier screens are not repeated.
@@ -388,9 +404,10 @@ All via **Vercel AI Gateway** with the AI SDK (`ai`, pinned exactly), one `AI_GA
   `{ choice, probabilities, confidence }`: `decide` for several questions in one call, `choose` for
   one, plus a mock.
 - **Thinking**: Claude Haiku 5.5 via gateway behind a `Thinker` interface: `write` and `confirm` are
-  single structured calls (`generateText` with `Output.object`), `run` is a tool loop with one `act`
-  tool.
-- **Search**: Parallel Search API (`PARALLEL_API_KEY`).
+  single structured calls (`generateText` with `Output.object`), `run` is a tool loop with `act`,
+  plus `search` and `fetch` when the agent has `WebTools`.
+- **Web**: Parallel Search and Extract APIs (`PARALLEL_API_KEY`), in `@stanley/app-web/parallel`:
+  the agent's background search and fetch, and the Web app's page reader.
 - **Weather**: Open-Meteo forecast + geocoding (no key).
 
 ## Demo apps
@@ -401,7 +418,7 @@ All via **Vercel AI Gateway** with the AI SDK (`ai`, pinned exactly), one `AI_GA
 | Email | seeded, in-memory | Inbox / Sent tabs, the inbox list, an open email with Mark unread / Archive / Delete, a reply box and Send reply |
 | Weather | Open-Meteo | "Search a city" box (Enter looks up), current conditions, one button per day |
 | Music | bundled tracks | Previous / Play / Next / Volume buttons, one button per track |
-| Web | Parallel search + webview | "Search the web" box (Enter searches), result links; an open page shows Back to results |
+| Web | Parallel extract + webview | No elements: shows the page Stanley opened (`openUrl`). Not in the agent's app list, since it shows nothing on its own; known pages open in it |
 
 Each app's `nodes()` lists only what its screen shows, labelled as the UI labels it.
 
@@ -452,8 +469,8 @@ Working, verified end to end:
 - Parakeet + Silero live transcription: partials every ~430 ms, segments at pauses, silence
   auto-end at 2 s; model loads in ~1.3 s. Verified by streaming synthesized speech through the app.
 - All five apps; background work with a single reveal; debug window decision timeline.
-- Evals: demo apps 68/68 (34 scenarios × 2, including 9 turn-taking ones), fixture websites 45/45
-  (15 × 3), live websites 8/8 (4 × 2), synthetic voice through the real transcriber and Smart Turn
+- Evals: demo apps 84/84 (42 scenarios × 2, including 9 turn-taking ones and 4 web lookups),
+  fixture websites 28/30 (15 × 2; both misses passed 4/4 on rerun, as before the change), live websites 8/8 (4 × 2), synthetic voice through the real transcriber and Smart Turn
   10/10 on the turn-taking set.
 - Turn detection (`pnpm eval:turn`, LiveKit EoT benchmark, 100 real clips): the turn's end is called
   0.75 s after the last word (median) vs 2 s before, and 4% of mid-turn pauses cut in vs 11%.
@@ -493,7 +510,7 @@ packages/app-todo     ./core (headless) + ./ui (Svelte)
 packages/app-email    ″
 packages/app-weather  ″
 packages/app-music    ″ + ./player (headless <audio>, mounted while the surface exists)
-packages/app-web      ″ (Parallel search; page view = WebContentsView later)
+packages/app-web      ″ + ./parallel (Parallel search and extract: the agent's lookups, the page reader)
 evals                 scenario evals with real models: demo apps, websites (fixture and live), voice, STT
 ```
 
