@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { Agent, createThinker, type AgentDeps, type Thinker, type TickReport, type World } from '@stanley/agent'
+import { Agent, createThinker, type AgentDeps, type Thinker, type TickReport, type WebTools, type World } from '@stanley/agent'
+import { parallelWeb } from '@stanley/app-web/parallel'
 import { createJevClient, type DecisionClient } from '@stanley/jev'
 import { Shell } from '../apps/desktop/src/main/shell'
 import { apps } from '../apps/desktop/src/main/apps'
@@ -15,7 +16,7 @@ export const PAUSE_MS = 800
 const SILENCE_BACKSTOP_MS = 4000
 
 /** Paid model calls, so every run says what it spent. */
-export const usage = { jev: 0, jevInputTokens: 0, thinking: 0, writing: 0, confirming: 0 }
+export const usage = { jev: 0, jevInputTokens: 0, jevMs: [] as number[], thinking: 0, writing: 0, confirming: 0, searches: 0, reads: 0 }
 
 export function loadEnv() {
   const envFile = join(import.meta.dirname, '..', '.env')
@@ -40,7 +41,7 @@ export function select<T>(items: T[], name: (t: T) => string, command: string): 
 }
 
 export function printUsage() {
-  console.log(`Paid calls: ${usage.jev} Jev (${usage.jevInputTokens.toLocaleString()} input tokens), ${usage.thinking} thinking turns, ${usage.writing} writes, ${usage.confirming} confirms (Haiku)`)
+  console.log(`Paid calls: ${usage.jev} Jev (${usage.jevInputTokens.toLocaleString()} input tokens, p50 ${median(usage.jevMs)}s), ${usage.thinking} thinking turns, ${usage.writing} writes, ${usage.confirming} confirms (Haiku), ${usage.searches} searches, ${usage.reads} page reads (Parallel)`)
 }
 
 export interface ScenarioResult {
@@ -132,7 +133,8 @@ export async function drive(world: World, utterances: string[], speak: Speak) {
 }
 
 function makeAgent(world: World, events: AgentDeps['events']): Agent {
-  return new Agent({ world, jev: countedJev(createJevClient()), thinker: countedThinker(createThinker()), events })
+  const key = process.env.PARALLEL_API_KEY
+  return new Agent({ world, jev: countedJev(createJevClient()), thinker: countedThinker(createThinker()), web: key ? countedWeb(parallelWeb(key)) : undefined, events })
 }
 
 /** Runs `tasks` with at most `limit` in flight. */
@@ -216,14 +218,28 @@ export async function typeUtterance(agent: Agent, utterance: string, _index = 0,
 }
 
 function countedJev(client: DecisionClient): DecisionClient {
-  const count = <T extends { usage?: { inputTokens?: number } }>(result: T) => {
+  const count = <T extends { usage?: { inputTokens?: number }; latencyMs: number }>(result: T) => {
     usage.jev++
     usage.jevInputTokens += result.usage?.inputTokens ?? 0
+    usage.jevMs.push(result.latencyMs)
     return result
   }
   return {
     choose: async (req) => count(await client.choose(req)),
     decide: async (req) => count(await client.decide(req)),
+  }
+}
+
+function countedWeb(web: WebTools): WebTools {
+  return {
+    search(query, signal) {
+      usage.searches++
+      return web.search(query, signal)
+    },
+    fetch(url, signal) {
+      usage.reads++
+      return web.fetch(url, signal)
+    },
   }
 }
 

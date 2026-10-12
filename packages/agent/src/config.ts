@@ -16,9 +16,9 @@ export interface AgentConfig {
   maxStepsPerUtterance: number
   /** Stop when the same step is chosen from the same screen `repeats` times in the last `window` steps. */
   oscillation: { repeats: number; window: number }
-  /** Elements offered to Jev per tick. */
+  /** Elements and known web pages offered to Jev per tick. Apps, back and home come on top. */
   maxElements: number
-  /** Thinking handles more context, so it sees more elements. */
+  /** Elements offered to thinking: it handles more context. It opens pages by address instead. */
   thinkingElements: number
   /** Tool steps per thinking turn. */
   thinkingSteps: number
@@ -49,8 +49,8 @@ export const defaultConfig: AgentConfig = {
   staleNavConfidence: 0.8,
   maxStepsPerUtterance: 15,
   oscillation: { repeats: 3, window: 6 },
-  maxElements: 50,
-  thinkingElements: 150,
+  maxElements: 150,
+  thinkingElements: 300,
   thinkingSteps: 10,
   finished: { heard: 0.6, voice: 0.5, heardAlone: 0.85 },
   endpoint: { fastMs: 250, normalMs: 1000, slowMs: 2600, moreBelow: 0.25, resumeMs: 2000 },

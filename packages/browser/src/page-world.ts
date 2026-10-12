@@ -40,6 +40,7 @@ export class PageWorld implements World {
       id: `${site?.id ?? new URL(page.url).host}:${new URL(page.url).pathname}${new URL(page.url).hash}`,
       title: page.title || site?.title || new URL(page.url).host,
       visible: this.visible,
+      url: page.url,
       markdown: page.markdown,
       elements: [
         ...toNodes(page.elements),
@@ -55,6 +56,13 @@ export class PageWorld implements World {
     await this.page.goto(site.url)
     await this.settle()
     return { summary: `Opened ${site.title}` }
+  }
+
+  async openUrl(url: string): Promise<StepResult> {
+    await this.page.goto(url)
+    await this.settle()
+    const title = await this.page.title()
+    return { summary: `Opened "${title}"`, title }
   }
 
   async perform(node: AgentNode, args: ActionArgs): Promise<StepResult> {

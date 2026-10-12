@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     "./core": "./src/core.ts",
+    "./parallel": "./src/parallel.ts",
     "./ui": "./src/Web.svelte"
   },
   "scripts": { "typecheck": "tsc -p ." },

@@ -51,6 +51,8 @@ export interface ActionResult<S> {
   observation?: string
   /** One-line summary used once the observation is collapsed out of context. */
   summary: string
+  /** `openUrl`: the title of the page that opened. */
+  title?: string
 }
 
 export interface AppContext {
@@ -70,6 +72,10 @@ export interface AppModule<S = unknown> {
   perform(state: S, nodeId: string, args: ActionArgs, ctx: AppContext): Promise<ActionResult<S>>
   /** What the user would read on the current screen, as markdown. */
   toMarkdown(state: S): string
+  /** Apps that show web pages: the address of the page on screen, if any. */
+  url?(state: S): string | undefined
+  /** Apps that show web pages: open one by its address. The shell sends every page Stanley opens here. */
+  openUrl?(state: S, url: string, ctx: AppContext): Promise<ActionResult<S>>
 }
 
 export function defineApp<S>(app: AppModule<S>): AppModule<S> {

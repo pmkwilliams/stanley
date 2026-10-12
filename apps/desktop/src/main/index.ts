@@ -1,5 +1,6 @@
 import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { parallelWeb } from '@stanley/app-web/parallel'
 import { Agent, createThinker, defaultConfig, findElement, screenVocabulary, SYSTEM_PROMPT, type AgentStatus, type Thinker } from '@stanley/agent'
 import { createJevClient, createMockJevClient, type DecisionClient } from '@stanley/jev'
 import { SAMPLE_RATE, Transcriber, writeWav } from '@stanley/stt'
@@ -103,6 +104,7 @@ const agent = new Agent({
   world: shell,
   jev,
   thinker,
+  web: process.env.PARALLEL_API_KEY ? parallelWeb(process.env.PARALLEL_API_KEY) : undefined,
   events: {
     status: (s) => {
       status = s

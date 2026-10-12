@@ -14,6 +14,8 @@ export type StepTarget =
   | { kind: 'app'; appId: string; title: string }
   | { kind: 'back' }
   | { kind: 'home' }
+  /** A web page Stanley found or read, opened on screen by its address. */
+  | { kind: 'page'; url: string; title: string }
 
 export type Message =
   /** One finalized VAD segment of what the user said. */
@@ -35,6 +37,13 @@ export type Message =
       heardWords?: number
       decision?: DecisionMeta
     }
+  /**
+   * A web search in the background. What it found stays in the conversation, so any of it can be
+   * opened later; the excerpts are cut to a line.
+   */
+  | { role: 'search'; query: string; results: { url: string; title: string; summary: string }[]; error?: string; utteranceId?: number }
+  /** A web page read in the background. Its content isn't kept: only which page it was. */
+  | { role: 'read'; url: string; title: string; error?: string; utteranceId?: number }
   /** What Stanley said to the user (shown on screen; spoken later). */
   | { role: 'said'; content: string }
   | { role: 'event'; kind: 'task-start' | 'task-end' | 'stuck'; detail?: string }

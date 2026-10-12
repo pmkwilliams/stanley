@@ -14,6 +14,10 @@
         const conf = e.decision?.step ? ` · ${e.decision.step.confidence.toFixed(2)}` : ''
         return `${who}: ${targetOf(e.target)}${text}${conf} → ${e.result.summary}`
       }
+      case 'search':
+        return `searched "${e.query}" → ${e.error ? `failed: ${e.error}` : e.results.map((r) => r.title).join(' · ') || 'nothing found'}`
+      case 'read':
+        return `read ${e.url}${e.error ? ` → failed: ${e.error}` : ` → "${e.title}"`}`
       case 'said':
         return `Stanley said: "${e.content}"`
       case 'event':

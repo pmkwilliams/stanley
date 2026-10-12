@@ -6,6 +6,7 @@ import { defaultConfig } from '../src/config'
 import type { AgentDebugEvent } from '../src/debug'
 import type { Effect } from '../src/effects'
 import type { Confirmation, ThinkRequest, Thinker, Writing } from '../src/think'
+import type { WebTools } from '../src/web'
 import type { World } from '../src/world'
 
 const elements: AgentNode[] = [
@@ -15,7 +16,7 @@ const elements: AgentNode[] = [
   { id: 'todo:delete', kind: 'action', label: 'Delete' },
 ]
 
-function fakeWorld(opts: { screenChanges?: boolean; failOn?: string } = {}) {
+function fakeWorld(opts: { screenChanges?: boolean; failOn?: string; titles?: Record<string, string> } = {}) {
   const performed: string[] = []
   const world: World = {
     screen: async () => ({ id: 'todo:list', title: 'To-do', visible: true, markdown: opts.screenChanges ? `${performed.length} done` : '# To-do', elements }),
@@ -33,6 +34,10 @@ function fakeWorld(opts: { screenChanges?: boolean; failOn?: string } = {}) {
       return { summary: `did ${node.id}` }
     },
     global: async (option) => void performed.push(option),
+    openUrl: async (url) => {
+      performed.push(`url ${url}`)
+      return { summary: `Opened ${url}`, title: opts.titles?.[url] }
+    },
   }
   return { world, performed }
 }
@@ -811,5 +816,78 @@ describe('Agent debug trace', () => {
     await settle()
     say(agent, 'open')
     expect(debug.filter((e) => e.type === 'request').map((e) => (e.type === 'request' ? e.result : ''))).toContain('no-new-words')
+  })
+})
+
+describe('Agent web lookups', () => {
+  const web: WebTools = {
+    search: async () => [
+      { title: 'George Washington - Wikipedia', url: 'https://en.wikipedia.org/wiki/George_Washington', excerpt: 'George Washington was the first president of the United States.' },
+      { title: 'George Washington | whitehouse.gov', url: 'https://www.whitehouse.gov/about-the-white-house/presidents/george-washington/', excerpt: 'The first president.' },
+    ],
+    fetch: async (url) => ({ url, title: 'Page', markdown: 'text' }),
+  }
+
+  it('remembers what thinking found, so a page can be opened later as one step', async () => {
+    let options: string[] = []
+    const { agent, performed } = setup(
+      (req, i) => {
+        if (i === 0) return { next: 'think' }
+        options = Object.keys(req.questions.step!.options)
+        return i === 1 ? { next: 'act', step: 'open page: George Washington - Wikipedia' } : { next: 'done' }
+      },
+      {
+        thinker: {
+          run: async (req) => {
+            expect(await req.search!('first US president')).toContain('https://en.wikipedia.org/wiki/George_Washington')
+            return { text: 'George Washington.' }
+          },
+        },
+        deps: { web },
+      },
+    )
+    agent.utteranceStart()
+    agent.segment('who was the first one')
+    agent.utteranceEnd()
+    await settle()
+    expect(await agent.context()).toContain('Stanley searched the web for "first US president":\n- "George Washington - Wikipedia" (en.wikipedia.org/wiki/George_Washington): George Washington was the first president')
+
+    agent.utteranceStart()
+    agent.segment('let me see it')
+    agent.utteranceEnd()
+    await settle()
+    expect(options).toContain('open page: George Washington | whitehouse.gov')
+    expect(performed).toContain('url https://en.wikipedia.org/wiki/George_Washington')
+    expect(await agent.context()).toContain('Stanley opened the page "George Washington - Wikipedia" (en.wikipedia.org/wiki/George_Washington).')
+  })
+
+  it('lets thinking open any page by address, logged under the title it opened with', async () => {
+    const { agent, performed } = setup(() => ({ next: 'think' }), {
+      thinker: {
+        run: async (req) => {
+          await req.search!('first US president')
+          expect(req.options).not.toContain('open page')
+          await req.openPage!('https://www.loc.gov/item/gw-papers/')
+          return { text: '' }
+        },
+      },
+      world: { titles: { 'https://www.loc.gov/item/gw-papers/': 'George Washington Papers' } },
+      deps: { web },
+    })
+    agent.utteranceStart()
+    agent.segment('show me his papers')
+    agent.utteranceEnd()
+    await settle()
+    expect(performed).toContain('url https://www.loc.gov/item/gw-papers/')
+    expect(await agent.context()).toContain('Stanley opened the page "George Washington Papers" (loc.gov/item/gw-papers).')
+  })
+
+  it('gives thinking no web tools without web access', async () => {
+    const { agent, thinker } = setup(() => ({ next: 'think' }))
+    agent.utteranceStart()
+    agent.segment('who won')
+    agent.utteranceEnd()
+    await settle()
+    expect(thinker.runs[0]?.search).toBeUndefined()
   })
 })
