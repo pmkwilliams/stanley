@@ -1,7 +1,8 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import type { Snapshot } from '../../shared/ipc'
-  import { mic, presence, Settler, STYLES, voiceOut, type Presence, type Style } from './presence'
+  import { glass } from './glass'
+  import { hsl, mic, presence, Settler, STYLES, voiceOut, type Presence, type Style } from './presence'
 
   /** `docked` moves the wave from the centre of the screen to its bottom edge, under an open window. */
   let { snapshot, docked }: { snapshot: Snapshot; docked: boolean } = $props()
@@ -11,7 +12,7 @@
   let shown = $state<Presence>('off')
 
   $effect(() => {
-    const ctx = canvas.getContext('2d')!
+    const pane = glass(canvas)
     const settler = new Settler()
     const cur: Style = { ...STYLES.off }
     let W = 0, H = 0
@@ -25,17 +26,18 @@
     /** Stanley's voice, smoothed. */
     let talk = 0
 
-    // The aurora is drawn per pixel into a coarse buffer, then scaled up: soft by construction, and cheap.
-    const buffer = document.createElement('canvas')
-    const bctx = buffer.getContext('2d')!
-    let cell = 4, bw = 1, bh = 1, image = bctx.createImageData(1, 1)
+    // The aurora is drawn per pixel into a coarse buffer, then softened and seen through glass on the GPU:
+    // soft by construction, and cheap.
+    let cell = 4, bw = 1, bh = 1, dpr = 1, image = new ImageData(1, 1)
     const resize = () => {
-      W = canvas.width = canvas.clientWidth
-      H = canvas.height = canvas.clientHeight
+      W = canvas.clientWidth
+      H = canvas.clientHeight
+      dpr = devicePixelRatio
+      pane.resize(W, H, dpr)
       cell = Math.max(3, Math.ceil(Math.sqrt((W * H) / 70000)))
-      bw = buffer.width = Math.max(1, Math.ceil(W / cell))
-      bh = buffer.height = Math.max(1, Math.ceil(H / cell))
-      image = bctx.createImageData(bw, bh)
+      bw = Math.max(1, Math.ceil(W / cell))
+      bh = Math.max(1, Math.ceil(H / cell))
+      image = new ImageData(bw, bh)
     }
     resize()
     const observer = new ResizeObserver(resize)
@@ -63,21 +65,10 @@
     /** Color by height up the curtain, as a fraction of its ray length: index `t * LUT_PER_UNIT`. */
     const LUT_PER_UNIT = 48, LUT_SIZE = LUT_PER_UNIT * 2
     const lut = new Uint8ClampedArray(LUT_SIZE * 3), stops = new Uint8ClampedArray(9)
-    const hsl = (h: number, s: number, l: number, out: Uint8ClampedArray, o: number) => {
-      h = ((h % 360) + 360) % 360
-      s /= 100
-      l /= 100
-      const c = s * Math.min(l, 1 - l)
-      const f = (n: number) => {
-        const k = (n + h / 30) % 12
-        return 255 * (l - c * Math.max(-1, Math.min(k - 3, 9 - k, 1)))
-      }
-      out[o] = f(0)
-      out[o + 1] = f(8)
-      out[o + 2] = f(4)
-    }
 
     const draw = (now: number) => {
+      // Moving to a display with another pixel density doesn't resize the canvas, so it's checked here.
+      if (devicePixelRatio !== dpr) resize()
       const dt = Math.min(0.05, (now - last) / 1000)
       last = now
       time += dt
@@ -158,19 +149,14 @@
           data[o + 3] = 255 * v * bright
         }
       }
-      bctx.putImageData(image, 0, 0)
-
-      ctx.clearRect(0, 0, W, H)
-      ctx.imageSmoothingQuality = 'high'
-      ctx.filter = `blur(${1 + p.blur * 0.06}px)`
-      ctx.drawImage(buffer, 0, 0, bw * cell, bh * cell)
-      ctx.filter = 'none'
+      pane.draw({ image, cell, time, dock, style: p })
       frame = requestAnimationFrame(draw)
     }
     frame = requestAnimationFrame(draw)
     return () => {
       cancelAnimationFrame(frame)
       observer.disconnect()
+      pane.dispose()
     }
   })
 

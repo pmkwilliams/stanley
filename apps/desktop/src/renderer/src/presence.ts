@@ -132,6 +132,21 @@ export const STYLES: Record<Presence, Style> = {
   error: { ...ARMED, amp: 0.045, blur: 26, speed: 0.06, freq: 1.2, coherence: 0.9, h0: 0, h1: 14, h2: 30, sat: 85, lit: 52, alpha: 0.55, width: 0.7, voice: 0.8, breathe: 0.2 },
 }
 
+/** Writes an HSL color (degrees, percent, percent) as RGB bytes into `out` at `o`. */
+export function hsl(h: number, s: number, l: number, out: Uint8ClampedArray, o: number) {
+  h = ((h % 360) + 360) % 360
+  s /= 100
+  l /= 100
+  const c = s * Math.min(l, 1 - l)
+  const f = (n: number) => {
+    const k = (n + h / 30) % 12
+    return 255 * (l - c * Math.max(-1, Math.min(k - 3, 9 - k, 1)))
+  }
+  out[o] = f(0)
+  out[o + 1] = f(8)
+  out[o + 2] = f(4)
+}
+
 /** Mic loudness, 0–1, written by the capture callback and read every frame. */
 export const mic = { level: 0 }
 
