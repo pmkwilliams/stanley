@@ -1,20 +1,38 @@
 /// <reference path="./sherpa.d.ts" />
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { OfflineRecognizer, Vad } from 'sherpa-onnx-node'
+import { SMART_TURN, TurnDetector } from './turn'
 
-export { readWav, writeWav } from './wav'
+export { parseWav, readWav, writeWav } from './wav'
+export { TurnDetector, whisperFeatures } from './turn'
 
 export const SAMPLE_RATE = 16000
 
+/** A decoded word and how sure the model was of it: its least likely token's probability. */
+export interface HeardWord {
+  word: string
+  confidence: number
+}
+
 export interface TranscriberEvents {
   /** Re-decoded text of the segment currently being spoken. Earlier words may change. */
-  partial(text: string): void
+  partial(text: string, words: HeardWord[]): void
   /** A segment ended at a pause. Final text. */
-  segment(text: string): void
-  /** No speech for `silenceMs` after some speech — used to auto-end the utterance. */
+  segment(text: string, words: HeardWord[]): void
+  /**
+   * No speech for `silenceMs` after some speech. A backstop: whoever listens to `pause` usually
+   * ends the utterance sooner, through `endUtterance()`.
+   */
   silence(): void
   /** The VAD started or stopped hearing speech. */
   speaking?(speaking: boolean): void
+  /**
+   * The speaker paused. `complete` is Smart Turn's P(they finished their turn), from how the
+   * audio up to the pause sounds; null without the model. Not sent if they spoke again first.
+   */
+  pause?(turn: { complete: number | null }): void
   /** Timing trace for the debug window. */
   debug?(event: SttDebugEvent): void
 }
@@ -26,8 +44,9 @@ export type SttDebugEvent =
    * `audioMs` is the audio the model saw, including any context before the segment.
    * `emitted` is false when a partial finished after the speaker paused or a new segment began, so it was dropped.
    */
-  | { type: 'decode'; kind: 'partial' | 'segment'; audioMs: number; decodeMs: number; text: string; emitted: boolean }
+  | { type: 'decode'; kind: 'partial' | 'segment'; audioMs: number; decodeMs: number; text: string; emitted: boolean; unsure?: string[] }
   | { type: 'silence'; afterMs: number }
+  | { type: 'turn'; complete: number; audioMs: number; latencyMs: number; emitted: boolean }
 
 export interface TranscriberOptions {
   modelsDir: string
@@ -44,9 +63,19 @@ export interface TranscriberOptions {
    * what came before. Only the new words are emitted. 0 decodes each segment on its own.
    */
   contextMs?: number
+  /** Judge each pause with Smart Turn when its model is in `modelsDir` (default true). */
+  turn?: boolean
 }
 
 const PARAKEET = 'sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8'
+/**
+ * How strongly beam search favours the hotwords. At 1.5 a name on screen ("Okonkwo") is heard
+ * instead of a sound-alike ("Aconquo"); at 2.5 it starts replacing other words with them.
+ */
+const HOTWORD_SCORE = 1.5
+const MAX_HOTWORDS = 30
+/** A word below this confidence is reported as unsure in the decode trace. */
+const UNSURE = 0.5
 const WINDOW = 512
 const MAX_SPEECH_S = 20
 
@@ -79,20 +108,25 @@ export class Transcriber {
   /** Segments decode one at a time so they are emitted in order. */
   private draining: Promise<void> = Promise.resolve()
   private silenceSent = false
+  private readonly modelsDir: string
   private readonly partialIntervalMs: number
   private readonly silenceMs: number
   private readonly preroll: number
   private readonly context: number
   private readonly keepWindows: number
+  /** Newline-separated words beam search favours, or '' for none. */
+  private hotwords = ''
 
   private constructor(
     private recognizer: OfflineRecognizer,
     private vad: Vad,
     private events: TranscriberEvents,
     opts: TranscriberOptions,
+    private turn: TurnDetector | null,
   ) {
+    this.modelsDir = opts.modelsDir
     this.partialIntervalMs = opts.partialIntervalMs ?? 400
-    this.silenceMs = opts.silenceMs ?? 2000
+    this.silenceMs = opts.silenceMs ?? 4000
     this.preroll = samples(opts.prerollMs ?? 600)
     this.context = samples(opts.contextMs ?? 10_000)
     this.keepWindows = Math.ceil((this.context + this.preroll + samples(MAX_SPEECH_S * 1000 + 2000)) / WINDOW)
@@ -116,7 +150,29 @@ export class Transcriber {
       },
       60,
     )
-    return new Transcriber(recognizer, vad, events, opts)
+    const turn = opts.turn !== false && existsSync(join(opts.modelsDir, SMART_TURN)) ? await loadTurn(opts.modelsDir) : null
+    return new Transcriber(recognizer, vad, events, opts, turn)
+  }
+
+  /**
+   * Words to favour, usually names and labels on screen. Only words the model finds rare (more
+   * than one of its pieces) are kept: common ones need no help, and favouring them distorts.
+   */
+  setHotwords(candidates: Iterable<string>): void {
+    const vocab = this.vocab()
+    const kept = new Set<string>()
+    for (const raw of candidates) {
+      const word = raw.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '')
+      if (word.length < 3 || vocab.has(`▁${word}`) || vocab.has(`▁${word.toLowerCase()}`)) continue
+      kept.add(word)
+      if (kept.size >= MAX_HOTWORDS) break
+    }
+    this.hotwords = [...kept].join('\n')
+  }
+
+  private vocabCache?: Set<string>
+  private vocab(): Set<string> {
+    return (this.vocabCache ??= readVocab(this.modelsDir))
   }
 
   /** Start of an utterance: drop any leftover audio. */
@@ -168,6 +224,8 @@ export class Transcriber {
       if (!this.speaking) {
         this.setSpeaking(true)
         this.speechFrom = Math.max(at - this.preroll, this.boundary)
+        // First speech of an utterance: context starts here, not at the silence before it.
+        if (!this.heardSpeech || this.silenceSent) this.contextFrom = this.speechFrom
         this.segmentId++
         this.events.debug?.({ type: 'speech-start' })
       }
@@ -177,7 +235,50 @@ export class Transcriber {
     } else if (this.speaking) {
       this.setSpeaking(false)
       this.events.debug?.({ type: 'speech-end' })
+      this.judgePause()
     }
+  }
+
+  /**
+   * Asks Smart Turn whether the utterance so far sounds finished. Reported after the pause's
+   * segment, so a listener that ends the utterance on it never loses the last words.
+   */
+  private judgePause(): void {
+    if (!this.events.pause) return
+    const segment = this.segmentId
+    const current = () => !this.speaking && segment === this.segmentId
+    const started = performance.now()
+    const audio = this.slice(Math.max(this.contextFrom, this.fed - samples(8000)), this.fed)
+    const judged = this.turn ? this.turn.complete(audio).catch(() => null) : Promise.resolve(null)
+    // The VAD queues the segment a window or two after it stops detecting speech.
+    const decoded = new Promise((r) => setTimeout(r, 50)).then(() => this.drainSegments()).catch(() => {})
+    void Promise.all([judged, decoded]).then(([complete]) => {
+      const emitted = current()
+      if (complete !== null) this.events.debug?.({ type: 'turn', complete, audioMs: Math.round((audio.length / SAMPLE_RATE) * 1000), latencyMs: performance.now() - started, emitted })
+      if (emitted) this.events.pause?.({ complete })
+    })
+  }
+
+  /**
+   * The listener decided the utterance is over before the silence backstop: the next speech
+   * starts a new utterance, with no context from this one.
+   */
+  endUtterance(): void {
+    if (!this.heardSpeech || this.silenceSent) return
+    this.closeUtterance()
+  }
+
+  /**
+   * The next speech starts a new utterance: its context starts at its own first speech (see
+   * `track`), and its audio after everything fed so far. A segment the VAD has queued but not yet
+   * decoded still belongs to this utterance, so the boundary moves once it is out.
+   */
+  private closeUtterance(): void {
+    this.silenceSent = true
+    const at = this.fed
+    void this.drainSegments()
+      .catch(() => {})
+      .then(() => (this.boundary = Math.max(this.boundary, at)))
   }
 
   private setSpeaking(speaking: boolean): void {
@@ -193,9 +294,9 @@ export class Transcriber {
         const { start, samples } = this.vad.front(false)
         this.vad.pop()
         const end = start + samples.length
-        const text = await this.decode(Math.max(start - this.preroll, this.boundary), end, 'segment', (text) => !!text)
+        const { text, words } = await this.decode(Math.max(start - this.preroll, this.boundary), end, 'segment', (text) => !!text)
         this.boundary = Math.max(this.boundary, end)
-        if (text) this.events.segment(text)
+        if (text) this.events.segment(text, words)
       }
     })
     this.draining = run.catch(() => {})
@@ -210,17 +311,16 @@ export class Transcriber {
     const segment = this.segmentId
     const current = (text: string) => this.speaking && segment === this.segmentId && !!text
     this.decode(this.speechFrom, this.fed, 'partial', current)
-      .then((text) => {
-        if (current(text)) this.events.partial(text)
+      .then(({ text, words }) => {
+        if (current(text)) this.events.partial(text, words)
       })
       .finally(() => (this.decodingPartial = false))
   }
 
   private maybeSilence(): void {
     if (this.heardSpeech && !this.speaking && !this.silenceSent && Date.now() - this.lastSpeechAt >= this.silenceMs) {
-      this.silenceSent = true
       // The utterance is over: the next one gets no context from this one.
-      this.contextFrom = this.boundary = this.fed
+      this.closeUtterance()
       this.events.debug?.({ type: 'silence', afterMs: Date.now() - this.lastSpeechAt })
       this.events.silence()
     }
@@ -232,25 +332,27 @@ export class Transcriber {
     to: number,
     kind: 'partial' | 'segment',
     emits: (text: string) => boolean,
-  ): Promise<string> {
+  ): Promise<Heard> {
     const started = performance.now()
     const oldest = this.firstWindow * WINDOW
     const contextStart = Math.max(from - this.context, this.contextFrom, oldest)
     const decodeFrom = Math.min(contextStart, from)
     const audio = this.slice(decodeFrom, to)
-    const stream = this.recognizer.createStream()
+    const stream = this.hotwords ? this.recognizer.createStream(this.hotwords) : this.recognizer.createStream()
     stream.acceptWaveform({ samples: audio, sampleRate: SAMPLE_RATE })
     const result = await this.recognizer.decodeAsync(stream)
-    const text = decodeFrom < from ? textAfter(result, (from - decodeFrom) / SAMPLE_RATE) : result.text.trim()
+    const heard = heardAfter(result, (from - decodeFrom) / SAMPLE_RATE)
+    const unsure = heard.words.filter((w) => w.confidence < UNSURE).map((w) => w.word)
     this.events.debug?.({
       type: 'decode',
       kind,
       audioMs: Math.round((audio.length / SAMPLE_RATE) * 1000),
       decodeMs: performance.now() - started,
-      text,
-      emitted: emits(text),
+      text: heard.text,
+      emitted: emits(heard.text),
+      ...(unsure.length && { unsure }),
     })
-    return text
+    return heard
   }
 
   private slice(from: number, to: number): Float32Array {
@@ -267,6 +369,21 @@ async function loadSherpa() {
   return (await import('sherpa-onnx-node')).default
 }
 
+const detectors = new Map<string, Promise<TurnDetector | null>>()
+
+/** Smart Turn is optional: without it, pauses carry no audio judgement. */
+function loadTurn(modelsDir: string): Promise<TurnDetector | null> {
+  let detector = detectors.get(modelsDir)
+  if (!detector) {
+    detector = TurnDetector.create(modelsDir).catch((err) => {
+      console.warn('Smart Turn failed to load; pauses will be judged by words alone', err)
+      return null
+    })
+    detectors.set(modelsDir, detector)
+  }
+  return detector
+}
+
 /** One recognizer per models dir, shared by every transcriber (it is ~600 MB in memory). */
 const recognizers = new Map<string, Promise<OfflineRecognizer>>()
 
@@ -274,6 +391,8 @@ function loadRecognizer(modelsDir: string): Promise<OfflineRecognizer> {
   let recognizer = recognizers.get(modelsDir)
   if (!recognizer) {
     const dir = join(modelsDir, PARAKEET)
+    // Beam search (4 paths, ~7% slower than greedy) so hotwords can steer it. sherpa splits
+    // hotwords into the model's pieces with a BPE vocabulary, made from tokens.txt.
     recognizer = loadSherpa().then((sherpa) =>
       sherpa.OfflineRecognizer.createAsync({
         featConfig: { sampleRate: SAMPLE_RATE, featureDim: 80 },
@@ -285,9 +404,14 @@ function loadRecognizer(modelsDir: string): Promise<OfflineRecognizer> {
           },
           tokens: join(dir, 'tokens.txt'),
           modelType: 'nemo_transducer',
+          modelingUnit: 'bpe',
+          bpeVocab: bpeVocab(dir),
           numThreads: 2,
           provider: 'cpu',
         },
+        decodingMethod: 'modified_beam_search',
+        maxActivePaths: 4,
+        hotwordsScore: HOTWORD_SCORE,
       }),
     )
     recognizers.set(modelsDir, recognizer)
@@ -303,18 +427,72 @@ export async function transcribe(modelsDir: string, samples: Float32Array): Prom
   return (await recognizer.decodeAsync(stream)).text.trim()
 }
 
+/** The model's pieces, as in tokens.txt (`▁` starts a word). */
+function readVocab(modelsDir: string): Set<string> {
+  const lines = readFileSync(join(modelsDir, PARAKEET, 'tokens.txt'), 'utf8').split('\n')
+  return new Set(lines.map((l) => l.split(' ')[0]!).filter(Boolean))
+}
+
+/**
+ * A sentencepiece-style vocabulary (`piece<TAB>score`) for sherpa to split hotwords with. The
+ * pieces' order in tokens.txt stands in for their frequency.
+ */
+function bpeVocab(dir: string): string {
+  const lines = readFileSync(join(dir, 'tokens.txt'), 'utf8')
+    .split('\n')
+    .map((l) => l.split(' '))
+    .filter(([piece, id]) => piece && id && piece !== '<unk>' && piece !== '<blk>')
+    .map(([piece, id]) => `${piece}\t-${id}`)
+  for (const file of [join(dir, 'bpe.vocab'), join(tmpdir(), `stanley-${PARAKEET}.bpe.vocab`)]) {
+    if (existsSync(file)) return file
+    try {
+      writeFileSync(file, lines.join('\n') + '\n')
+      return file
+    } catch {
+      // The models dir may be read-only in a packaged app.
+    }
+  }
+  throw new Error('could not write a BPE vocabulary for hotwords')
+}
+
+/** A decode's text and words with their confidence. */
+export interface Heard {
+  text: string
+  words: HeardWord[]
+}
+
+interface DecodeResult {
+  tokens: string[]
+  timestamps: number[]
+  ys_log_probs?: number[]
+}
+
 /**
  * The words of a decode that start at or after `seconds`. Tokens beginning with a space start a
- * word, so a word is kept or dropped whole.
+ * word, so a word is kept or dropped whole. A word's confidence is its least likely token's
+ * probability, punctuation aside.
  */
-export function textAfter(result: { tokens: string[]; timestamps: number[] }, seconds: number): string {
-  let text = ''
+export function heardAfter(result: DecodeResult, seconds: number): Heard {
+  const words: HeardWord[] = []
   let keep = false
   result.tokens.forEach((token, i) => {
-    if (i === 0 || token.startsWith(' ')) keep = (result.timestamps[i] ?? 0) >= seconds
-    if (keep) text += token
+    const starts = i === 0 || token.startsWith(' ')
+    if (starts) keep = (result.timestamps[i] ?? 0) >= seconds
+    if (!keep) return
+    const logProb = result.ys_log_probs?.[i]
+    const p = logProb === undefined || /^[^\p{L}\p{N}]+$/u.test(token.trim()) ? 1 : Math.exp(logProb)
+    const last = words.at(-1)
+    if (starts || !last) words.push({ word: token.trim(), confidence: p })
+    else {
+      last.word += token
+      last.confidence = Math.min(last.confidence, p)
+    }
   })
-  return text.trim()
+  return { text: words.map((w) => w.word).join(' '), words }
+}
+
+export function textAfter(result: DecodeResult, seconds: number): string {
+  return heardAfter(result, seconds).text
 }
 
 function samples(ms: number): number {

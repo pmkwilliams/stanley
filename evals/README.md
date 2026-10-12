@@ -3,6 +3,7 @@
 | Command | What it checks | Cost |
 |---|---|---|
 | `pnpm eval:stt` | Transcription accuracy on recorded clips | Free (local) |
+| `pnpm eval:turn` | Turn detection on LiveKit's end-of-turn benchmark: cut-ins and how fast a turn's end is called | Free; `--jev N` adds Jev's word judgement (paid) |
 | `pnpm eval:voice <filter>` | Agent behaviour when a recorded clip is the request | Paid (Jev + Haiku) |
 | `pnpm eval <filter>` | Agent behaviour on typed scenarios, demo apps | Paid (Jev + Haiku) |
 | `pnpm eval:web <filter>` | The same agent on fixture websites in headless Chromium | Paid (Jev + Haiku) |
@@ -20,6 +21,20 @@ Options for `eval` and `eval:web`:
   if a person can't follow a trace, the models can't either.
 - `--verbose` prints every run's ticks (failed runs always print them): for each tick, what took
   effect, the top "what now" answers and the chosen step with its runners-up.
+
+## Turn-taking
+
+In a scenario utterance, `|` is a pause mid-thought (0.8 s). After the last word the agent ends the
+turn itself (or the 4 s silence backstop does), so each scenario also measures when it called the
+end. Every scenario fails if Stanley says anything before the user's last word; ending the turn
+early (a cut-in) is counted in the summary, and the next words rejoin the turn. Typed utterances
+have no voice, so their pauses carry no Smart Turn verdict and the agent judges them by the words
+alone; `eval:voice --say` and recorded clips go through the real transcriber and Smart Turn.
+
+`pnpm eval:turn` replays the agent's endpoint rule at every pause of 400 real user turns (LiveKit
+EoT benchmark, CC-BY-4.0, downloaded once to `.cache/`). Mid-turn pauses that would have ended the
+turn are cut-ins; for real ends it reports how long until the end is called. The fixed 2 s silence
+is the baseline.
 
 ## Held-out utterances
 

@@ -21,6 +21,7 @@
     "@stanley/jev": "workspace:*",
     "@stanley/stt": "workspace:*",
     "ai": "7.0.137",
+    "onnxruntime-node": "^1.30.0",
     "sherpa-onnx-node": "1.13.8"
   },
   "devDependencies": {

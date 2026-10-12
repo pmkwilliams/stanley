@@ -54,6 +54,24 @@ const saidDraft: Check = (shell, agent) => {
 }
 const normalizeWords = (t: string) => t.toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? []
 
+const sentBodies = (shell: Shell) => (((shell.surfaces.get('email') as any)?.sent ?? []) as { body: string }[]).map((m) => m.body)
+const sentBody = (test: RegExp | ((body: string) => boolean), what: string): Check => (shell) => {
+  const bodies = sentBodies(shell)
+  const ok = bodies.length > 0 && bodies.every((b) => (typeof test === 'function' ? test(b) : test.test(b)))
+  return ok ? undefined : `expected the sent reply to have ${what}, got ${JSON.stringify(bodies)}`
+}
+
+const todoDone = (title: RegExp, done: boolean): Check => (shell) => {
+  const todo = todos(shell.surfaces.get('todo')).find((t) => title.test(t.title))
+  return todo?.done === done ? undefined : `expected ${title} ${done ? 'done' : 'not done'}, got ${todo ? (todo.done ? 'done' : 'not done') : 'missing'}`
+}
+
+/** The seed list has 4 to-dos. */
+const newTodos = (n: number): Check => (shell) => {
+  const added = todos(shell.surfaces.get('todo')).length - 4
+  return added === n ? undefined : `expected ${n} new to-do, got ${added}: ${JSON.stringify(todos(shell.surfaces.get('todo')).slice(4).map((t) => t.title))}`
+}
+
 const actions = (max: number): Check => (_, agent) => {
   const n = stanleySteps(agent).length
   return n <= max ? undefined : `expected ≤ ${max} steps, got ${n}`
@@ -162,7 +180,8 @@ export const scenarios: Scenario[] = [
   {
     name: 'todo-add-phrasing',
     utterances: ['put call the plumber on my list'],
-    checks: [state('todo', (s) => todos(s).some((t) => /plumber/i.test(t.title)), 'a plumber to-do')],
+    // Hands-free, the words that went in are said back.
+    checks: [state('todo', (s) => todos(s).some((t) => /plumber/i.test(t.title)), 'a plumber to-do'), said(/plumber/i)],
   },
   {
     name: 'todo-delete-asked',
@@ -198,6 +217,82 @@ export const scenarios: Scenario[] = [
     name: 'never-mind',
     utterances: ['oh never mind'],
     checks: [changedNothing, visible(null)],
+  },
+
+  // ── Turn-taking: pauses mid-thought (`|`), trailing off, corrections. Act on what's settled,
+  //    never on half a thought. Every scenario also fails if Stanley speaks before the last word.
+  {
+    // A pause after "called": nothing is added until the title is said, and only the title is.
+    name: 'todo-title-after-pause',
+    utterances: ['make me a new to-do named | pick up the dry cleaning'],
+    checks: [newTodos(1), state('todo', (s) => todos(s).some((t) => /dry cleaning/i.test(t.title) && !/named/i.test(t.title)), 'a "dry cleaning" to-do')],
+  },
+  {
+    // The words to send come after a pause: sending before them would send half a message.
+    name: 'reply-dictated-in-pieces',
+    utterances: ['open the email from Sam', "reply saying | I can't do Friday | but Saturday works"],
+    checks: [sentCount(1), sentBody(/saturday/i, 'mentions Saturday'), sentBody(/friday/i, 'mentions Friday')],
+  },
+  {
+    name: 'reply-self-correction',
+    utterances: ['open the email from Sam', "reply saying I'll be there at five | actually make it six"],
+    checks: [sentCount(1), sentBody(/\bsix\b|\b6\b/i, 'says six'), sentBody((t) => !/\bfive\b|\b5\b/i.test(t), 'does not say five')],
+  },
+  {
+    // Trailing off: nothing to write yet, so nothing is written or sent.
+    name: 'reply-trails-off',
+    utterances: ['open the email from Sam', 'write back and tell him that | um'],
+    checks: [sentCount(0), draft((t) => !t || !/\b(um|that)\b/i.test(t), 'no half-sentence draft')],
+  },
+  {
+    // The intent is clear before the sentence ends: go to the right email while they talk.
+    name: 'navigate-before-finished',
+    utterances: ['I need to answer the one from Priya about | the roadmap'],
+    checks: [route('email', /^email\/m2$/), sentCount(0)],
+  },
+  {
+    name: 'todo-correction-in-sentence',
+    utterances: ['tick off the passport one | no wait | the dentist one'],
+    checks: [todoDone(/dentist/i, true), todoDone(/passport/i, false)],
+  },
+  {
+    name: 'todo-undo',
+    utterances: ['mark buy oat milk as done', 'oops, undo that'],
+    checks: [todoDone(/oat milk/i, false)],
+  },
+  {
+    name: 'email-unarchive',
+    utterances: ['archive the message from my mom', 'actually put it back'],
+    checks: [state('email', (s) => emails(s).find((e) => e.from === 'Mom')?.archived === false, "Mom's email back in the inbox")],
+  },
+  {
+    name: 'question-after-pause',
+    utterances: ["what's the weather | in Chicago tomorrow"],
+    checks: [state('weather', (s) => /chicago/i.test(JSON.stringify(s?.result ?? '')), 'Chicago weather loaded')],
+  },
+
+  // ── Misheard words: speech recognition marks words it was unsure of with (?). Fix them from
+  //    context, ask when they make no sense, and never send them unheard.
+  {
+    // As in a real session: asked what the to-do should say, the answer came out garbled.
+    name: 'todo-misheard-asks',
+    utterances: ['add a new to do', 'how do(?) you do(?) to do(?)'],
+    checks: [newTodos(0), said(/\?/)],
+  },
+  {
+    name: 'todo-homophone-fixed',
+    utterances: ['put by(?) a phone charger on my list'],
+    checks: [newTodos(1), state('todo', (s) => todos(s).some((t) => /^buy a phone charger/i.test(t.title)), 'a "Buy a phone charger" to-do'), said(/charger/i)],
+  },
+  {
+    name: 'email-name-from-screen',
+    utterances: ['open my email', 'open the one from pre(?) uh(?)'],
+    checks: [route('email', /^email\/m2$/)],
+  },
+  {
+    name: 'reply-unsure-word-reads-back',
+    utterances: ['open the email from Sam', "reply saying I'm in, see you fry(?) day(?)"],
+    checks: [sentCount(0), said(/\?/)],
   },
   {
     name: 'arithmetic-answer',

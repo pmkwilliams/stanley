@@ -22,4 +22,11 @@ if (!existsSync(join(dir, parakeet))) {
   execFileSync('rm', [archive])
 }
 
+// Smart Turn: whether the speaker has finished their turn, from the audio (pipecat-ai, BSD-2).
+const smartTurn = 'smart-turn-v3.2-cpu.onnx'
+if (!existsSync(join(dir, smartTurn))) {
+  console.log('Downloading Smart Turn v3.2 (~8 MB)…')
+  execFileSync('curl', ['-fL', '-o', join(dir, smartTurn), `https://huggingface.co/pipecat-ai/smart-turn-v3/resolve/main/${smartTurn}`], { stdio: 'inherit' })
+}
+
 console.log(`Models ready in ${dir}`)

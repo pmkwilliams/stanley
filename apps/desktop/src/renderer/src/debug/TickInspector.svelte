@@ -15,6 +15,7 @@
     words: 'new words in the transcript',
     action: 'the previous step finished',
     end: 'the utterance ended',
+    pause: 'the user paused',
   }
 </script>
 

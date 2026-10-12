@@ -13,39 +13,75 @@ export interface LiveUtterance {
  * outcomes; what Stanley said; then the screen once. Decisions that changed nothing (listening,
  * finishing, discarded or gated guesses) and which model took a step are left out. Those are the
  * agent's mechanics and live in the debug trace.
+ *
+ * A turn's words come before the steps taken for it, even steps decided mid-sentence. The one
+ * exception is a step that changed something before the user finished: the turn is split there
+ * ("User: …", the step, "User (went on): …"), so a correction later in the sentence reads as one.
  */
 export function narrate(entries: LogEntry[], screen: Screen, live?: LiveUtterance, maxTurns = 20): string {
-  const words = new Map<number, string[]>()
-  for (const e of entries) if (e.role === 'user') words.set(e.utteranceId, [...(words.get(e.utteranceId) ?? []), e.content])
+  const segments = new Map<number, string[]>()
+  for (const e of entries) if (e.role === 'user') segments.set(e.utteranceId, [...(segments.get(e.utteranceId) ?? []), e.content])
+  const wordsOf = (utteranceId: number) => {
+    const text = live?.utteranceId === utteranceId ? live.text : segments.get(utteranceId)?.join(' ')
+    return (text ?? '').trim().split(/\s+/).filter(Boolean)
+  }
+
+  // Where each utterance splits: the words heard by each step that changed something early.
+  const splits = new Map<number, number[]>()
+  const last = new Map<number, number>()
+  entries.forEach((e, i) => {
+    const id = e.role === 'user' ? e.utteranceId : e.role === 'step' ? e.utteranceId : undefined
+    if (id === undefined) return
+    last.set(id, i)
+    if (e.role !== 'step' || !changes(e) || e.heardWords === undefined) return
+    const n = wordsOf(id).length
+    if (e.heardWords > 0 && e.heardWords < n) splits.set(id, [...(splits.get(id) ?? []), e.heardWords])
+  })
 
   const lines: string[] = []
   /** Where each of the user's turns starts in `lines`. */
   const turns: number[] = []
-  const told = new Set<number>()
-  const tell = (utteranceId: number | undefined) => {
-    if (utteranceId === undefined || told.has(utteranceId)) return
-    told.add(utteranceId)
-    const isLive = live?.utteranceId === utteranceId
-    const text = (isLive ? live.text : words.get(utteranceId)?.join(' '))?.trim()
-    if (!text) return
-    turns.push(lines.length)
-    lines.push(`${isLive && !live.ended ? 'User (still speaking)' : 'User'}: ${text}`)
+  const printed = new Map<number, number>()
+  const tellUpTo = (utteranceId: number, upTo: number) => {
+    const words = wordsOf(utteranceId)
+    const from = printed.get(utteranceId) ?? 0
+    const to = Math.min(upTo, words.length)
+    if (to <= from) return
+    printed.set(utteranceId, to)
+    const speaking = live?.utteranceId === utteranceId && !live.ended && to === words.length
+    const label = from === 0 ? (speaking ? 'User (still speaking)' : 'User') : speaking ? 'User (went on, still speaking)' : 'User (went on)'
+    if (from === 0) turns.push(lines.length)
+    lines.push(`${label}: ${words.slice(from, to).join(' ')}`)
   }
+  /** Before anything else of an utterance: its words up to the first early change. */
+  const firstPart = (utteranceId: number) => Math.min(...(splits.get(utteranceId) ?? []), Infinity)
 
-  for (const e of entries) {
-    if (e.role === 'user') tell(e.utteranceId)
-    else if (e.role === 'step') {
-      tell(e.utteranceId)
+  entries.forEach((e, i) => {
+    if (e.role === 'user') {
+      if (!printed.get(e.utteranceId)) tellUpTo(e.utteranceId, firstPart(e.utteranceId))
+    } else if (e.role === 'step') {
+      if (e.utteranceId !== undefined) {
+        const early = changes(e) && e.heardWords !== undefined && e.heardWords > 0
+        tellUpTo(e.utteranceId, early ? e.heardWords! : Math.max(printed.get(e.utteranceId) ?? 0, firstPart(e.utteranceId)))
+      }
       lines.push(describeStep(e))
     } else if (e.role === 'said') lines.push(`Stanley said: "${e.content}"`)
     else if (e.role === 'event' && e.kind === 'stuck') lines.push(`Stanley stopped: ${e.detail ?? 'it got stuck'}.`)
-  }
-  if (live) tell(live.utteranceId)
+    // The utterance's last entry: whatever the user said after the last step follows it.
+    const id = e.role === 'user' || e.role === 'step' ? e.utteranceId : undefined
+    if (id !== undefined && last.get(id) === i && id !== live?.utteranceId) tellUpTo(id, Infinity)
+  })
+  if (live) tellUpTo(live.utteranceId, Infinity)
 
   // A long session keeps only its recent turns, so what the models read stays small and fast.
   const kept = turns.length > maxTurns ? ['(earlier conversation left out)', ...lines.slice(turns[turns.length - maxTurns])] : lines
   const where = screen.visible ? 'in front of the user' : "in the background, the user can't see it"
   return ['## Conversation', ...(kept.length ? kept : ['(nothing yet)']), '', `## Screen: ${screen.title} (${where})`, screen.markdown].join('\n')
+}
+
+/** A step that changed something: typing, or pressing a button. Opening things only looks. */
+function changes(e: Extract<LogEntry, { role: 'step' }>): boolean {
+  return e.target.kind === 'element' && (e.target.nodeKind === 'action' || e.target.nodeKind === 'input')
 }
 
 function describeStep(e: Extract<LogEntry, { role: 'step' }>): string {

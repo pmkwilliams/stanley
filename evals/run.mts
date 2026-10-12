@@ -11,7 +11,7 @@
  * Options: --runs N (default 1), --concurrency N (default 4), --trace (every run), --verbose
  * (every run's ticks; by default only failed runs print them).
  */
-import { flag, loadEnv, pool, printUsage, report, runScenario, select, typeUtterance, type ScenarioResult } from './harness.mts'
+import { flag, loadEnv, median, pool, printUsage, report, runScenario, select, typeUtterance, type ScenarioResult } from './harness.mts'
 import { scenarios, type Scenario } from './scenarios.mts'
 
 const selected = select(scenarios, (s) => s.name, 'pnpm eval')
@@ -39,15 +39,16 @@ if (selected) {
 }
 
 function summarize(selected: Scenario[], results: { scenario: Scenario; result: ScenarioResult }[]) {
-  console.log('\nscenario                          pass   settle p50 (s)')
+  console.log('\nscenario                          pass   settle p50 (s)  turn end p50 (s)  early ends')
   let passed = 0
   for (const scenario of selected) {
     const mine = results.filter((r) => r.scenario === scenario).map((r) => r.result)
     const ok = mine.filter((r) => r.ok).length
     passed += ok
-    const settle = mine.flatMap((r) => r.settleMs).sort((a, b) => a - b)
-    const p50 = settle.length ? (settle[Math.floor(settle.length / 2)]! / 1000).toFixed(1) : '—'
-    console.log(`${ok === mine.length ? ' ' : '✗'} ${scenario.name.padEnd(32)} ${`${ok}/${mine.length}`.padEnd(6)} ${p50}`)
+    const p50 = median(mine.flatMap((r) => r.settleMs))
+    const endP50 = median(mine.flatMap((r) => r.endMs))
+    const cutIns = mine.reduce((n, r) => n + r.cutIns, 0)
+    console.log(`${ok === mine.length ? ' ' : '✗'} ${scenario.name.padEnd(32)} ${`${ok}/${mine.length}`.padEnd(6)} ${p50.padEnd(15)} ${endP50.padEnd(17)} ${cutIns || ''}`)
   }
   console.log(`\n${passed}/${results.length} runs passed (${Math.round((passed / results.length) * 100)}%)`)
 }

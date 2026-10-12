@@ -5,6 +5,7 @@
   let { data, perform }: AppUiProps<EmailState> = $props()
 
   let inbox = $derived(data.emails.filter((e) => !e.archived))
+  let archived = $derived(data.emails.filter((e) => e.archived))
   let open = $derived(data.emails.find((e) => `email/${e.id}` === data.route))
 
   function act(verb: string) {
@@ -29,10 +30,11 @@
 
 <section class="app">
   <nav>
-    <button class:active={data.route !== 'sent'} onclick={() => perform('inbox')}>
+    <button class:active={data.route !== 'sent' && data.route !== 'archived'} onclick={() => perform('inbox')}>
       Inbox ({inbox.filter((e) => !e.read).length})
     </button>
     <button class:active={data.route === 'sent'} onclick={() => perform('sent')}>Sent ({data.sent.length})</button>
+    <button class:active={data.route === 'archived'} onclick={() => perform('archived')}>Archived ({archived.length})</button>
   </nav>
 
   {#if data.route === 'sent'}
@@ -45,6 +47,18 @@
         </li>
       {:else}
         <li class="empty">No sent mail</li>
+      {/each}
+    </ul>
+  {:else if data.route === 'archived'}
+    <ul>
+      {#each archived as email (email.id)}
+        <li class="sent">
+          <div class="row"><span class="from">{email.from}</span><span class="date">{formatDate(email.date)}</span></div>
+          <div class="subject">{email.subject}</div>
+          <button onclick={() => perform(`email/${email.id}/restore`)}>Move to Inbox</button>
+        </li>
+      {:else}
+        <li class="empty">Nothing archived</li>
       {/each}
     </ul>
   {:else}

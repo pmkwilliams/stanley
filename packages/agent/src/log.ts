@@ -31,6 +31,8 @@ export type Message =
       result: { summary: string; observation?: string; error?: boolean }
       /** The utterance being heard when the step was decided, so it reads after those words. */
       utteranceId?: number
+      /** How many of that utterance's words had been heard when the step was decided. */
+      heardWords?: number
       decision?: DecisionMeta
     }
   /** What Stanley said to the user (shown on screen; spoken later). */

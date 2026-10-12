@@ -90,6 +90,11 @@ export function buildModel(events: DebugEvent[]): DebugModel {
         model.rows.push({ kind: 'tick', tick })
         continue
       }
+      // Turn-taking isn't part of one tick: it shows as a row of its own.
+      if (ev.type === 'turn' || ev.type === 'turn-end' || ev.type === 'turn-resumed' || ev.type === 'say') {
+        model.rows.push({ kind: 'event', event: e, category: undefined })
+        continue
+      }
       const tick = ticks.get(ev.tickId)
       if (!tick) continue
       if (ev.type === 'gate') tick.gates.push(ev)

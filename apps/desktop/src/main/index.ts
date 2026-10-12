@@ -1,6 +1,6 @@
 import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { Agent, createThinker, defaultConfig, findElement, SYSTEM_PROMPT, type AgentStatus, type Thinker } from '@stanley/agent'
+import { Agent, createThinker, defaultConfig, findElement, screenVocabulary, SYSTEM_PROMPT, type AgentStatus, type Thinker } from '@stanley/agent'
 import { createJevClient, createMockJevClient, type DecisionClient } from '@stanley/jev'
 import { SAMPLE_RATE, Transcriber, writeWav } from '@stanley/stt'
 import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, Menu, session } from 'electron'
@@ -49,7 +49,16 @@ let lead: Float32Array[] = []
 let clip: Float32Array[] | null = null
 let clipCount = 0
 
-const shell = new Shell(apps, { env: process.env, fetch }, () => sendSnapshot())
+const shell = new Shell(apps, { env: process.env, fetch }, () => {
+  sendSnapshot()
+  void refreshHotwords()
+})
+
+/** Speech recognition favours the names and labels on the screen Stanley is working on. */
+async function refreshHotwords() {
+  if (!transcriber) return
+  transcriber.setHotwords(screenVocabulary(await shell.screen(), shell.appList()))
+}
 
 /** Offline, thinking types the user's last words and otherwise apologises. */
 const thinker: Thinker = mock
@@ -105,6 +114,13 @@ const agent = new Agent({
       sendSnapshot()
     },
     debug: (event) => debug.record({ source: 'agent', event }),
+    // Words and voice both say the user finished: end the utterance now, not at the silence backstop.
+    turnEnd: () =>
+      transition(() => {
+        transcriber?.endUtterance()
+        endUtterance()
+        sendSnapshot()
+      }),
   },
   config: defaultConfig,
   sink: (entry) => {
@@ -224,23 +240,25 @@ async function loadStt() {
     transcriber = await Transcriber.create(
       { modelsDir },
       {
-        partial: (text) => {
+        partial: (text, words) => {
           if (!utteranceOpen) beginUtterance()
           transcript.partial = text
-          agent.partial(text)
+          agent.partial(text, words)
           sendSnapshot()
         },
-        segment: (text) => {
+        segment: (text, words) => {
           if (!utteranceOpen) beginUtterance()
           transcript.finalized.push(text)
           transcript.partial = ''
-          agent.segment(text)
+          agent.segment(text, words)
           sendSnapshot()
         },
         speaking: (on) => {
           speaking = on
+          agent.voice(on)
           sendSnapshot()
         },
+        pause: (turn) => agent.pause(turn),
         silence: () =>
           transition(() => {
             endUtterance()
@@ -249,6 +267,7 @@ async function loadStt() {
         debug: (event) => debug.record({ source: 'stt', event }),
       },
     )
+    await refreshHotwords()
     setStt('ready')
   } catch (err) {
     console.error('STT failed to load', err)

@@ -64,7 +64,7 @@ demo apps don't set the `destructive` hint, so the agent's own judgement is what
 
 ### A tick (Jev)
 
-One Jev call per tick, with two questions about the same state:
+One Jev call per tick, with three questions about the same state:
 
 1. **next**: what Stanley should do now.
    - `listen`: the user hasn't finished saying what they want.
@@ -72,6 +72,8 @@ One Jev call per tick, with two questions about the same state:
    - `think`: the next part needs words or judgement.
    - `done`: what the user asked for is done, and any question has been answered out loud.
 2. **step**: which element, app, `back` or `home` the step would be.
+3. **heard**: has the user finished saying what the next part needs (`finished`), or are words
+   still coming that it depends on (`more`)? The words half of turn-taking (see **Turn-taking**).
 
 Splitting them keeps the step's probability from being spread across the turn-taking options, and
 the turn-taking decision from being split across dozens of near-identical elements (a replay of real
@@ -80,13 +82,76 @@ decisions showed the old single question giving 50% to an option whose route hel
 | Jev says | What happens |
 | --- | --- |
 | `act` on a link, app, `back`, `home` | Runs at once, even mid-word (navigation is cheap to undo) |
-| `act` on a button | Runs at a pause, unless it **commits** (see **Effects**): then thinking confirms |
-| `act` on a field | Thinking writes what goes in it (one call), then the fast part carries on |
+| `act` on a button | Runs once the user finishes the thought; if it **commits** (see **Effects**), once their turn ends, and thinking confirms |
+| `act` on a field | At any pause thinking writes what goes in it (one call), then the fast part carries on. The user's own words go in at once (live dictation, retyped as they go on); words Stanley composed wait for the thought to finish |
 | `think` with a field step ≥ 0.9 | Handled as writing that field: one call instead of a tool loop |
 | `act`, unsure of `act` or of the step | Listens while the user speaks; after they finish, thinking takes the turn |
-| `think` | Thinking takes the turn, at a pause |
+| `think` | Thinking takes the turn once the user finishes the thought |
 | `listen` | Waits for more words; after the user finished, thinking takes the turn (usually to ask) |
 | `done` | Ends the task and shows the working surface; if unsure once the user finished, thinking checks first |
+
+### Turn-taking: acting before the user finishes, without acting on half a thought
+
+The question is never "has the user stopped talking?" but "could their next words change what
+Stanley is about to do?" A person sitting at the computer opens the to-do list as soon as you say
+"to-do", but doesn't add "called…" as a title. So each kind of step waits for a different amount
+of certainty:
+
+| Step | Waits for |
+| --- | --- |
+| Open, navigate, scroll | Nothing: runs mid-word |
+| Type the user's own words into a field | A pause (a field can be retyped) |
+| Press a button, type words Stanley composed, hand over to thinking | The thought to finish |
+| Press something that commits (send, delete, archive) | The turn to end, then thinking confirms |
+| Say anything | The turn to end; words the user adds first drop it |
+
+Two signals, each reading what the other can't:
+- **Voice**: at each VAD pause the transcriber runs **Smart Turn v3.2** (pipecat-ai, BSD-2,
+  8 MB ONNX, ~85 ms on CPU) on the last 8 s of audio: P(the turn is complete) from intonation,
+  trailing off, a filler before more words. Reported after the pause's segment, so ending the
+  turn on it never loses the last words.
+- **Words**: Jev's `heard` question, read against the conversation and the screen. "Make a task
+  called" is unfinished however final it sounds; synthetic speech rates it 0.96 complete.
+
+**The thought is finished** when the utterance ended, or the user is paused, the words are final
+and `heard` ≥ 0.6 and voice ≥ 0.5 (without Smart Turn: `heard` ≥ 0.85). On LiveKit's end-of-turn
+benchmark either signal alone calls ~20% of mid-turn pauses finished; both together, 4%.
+
+**The utterance ends** (`Agent.scheduleEnd`) 0.25 s after the pause is reported when both say
+finished, 2.6 s when either says more is coming (< 0.25), else 1 s. The transcriber's 4 s silence
+is a backstop. Re-run whenever either verdict changes. Speech within 2 s of an end the agent chose
+rejoins the same utterance: the user was only pausing, and every model then reads one sentence.
+
+**Held steps**: a decision gated on the thought or the turn is held, not re-asked. It runs as soon
+as the user finishes, without another Jev call; new words drop it. A held change decided while
+`heard` said "more" is re-decided at the turn's end instead, since Jev then sees the whole turn.
+
+**Corrections**: anything Stanley did can be undone the way a person would (untick, move back to
+the inbox, retype). The conversation splits a turn at any change made before the user finished
+("User: …", the step, "User (went on): …"), so "no wait, the other one" reads as a correction.
+Before closing a task where a button was pressed early, thinking checks those guesses against
+everything the user said.
+
+### Misheard words
+
+Speech recognition is not exact, so Stanley treats the user's words as heard, not as said:
+- **Unsure words are marked.** Parakeet scores every token; a word whose least likely token is
+  under 0.5 reaches the models as `word(?)`. On clean speech words stay above ~0.6; garbled
+  output ("Put dark is the content" for "Book doctor's appointment") falls to 0.1–0.4.
+- **Fixed from context, or asked about.** Writing and thinking turns read a marked word as what
+  the user most likely said (a name on screen, a word that fits) and ask, quoting what was heard,
+  when a marked word matters and can't be worked out. The writer's `unclear` result types nothing.
+  Only marked words are in doubt: a general "ask when unsure" made confirming hesitate over clear
+  requests (a booking went from 4/4 to 0/4), so confirming doesn't get this guidance.
+- **Never sent unheard.** A press that commits words the user said in a turn with unsure words
+  reads them back first ("I heard: …. Should I go ahead?"), decided in code, not by a model.
+- **Said back.** When the user's own words (two or more) were typed and committed and Stanley
+  said nothing else, it says them: "Done: "Book doctor's appointment"". Hands-free, the user may
+  not be looking.
+- **Heard better in the first place.** Beam search (4 paths, ~7% slower than greedy) favours rare
+  words on the screen and the app names (`screenVocabulary`, at most 30, only words the model
+  splits into several pieces). At strength 1.5 "Okonkwo" on screen is heard instead of "Aconquo";
+  at 2.5 it started replacing other words.
 
 ### Thinking
 
@@ -129,7 +194,8 @@ Invariant: **never more than one Jev call in flight.**
 Tick when:
 1. new stable words arrived since the last call, or
 2. a step just ran (the screen changed, so keep going), or
-3. the utterance ended (toggle pressed again, or ~2 s silence).
+3. the utterance ended (toggle pressed again, or the agent judged the user finished), or
+4. the voice paused (a held step may now run).
 
 After `listen` or `done`, only (1) or (3) trigger a tick.
 
@@ -159,6 +225,9 @@ count grew, or a segment finalized.
 | `think` with a field step at least this sure is handled as writing | 0.9 |
 | Elements offered per tick / to thinking | 50 / 150 |
 | Thinking tool steps | 10 |
+| Thought finished: `heard` / voice / `heard` without Smart Turn | 0.6 / 0.5 / 0.85 |
+| Utterance ends this long after a pause: both finished / mixed / either says more (< 0.25) | 0.25 / 1 / 2.6 s |
+| Speech this soon after an agent-chosen end rejoins the utterance | 2 s |
 
 A field chosen during a pause with nothing to type yet ("called… um…") isn't a step, so a long
 pause can't trip the loop guard. A step that fails (a control covered by a cookie banner, a page that
@@ -238,8 +307,9 @@ next, which is how the desktop app would drive real sites.
 ## Voice
 
 - **Push-to-talk**: global toggle `⌥Space` (Electron `globalShortcut`). The mic stays on until the
-  second press. ~2 s of silence ends the utterance without turning the mic off; the next words start
-  a new one. Pressing mid-task = barge-in: new utterance in the same task.
+  second press. The agent ends the utterance when the user has finished (see **Turn-taking**)
+  without turning the mic off; the next words start a new one. Pressing mid-task = barge-in: new
+  utterance in the same task.
 - **STT**: NVIDIA Parakeet TDT 0.6B **v2** (English) via **sherpa-onnx** (`sherpa-onnx-node`) in main.
   Parakeet is offline-only, so live = **Silero VAD** segments + re-decode the current segment every
   ~400 ms for partials; finalize at VAD pause. Accuracy over true streaming.
@@ -335,10 +405,20 @@ Working, verified end to end:
 - Parakeet + Silero live transcription: partials every ~430 ms, segments at pauses, silence
   auto-end at 2 s; model loads in ~1.3 s. Verified by streaming synthesized speech through the app.
 - All five apps; background work with a single reveal; debug window decision timeline.
-- Evals: demo apps 75/75 (25 scenarios × 3), fixture websites 45/45 (15 × 3), live websites 8/8
-  (4 × 2), synthetic voice through the real transcriber 25/25.
+- Evals: demo apps 68/68 (34 scenarios × 2, including 9 turn-taking ones), fixture websites 45/45
+  (15 × 3), live websites 8/8 (4 × 2), synthetic voice through the real transcriber and Smart Turn
+  10/10 on the turn-taking set.
+- Turn detection (`pnpm eval:turn`, LiveKit EoT benchmark, 100 real clips): the turn's end is called
+  0.75 s after the last word (median) vs 2 s before, and 4% of mid-turn pauses cut in vs 11%.
 
 Not yet verified / known gaps:
+- Turn-taking on your own voice: Smart Turn's value is prosody, which typed and synthetic-voice
+  evals don't have. Record the turn-taking clips (`evals/speech/prompts.txt`) and run
+  `pnpm eval:voice`.
+- Whether unsure-word marks and screen hotwords catch real mishearings in your voice: needs
+  recorded clips (`pnpm eval:stt`). Confidently wrong words (no mark) still go through.
+- Writing after a pause is serial (Jev picks the field, then the writer runs): starting the writer
+  as soon as a segment lands on a field Jev already chose would save ~0.3 s.
 - Real microphone capture (needs macOS mic permission for the dev Electron binary; a packaged app
   needs `NSMicrophoneUsageDescription`).
 - Real websites inside the desktop app: the Web app still reads pages through Parallel Extract.
@@ -360,7 +440,7 @@ packages/app-sdk      AppModule / Node / Surface / Action types
 packages/agent        loop, tick scheduler, message log, conversation, guardrails, options, thinking
 packages/jev          Jev client (AI SDK decide) + mock
 packages/browser      any web page as a screen: generic extractor + Playwright World
-packages/stt          sherpa-onnx + Parakeet + Silero VAD → partial/final events
+packages/stt          sherpa-onnx + Parakeet + Silero VAD → partial/final events; Smart Turn on pauses
 packages/app-todo     ./core (headless) + ./ui (Svelte)
 packages/app-email    ″
 packages/app-weather  ″

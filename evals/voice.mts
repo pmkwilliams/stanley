@@ -15,6 +15,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { screenVocabulary } from '@stanley/agent'
 import { readWav } from '@stanley/stt'
 import { listClips, type Clip } from './speech/clips.mts'
 import { playRealtime } from './speech/feed.mts'
@@ -39,21 +40,44 @@ if (selected) {
   for (const { clip, scenario } of selected) {
     const last = scenario!.utterances.length - 1
     const heard: string[] = []
-    const result = await runScenario({ ...scenario!, utterances: [...scenario!.utterances.slice(0, last), clip.expected ?? clip.heard] }, async (agent, utterance, i) => {
-      if (i < last) return typeUtterance(agent, utterance)
+    const pauses: (number | null)[] = []
+    const result = await runScenario({ ...scenario!, utterances: [...scenario!.utterances.slice(0, last), clip.expected ?? clip.heard] }, async (agent, utterance, i, turn, world) => {
+      if (i < last) return typeUtterance(agent, utterance, i, turn)
+      let cutIns = 0
+      // Speech after the agent ended the turn starts a new utterance, as in the app.
+      const open = () => {
+        if (agent.turnOpen) return
+        cutIns++
+        agent.utteranceStart()
+      }
       agent.utteranceStart()
-      await playRealtime(readWav(clip.wav).samples, {
-        partial: (t) => agent.partial(t),
-        segment: (t) => {
-          heard.push(t)
-          agent.segment(t)
+      const { lastWordAt } = await playRealtime(
+        readWav(clip.wav).samples,
+        {
+          partial: (t, words) => {
+            open()
+            agent.partial(t, words)
+          },
+          segment: (t, words) => {
+            open()
+            heard.push(t)
+            agent.segment(t, words)
+          },
+          speaking: (on) => agent.voice(on),
+          pause: (p) => {
+            pauses.push(p.complete)
+            agent.pause(p)
+          },
+          silence: () => agent.utteranceEnd(),
         },
-        silence: () => agent.utteranceEnd(),
-      })
+        { ended: () => !agent.turnOpen, hotwords: screenVocabulary(await world.screen(), world.appList()) },
+      )
+      return { lastWordAt, cutIns }
     })
     if (result.ok) passed++
     report(`${scenario!.name}  ${clip.id}`, result)
     console.log(`   heard: "${heard.join(' ')}"${clip.expected ? `\n   said:  "${clip.expected}"` : ''}`)
+    console.log(`   pauses (voice P finished): ${pauses.map((p) => (p === null ? '?' : p.toFixed(2))).join(', ') || 'none'} · turn ended ${(result.endMs.at(-1)! / 1000).toFixed(1)}s after the last word`)
   }
   console.log(`\n${passed}/${selected.length} clips passed`)
   printUsage()
@@ -64,9 +88,11 @@ function spoken(name: string, text: string): Clip {
   const dir = (spoken.dir ??= mkdtempSync(join(tmpdir(), 'stanley-say-')))
   const wav = join(dir, `${name}.wav`)
   // A mic hears a moment of silence before speech starts; a pause sits around filler words.
-  const script = `[[slnc 500]] ${text.replace(/\b(um|uh|hmm)\b/gi, '[[slnc 700]] $1 [[slnc 700]]')}`
+  // A `|` in a scenario is a pause mid-thought.
+  const script = `[[slnc 500]] ${text.replace(/\b(um|uh|hmm)\b/gi, '[[slnc 700]] $1 [[slnc 700]]').replace(/\s*\|\s*/g, ' [[slnc 800]] ')}`
   execFileSync('say', ['-o', wav, '--file-format=WAVE', '--data-format=LEI16@16000', script])
-  return { id: `say:${name}`, wav, heard: text, expected: text, scenario: name } as Clip
+  const plain = text.replace(/\s*\|\s*/g, ' ')
+  return { id: `say:${name}`, wav, heard: plain, expected: plain, scenario: name } as Clip
 }
 spoken.dir = '' as string
 

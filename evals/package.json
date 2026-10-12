@@ -7,6 +7,7 @@
     "eval": "tsx run.mts",
     "eval:voice": "tsx voice.mts",
     "eval:stt": "tsx stt.mts",
+    "eval:turn": "tsx turn.mts",
     "clips:label": "tsx label.mts",
     "eval:web": "tsx web.mts",
     "smoke:desktop": "tsx desktop-smoke.mts"
@@ -24,6 +25,7 @@
     "@stanley/stt": "workspace:*"
   },
   "devDependencies": {
+    "hyparquet": "^1.31.3",
     "playwright-core": "1.64.0",
     "tsx": "^4.20.6"
   }

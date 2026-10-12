@@ -9,6 +9,10 @@ import type { Check, Scenario } from './scenarios.mts'
 /** The agent counts as settled once it has been idle (not thinking/acting) this long. */
 const QUIET_MS = 500
 const MAX_SETTLE_MS = 120_000
+/** A `|` in a typed utterance: the user pauses mid-thought this long. */
+export const PAUSE_MS = 800
+/** The transcriber ends an utterance after this much silence if the agent hasn't. */
+const SILENCE_BACKSTOP_MS = 4000
 
 /** Paid model calls, so every run says what it spent. */
 export const usage = { jev: 0, jevInputTokens: 0, thinking: 0, writing: 0, confirming: 0 }
@@ -44,8 +48,12 @@ export interface ScenarioResult {
   failures: string[]
   ticks: TickReport[]
   said: string[]
-  /** Per utterance: ms from the end of speech until the agent went quiet. */
+  /** Per utterance: ms from the user's last word until the agent went quiet. */
   settleMs: number[]
+  /** Per utterance: ms from the user's last word until the agent ended their turn. */
+  endMs: number[]
+  /** Times the agent ended the user's turn while they were only pausing mid-thought. */
+  cutIns: number
   /** The context the models would read at the end, for reading what happened. */
   trace: string
 }
@@ -54,40 +62,73 @@ export interface ScenarioResult {
  * Runs one scenario with real apps and models. `speak` delivers each utterance to the agent
  * (typed words or played audio) and resolves once the utterance has ended.
  */
-export async function runScenario(scenario: Scenario, speak: (agent: Agent, utterance: string, index: number) => Promise<void>): Promise<ScenarioResult> {
+export async function runScenario(scenario: Scenario, speak: Speak): Promise<ScenarioResult> {
   const shell = new Shell(apps, { env: process.env, fetch }, () => {})
   const run = await drive(shell, scenario.utterances, speak)
-  const failures = scenario.checks.map((c: Check) => c(shell, run.agent)).filter((r): r is string => typeof r === 'string')
+  const failures = [...run.turnFailures, ...scenario.checks.map((c: Check) => c(shell, run.agent)).filter((r): r is string => typeof r === 'string')]
   return { ok: failures.length === 0, failures, ...run.result }
+}
+
+/**
+ * How an utterance was delivered: when its last word was out, and how many times the agent ended
+ * the turn before it was (each restarted it, as the app does when speech follows an ended turn).
+ */
+export interface Delivery {
+  lastWordAt: number
+  cutIns: number
+}
+
+export type Speak = (agent: Agent, utterance: string, index: number, turn: TurnWatch, world: World) => Promise<Delivery>
+
+/** When the agent ended the user's turn, for the speakers. */
+export interface TurnWatch {
+  endedAt: number | null
 }
 
 /**
  * Speaks each utterance to a fresh agent over `world`, waiting after each for the agent to go
  * quiet, however long its steps take. Shared by the demo-app and website evals.
+ *
+ * Turn-taking is checked on every scenario: Stanley must never say anything before the user's last
+ * word. Ending the turn early (a cut-in) is counted, not failed: the next words start a new turn.
  */
-export async function drive(world: World, utterances: string[], speak: (agent: Agent, utterance: string, index: number) => Promise<void>) {
+export async function drive(world: World, utterances: string[], speak: Speak) {
   const ticks: TickReport[] = []
   const said: string[] = []
+  const saidAt: number[] = []
+  const turn: TurnWatch = { endedAt: null }
   let busy = false
   let changedAt = 0
   const agent = makeAgent(world, {
     tick: (t) => ticks.push(t),
-    said: (text) => said.push(text),
+    said: (text) => {
+      said.push(text)
+      saidAt.push(Date.now())
+    },
     status: (s) => {
       busy = s === 'guessing' || s === 'thinking' || s === 'writing' || s === 'acting'
       changedAt = Date.now()
     },
+    turnEnd: () => (turn.endedAt = Date.now()),
   })
   const settleMs: number[] = []
+  const endMs: number[] = []
+  const turnFailures: string[] = []
+  let cutIns = 0
   for (const [i, utterance] of utterances.entries()) {
-    await speak(agent, utterance, i)
-    const ended = Date.now()
+    turn.endedAt = null
+    const saidBefore = said.length
+    const delivery = await speak(agent, utterance, i, turn, world)
+    cutIns += delivery.cutIns
+    const early = said.slice(saidBefore).filter((_, j) => saidAt[saidBefore + j]! < delivery.lastWordAt)
+    for (const text of early) turnFailures.push(`spoke before the user finished "${utterance}": "${text}"`)
+    endMs.push(Math.max(0, (turn.endedAt ?? Date.now()) - delivery.lastWordAt))
     const deadline = Date.now() + MAX_SETTLE_MS
     while ((busy || Date.now() - changedAt < QUIET_MS) && Date.now() < deadline) await sleep(100)
     if (busy) console.warn(`   still busy after ${MAX_SETTLE_MS / 1000}s: ${utterance}`)
-    settleMs.push(Math.max(0, changedAt - ended))
+    settleMs.push(Math.max(0, changedAt - delivery.lastWordAt))
   }
-  return { agent, result: { ticks, said, settleMs, trace: await agent.context() } }
+  return { agent, turnFailures, result: { ticks, said, settleMs, endMs, cutIns, trace: await agent.context() } }
 }
 
 function makeAgent(world: World, events: AgentDeps['events']): Agent {
@@ -108,6 +149,13 @@ export async function pool<T>(tasks: (() => Promise<T>)[], limit: number): Promi
   return results
 }
 
+/** The median of some durations in ms, as seconds; '—' for none. */
+export function median(ms: number[]): string {
+  if (!ms.length) return '—'
+  const sorted = [...ms].sort((a, b) => a - b)
+  return (sorted[Math.floor(sorted.length / 2)]! / 1000).toFixed(1)
+}
+
 /** `--name value` from the command line. */
 export function flag(name: string, fallback: number): number {
   const i = process.argv.indexOf(`--${name}`)
@@ -123,19 +171,48 @@ export function report(label: string, result: ScenarioResult) {
     console.log(`   ${t.outcome.padEnd(15)} → ${t.effective.padEnd(10)} next: ${next.padEnd(22)} step: ${step}${runnersUp ? `  | ${runnersUp}` : ''}${t.detail ? ` (${t.detail})` : ''}`)
   }
   for (const text of result.said) console.log(`   said: "${text}"`)
+  if (result.cutIns) console.log(`   ended the user's turn early ${result.cutIns}×`)
   for (const f of result.failures) console.log(`   ! ${f}`)
 }
 
-/** Types an utterance word by word like live transcription, then ends it. */
-export async function typeUtterance(agent: Agent, utterance: string) {
+/**
+ * Types an utterance word by word like live transcription. Each `|` is a pause mid-thought
+ * (`PAUSE_MS`), which finalizes a segment as the VAD would. Typing has no voice, so pauses carry no
+ * Smart Turn verdict and the agent judges them by the words alone. After the last word the agent
+ * ends the turn itself, or the silence backstop does.
+ */
+export async function typeUtterance(agent: Agent, utterance: string, _index = 0, turn: TurnWatch = { endedAt: null }): Promise<Delivery> {
+  const parts = utterance.split('|').map((p) => p.trim()).filter(Boolean)
+  let cutIns = 0
+  let lastWordAt = Date.now()
   agent.utteranceStart()
-  const words = utterance.split(' ')
-  for (let i = 1; i <= words.length; i++) {
-    agent.partial(words.slice(0, i).join(' '))
-    await sleep(180)
+  for (const [i, part] of parts.entries()) {
+    if (i > 0) {
+      await sleep(PAUSE_MS)
+      // The agent ended the turn during the pause: these words start a new one, as in the app.
+      if (!agent.turnOpen) {
+        cutIns++
+        agent.utteranceStart()
+      }
+    }
+    agent.voice(true)
+    const words = part.split(' ')
+    for (let w = 1; w <= words.length; w++) {
+      agent.partial(words.slice(0, w).join(' '))
+      await sleep(180)
+    }
+    agent.voice(false)
+    lastWordAt = Date.now()
+    agent.segment(part)
+    agent.pause({ complete: null })
   }
-  agent.segment(utterance)
-  agent.utteranceEnd()
+  const backstop = Date.now() + SILENCE_BACKSTOP_MS
+  while (agent.turnOpen && Date.now() < backstop) await sleep(50)
+  if (agent.turnOpen) {
+    turn.endedAt = Date.now()
+    agent.utteranceEnd()
+  }
+  return { lastWordAt, cutIns }
 }
 
 function countedJev(client: DecisionClient): DecisionClient {

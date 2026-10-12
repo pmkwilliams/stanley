@@ -22,6 +22,21 @@ export interface AgentConfig {
   thinkingElements: number
   /** Tool steps per thinking turn. */
   thinkingSteps: number
+  /**
+   * When the user has finished a thought (see `Agent.thoughtDone`): Jev's P(they finished saying
+   * what the next part needs) must reach `heard`, and Smart Turn's P(their voice finished the
+   * turn) must reach `voice`. Without Smart Turn, `heardAlone` stands in for both.
+   */
+  finished: { heard: number; voice: number; heardAlone: number }
+  /**
+   * How long after the voice pauses the utterance ends: `fastMs` when words and voice both say
+   * finished, `slowMs` when either says more is coming, `normalMs` otherwise. The transcriber's
+   * silence backstop ends it regardless. Speech within `resumeMs` of an end the agent chose is the
+   * same thought resumed, not a new utterance.
+   */
+  endpoint: { fastMs: number; normalMs: number; slowMs: number; moreBelow: number; resumeMs: number }
+  /** A word speech recognition gave less confidence than this is marked `(?)` for the models. */
+  unsureWord: number
 }
 
 export const defaultConfig: AgentConfig = {
@@ -37,4 +52,7 @@ export const defaultConfig: AgentConfig = {
   maxElements: 50,
   thinkingElements: 150,
   thinkingSteps: 10,
+  finished: { heard: 0.6, voice: 0.5, heardAlone: 0.85 },
+  endpoint: { fastMs: 250, normalMs: 1000, slowMs: 2600, moreBelow: 0.25, resumeMs: 2000 },
+  unsureWord: 0.5,
 }

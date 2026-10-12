@@ -77,6 +77,36 @@ describe('narrate', () => {
     )
   })
 
+  it('splits a turn at a change made before the user finished, so a correction reads after it', () => {
+    const tick = (name: string, heardWords: number): Message => ({
+      role: 'step',
+      id: name,
+      by: 'fast',
+      target: { kind: 'element', name: `${name} › checkbox`, role: 'checkbox', nodeKind: 'action', nodeId: name },
+      result: { summary: `Marked "${name}" done` },
+      utteranceId: 1,
+      heardWords,
+    })
+    const log = entries(
+      { role: 'step', id: 'o', by: 'fast', target: { kind: 'app', appId: 'todo', title: 'To-do' }, result: { summary: 'Opened' }, utteranceId: 1, heardWords: 2 },
+      { role: 'user', content: 'tick the blue one', utteranceId: 1 },
+      tick('Blue', 4),
+      { role: 'user', content: 'sorry the red one', utteranceId: 1 },
+      tick('Red', 8),
+    )
+    expect(narrate(log, screen).split('\n').slice(0, 6)).toEqual([
+      '## Conversation',
+      'User: tick the blue one',
+      'Stanley opened To-do.',
+      'Stanley pressed [Blue › checkbox]: Marked "Blue" done.',
+      'User (went on): sorry the red one',
+      'Stanley pressed [Red › checkbox]: Marked "Red" done.',
+    ])
+    expect(narrate(log.slice(0, 3), screen, { utteranceId: 1, text: 'tick the blue one sorry the', ended: false })).toContain(
+      'Stanley pressed [Blue › checkbox]: Marked "Blue" done.\nUser (went on, still speaking): sorry the\n',
+    )
+  })
+
   it('leaves out task boundaries and anything that is not a step, words or speech', () => {
     const log = entries({ role: 'event', kind: 'task-start' }, { role: 'event', kind: 'task-end' })
     expect(narrate(log, screen)).toContain('## Conversation\n(nothing yet)\n')

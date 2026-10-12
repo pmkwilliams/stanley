@@ -4,8 +4,9 @@ declare module 'sherpa-onnx-node' {
   }
   export class OfflineRecognizer {
     static createAsync(config: unknown): Promise<OfflineRecognizer>
-    createStream(): OfflineStream
-    decodeAsync(stream: OfflineStream): Promise<{ text: string; tokens: string[]; timestamps: number[] }>
+    /** `hotwords`: newline-separated words for beam search to favour. */
+    createStream(hotwords?: string): OfflineStream
+    decodeAsync(stream: OfflineStream): Promise<{ text: string; tokens: string[]; timestamps: number[]; ys_log_probs?: number[] }>
   }
   export class Vad {
     constructor(config: unknown, bufferSizeInSeconds: number)

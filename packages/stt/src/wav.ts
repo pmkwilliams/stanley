@@ -2,7 +2,11 @@ import { readFileSync, writeFileSync } from 'node:fs'
 
 /** Reads a 16-bit PCM mono WAV as float samples. */
 export function readWav(file: string): { samples: Float32Array; sampleRate: number } {
-  const buf = readFileSync(file)
+  return parseWav(readFileSync(file), file)
+}
+
+/** Parses the bytes of a 16-bit PCM mono WAV. */
+export function parseWav(buf: Buffer, file = 'WAV'): { samples: Float32Array; sampleRate: number } {
   if (buf.toString('ascii', 0, 4) !== 'RIFF' || buf.toString('ascii', 8, 12) !== 'WAVE') throw new Error(`${file}: not a WAV file`)
   let offset = 12
   let format: { channels: number; sampleRate: number; bits: number } | null = null

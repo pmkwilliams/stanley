@@ -30,6 +30,8 @@
     'no-new-words': 'no new words since the last tick',
     halted: 'loop halted, waiting on the user',
     'nothing-to-re-ask': 'utterance ended, nothing to re-ask',
+    held: 'a held step is still waiting for the user to finish',
+    released: 'the user finished: running the held step',
     tick: '',
   }
 
@@ -39,14 +41,28 @@
       if (ev.type === 'speech-start') return { who: 'vad', text: 'speech started' }
       if (ev.type === 'speech-end') return { who: 'vad', text: 'speech ended' }
       if (ev.type === 'silence') return { who: 'stt', text: `silence for ${ms(ev.afterMs)} → ending utterance` }
+      if (ev.type === 'turn') return { who: 'turn', text: `voice sounds ${(ev.complete * 100).toFixed(0)}% finished · ${ms(ev.audioMs)} heard in ${ms(ev.latencyMs)}${ev.emitted ? '' : ' · dropped'}`, tone: 'muted' }
       return {
         who: ev.kind,
-        text: `"${ev.text}" · ${ms(ev.audioMs)} audio decoded in ${ms(ev.decodeMs)}${ev.emitted ? '' : ' · dropped'}`,
+        text: `"${ev.text}" · ${ms(ev.audioMs)} audio decoded in ${ms(ev.decodeMs)}${ev.unsure?.length ? ` · unsure: ${ev.unsure.join(', ')}` : ''}${ev.emitted ? '' : ' · dropped'}`,
         tone: ev.kind === 'segment' ? 'strong' : 'muted',
       }
     }
     if (e.source === 'agent' && e.event.type === 'request') {
       return { who: 'skip', text: `${e.event.reason}: ${why[e.event.result]}`, tone: 'muted' }
+    }
+    if (e.source === 'agent' && e.event.type === 'turn') {
+      const pct = (p: number | null) => (p === null ? '?' : `${(p * 100).toFixed(0)}%`)
+      return { who: 'turn', text: `paused · voice ${pct(e.event.voice)} finished, words ${pct(e.event.heard)} · ends in ${ms(e.event.endInMs)} if quiet` }
+    }
+    if (e.source === 'agent' && e.event.type === 'turn-end') {
+      return { who: 'turn', text: `finished → utterance ended ${ms(e.event.afterPauseMs)} into the pause`, tone: 'strong' }
+    }
+    if (e.source === 'agent' && e.event.type === 'turn-resumed') {
+      return { who: 'turn', text: `the user went on ${ms(e.event.afterEndMs)} after the end → same utterance` }
+    }
+    if (e.source === 'agent' && e.event.type === 'say') {
+      return { who: 'say', text: `${e.event.result}: "${e.event.text}"`, tone: e.event.result === 'dropped' ? 'muted' : undefined }
     }
     if (e.source === 'app') {
       const ev = e.event

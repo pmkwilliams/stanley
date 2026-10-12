@@ -10,7 +10,7 @@
  * scenarios on real websites instead (they change, so they aren't part of the default suite).
  */
 import { PageWorld } from '@stanley/browser'
-import { drive, flag, loadEnv, pool, printUsage, report, select, typeUtterance, type ScenarioResult } from './harness.mts'
+import { drive, median, flag, loadEnv, pool, printUsage, report, select, typeUtterance, type ScenarioResult } from './harness.mts'
 import { freshContext, launch, LIVE_SITES, readSite, siteState, SITES } from './web/browser.mts'
 import { liveScenarios, webScenarios, type WebScenario } from './web/scenarios.mts'
 
@@ -38,15 +38,16 @@ if (selected) {
   )
   await browser.close()
 
-  console.log('\nscenario                          pass   settle p50 (s)')
+  console.log('\nscenario                          pass   settle p50 (s)  turn end p50 (s)  early ends')
   let passed = 0
   for (const scenario of selected) {
     const mine = results.filter((r) => r.scenario === scenario).map((r) => r.result)
     const ok = mine.filter((r) => r.ok).length
     passed += ok
-    const settle = mine.flatMap((r) => r.settleMs).sort((a, b) => a - b)
-    const p50 = settle.length ? (settle[Math.floor(settle.length / 2)]! / 1000).toFixed(1) : '—'
-    console.log(`${ok === mine.length ? ' ' : '✗'} ${scenario.name.padEnd(32)} ${`${ok}/${mine.length}`.padEnd(6)} ${p50}`)
+    const p50 = median(mine.flatMap((r) => r.settleMs))
+    const endP50 = median(mine.flatMap((r) => r.endMs))
+    const cutIns = mine.reduce((n, r) => n + r.cutIns, 0)
+    console.log(`${ok === mine.length ? ' ' : '✗'} ${scenario.name.padEnd(32)} ${`${ok}/${mine.length}`.padEnd(6)} ${p50.padEnd(15)} ${endP50.padEnd(17)} ${cutIns || ''}`)
   }
   console.log(`\n${passed}/${results.length} runs passed (${Math.round((passed / results.length) * 100)}%)`)
   console.log(`Wall time ${((Date.now() - started) / 1000).toFixed(0)}s`)
@@ -62,7 +63,7 @@ if (selected) {
       const checks = await Promise.all(
         scenario.checks.map((c) => c({ state: (id) => siteState(context, id), read: (id, fn) => readSite(context, id, fn), agent: run.agent, url: page.url() })),
       )
-      const failures = checks.filter((r): r is string => typeof r === 'string')
+      const failures = [...run.turnFailures, ...checks.filter((r): r is string => typeof r === 'string')]
       return { ok: failures.length === 0, failures, ...run.result }
     } finally {
       await context.close()

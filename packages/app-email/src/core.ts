@@ -145,12 +145,26 @@ export const emailApp = defineApp<EmailState>({
     // As on screen: Inbox / Sent tabs, the inbox list (also beside an open email), and the open
     // email with its buttons and reply box.
     const inbox = s.emails.filter((e) => !e.archived)
+    const archived = s.emails.filter((e) => e.archived)
     const unread = inbox.filter((e) => !e.read).length
     const tabs: AgentNode[] = [
-      { id: 'inbox', kind: 'location', role: 'tab', label: `Inbox (${unread})`, description: s.route === 'sent' ? undefined : 'selected' },
+      { id: 'inbox', kind: 'location', role: 'tab', label: `Inbox (${unread})`, description: s.route === 'sent' || s.route === 'archived' ? undefined : 'selected' },
       { id: 'sent', kind: 'location', role: 'tab', label: `Sent (${s.sent.length})`, description: s.route === 'sent' ? 'selected' : undefined },
+      { id: 'archived', kind: 'location', role: 'tab', label: `Archived (${archived.length})`, description: s.route === 'archived' ? 'selected' : undefined },
     ]
     if (s.route === 'sent') return tabs
+    if (s.route === 'archived') {
+      return [
+        ...tabs,
+        ...archived.map((e): AgentNode => ({
+          id: `email/${e.id}/row`,
+          kind: 'group',
+          label: `${e.from}: ${e.subject}`,
+          description: formatDate(e.date),
+          children: [{ id: `email/${e.id}/restore`, kind: 'action', label: 'Move to Inbox' }],
+        })),
+      ]
+    }
     const rows: AgentNode[] = inbox.map((e) => ({
       id: `email/${e.id}`,
       kind: 'location',
@@ -178,6 +192,7 @@ export const emailApp = defineApp<EmailState>({
   async perform(s, nodeId, args) {
     if (nodeId === 'inbox') return { state: { ...s, route: 'inbox' }, summary: 'Opened inbox' }
     if (nodeId === 'sent') return { state: { ...s, route: 'sent' }, summary: 'Opened sent mail' }
+    if (nodeId === 'archived') return { state: { ...s, route: 'archived' }, summary: 'Opened archived mail' }
 
     const [, id, verb] = nodeId.split('/')
     const email = s.emails.find((e) => e.id === id)
@@ -195,6 +210,10 @@ export const emailApp = defineApp<EmailState>({
     if (verb === 'archive') {
       const emails = s.emails.map((e) => (e.id === id ? { ...e, archived: true } : e))
       return { state: { ...s, emails, route: 'inbox' }, summary: `Archived ${label}` }
+    }
+    if (verb === 'restore') {
+      const emails = s.emails.map((e) => (e.id === id ? { ...e, archived: false } : e))
+      return { state: { ...s, emails }, summary: `Moved ${label} back to the inbox` }
     }
     if (verb === 'delete') {
       return { state: { ...s, emails: s.emails.filter((e) => e.id !== id), route: 'inbox' }, summary: `Deleted ${label}` }
@@ -221,6 +240,10 @@ export const emailApp = defineApp<EmailState>({
   },
 
   toMarkdown(s) {
+    if (s.route === 'archived') {
+      const archived = s.emails.filter((e) => e.archived).map((e) => `- "${e.subject}" from ${e.from}, ${formatDate(e.date)} [Move to Inbox]`).join('\n')
+      return `# Email › Archived\n${archived || '_Nothing archived_'}`
+    }
     if (s.route === 'sent') {
       const sent = s.sent.map((m) => `- To ${m.to}: "${m.subject}" (${formatDate(m.date)})\n  ${m.body}`).join('\n')
       return `# Email › Sent\n${sent || '_No sent mail_'}`

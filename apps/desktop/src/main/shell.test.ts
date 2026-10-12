@@ -12,7 +12,7 @@ describe('Shell', () => {
     const screen = await shell.screen()
     expect(screen.id).toBe('email:inbox')
     expect(screen.elements.map((e) => e.label)).toContain('Sam Lee: Lunch Friday?')
-    expect(JSON.stringify(screen.elements)).not.toContain('Archive')
+    expect(JSON.stringify(screen.elements)).not.toContain('"label":"Archive"')
     await shell.performIn('email', 'email/m1', {})
     expect(JSON.stringify((await shell.screen()).elements)).toContain('Archive')
   })

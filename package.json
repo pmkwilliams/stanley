@@ -14,6 +14,7 @@
     "eval:web": "pnpm --filter @stanley/evals eval:web",
     "smoke:desktop": "pnpm build && pnpm --filter @stanley/evals smoke:desktop",
     "eval:stt": "pnpm --filter @stanley/evals eval:stt",
+    "eval:turn": "pnpm --filter @stanley/evals eval:turn",
     "clips:label": "pnpm --filter @stanley/evals clips:label"
   },
   "devDependencies": {

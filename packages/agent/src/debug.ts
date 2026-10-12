@@ -6,12 +6,12 @@ import type { Confirmation, Writing } from './think'
 import type { TranscriptSnapshot } from './transcript'
 
 /** Why a tick was asked for. */
-export type TickReason = 'words' | 'action' | 'end'
+export type TickReason = 'words' | 'action' | 'end' | 'pause'
 
 /** What `request()` did with a tick request. Everything but `tick` means no Jev call. */
-export type RequestResult = 'tick' | 'deferred' | 'no-new-words' | 'halted' | 'nothing-to-re-ask'
+export type RequestResult = 'tick' | 'deferred' | 'no-new-words' | 'halted' | 'nothing-to-re-ask' | 'held' | 'released'
 
-export type GateRule = 'stale' | 'act-confidence' | 'done-confidence' | 'step-confidence' | 'mid-speech' | 'listen-ended' | 'oscillation' | 'step-cap'
+export type GateRule = 'stale' | 'act-confidence' | 'done-confidence' | 'step-confidence' | 'mid-speech' | 'thought-open' | 'turn-open' | 'early-guess' | 'unsure-words' | 'listen-ended' | 'oscillation' | 'step-cap'
 
 /**
  * Structured trace of the loop, for the debug window. Carries everything needed
@@ -54,3 +54,15 @@ export type AgentDebugEvent =
       latencyMs: number
     }
   | { type: 'tick-end'; tickId: number; outcome: TickOutcome; effective: string; detail?: string }
+  /**
+   * The voice paused: Smart Turn's P(turn complete) (null without it), Jev's latest P(finished
+   * saying what's needed) for these words (null if it hasn't seen them), and when the utterance
+   * will end if the user stays quiet.
+   */
+  | { type: 'turn'; voice: number | null; heard: number | null; endInMs: number }
+  /** The agent ended the utterance itself, before the silence backstop. */
+  | { type: 'turn-end'; afterPauseMs: number }
+  /** The user spoke again soon after the agent ended their turn: the same utterance goes on. */
+  | { type: 'turn-resumed'; afterEndMs: number }
+  /** Something to say was held until the user finished, then said or dropped. */
+  | { type: 'say'; text: string; result: 'held' | 'said' | 'dropped' }
