@@ -16,7 +16,7 @@
   /* See-through: the shell's wallpaper and Stanley's aura show behind it. */
   .lockscreen {
     /* The accent, lightened to read on the dark wallpaper. */
-    --ink: color-mix(in srgb, var(--accent), white 65%);
+    --ink: color-mix(in srgb, var(--accent), white 80%);
     position: fixed; inset: 0; z-index: 10;
     display: flex; flex-direction: column; align-items: center; justify-content: space-between;
     padding: 14vh 0 56px;
