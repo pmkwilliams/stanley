@@ -189,14 +189,14 @@
   header button { font-size: 11px; background: none; border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; cursor: pointer; }
   .outcome { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid #22c55e88; color: #22c55e; }
   .outcome.gated, .outcome.stale-discarded { color: #f59e0b; border-color: #f59e0b88; }
-  .outcome.forced-stop, .outcome.error { color: var(--accent); border-color: var(--accent); }
+  .outcome.forced-stop, .outcome.error { color: var(--danger); border-color: var(--danger); }
   .outcome.pending { color: var(--muted); border-color: var(--border); }
   dl { display: grid; grid-template-columns: 100px 1fr; gap: 6px 12px; margin: 14px 0 0; }
   dt { color: var(--muted); }
   dd { margin: 0; }
   .muted { color: var(--muted); }
   .warn { color: #f59e0b; }
-  .bad { color: var(--accent); }
+  .bad { color: var(--danger); }
   .gates { margin: 0; padding-left: 18px; }
   code { font-family: ui-monospace, monospace; font-size: 12px; background: var(--panel); padding: 1px 4px; border-radius: 4px; }
   pre { font-family: ui-monospace, monospace; font-size: 11px; white-space: pre-wrap; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 8px; max-height: 420px; overflow: auto; }

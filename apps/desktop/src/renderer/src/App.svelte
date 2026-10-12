@@ -1,9 +1,11 @@
 <script lang="ts">
   import type { Snapshot } from '../../shared/ipc'
   import { cubicIn, cubicOut } from 'svelte/easing'
-  import { scale } from 'svelte/transition'
+  import { fade, scale } from 'svelte/transition'
+  import LockScreen from './LockScreen.svelte'
   import { startMic } from './mic'
   import Presence from './Presence.svelte'
+  import StatusBar from './StatusBar.svelte'
   import { loudness, mic, voiceOut } from './presence'
   import { backgrounds, surfaces } from './surfaces'
   import { startVoice } from './voice'
@@ -46,27 +48,14 @@
   })
 
   const visible = $derived(snapshot?.layout.visible ?? null)
-  const background = $derived(!!snapshot && snapshot.focus !== visible && (snapshot.status === 'writing' || snapshot.status === 'acting'))
-
-  const KEYS: Record<string, string> = { CommandOrControl: '⌘', Command: '⌘', Control: '⌃', Alt: '⌥', Option: '⌥', Shift: '⇧' }
-  function keys(accel: string) {
-    return accel.split('+').map((k) => KEYS[k] ?? k)
-  }
+  /** Main owns it (see `lock` there); locked until the first snapshot says otherwise. */
+  const locked = $derived(snapshot?.locked ?? true)
 </script>
 
-<div class="shell">
-  {#if snapshot}<Presence {snapshot} docked={!!visible} />{/if}
-  <header>
-    <button class="crumb" onclick={() => window.stanley.open(null)}>Stanley</button>
-    {#if visible}<span class="muted">›</span><span>{snapshot?.apps.find((a) => a.id === visible)?.title}</span>{/if}
-    <span class="spacer"></span>
-    {#if background}<span class="pill working">Working in background…</span>{/if}
-    <button class="pill" class:live={snapshot?.listening} onclick={() => window.stanley.toggleListening()}>
-      {#if snapshot?.listening}<span class="dot"></span>Listening
-      {:else if snapshot?.ptt}{#each keys(snapshot.ptt) as key, i (i)}<kbd>{key}</kbd>{/each} to talk
-      {:else}Click to talk{/if}
-    </button>
-  </header>
+<!-- Inert while locked, so nothing under the lock screen can be focused or clicked. -->
+<div class="shell" class:locked inert={locked}>
+  {#if snapshot}<Presence {snapshot} docked={!!visible && !locked} captions={!locked} />{/if}
+  <StatusBar {snapshot} onlock={() => window.stanley.lock()} />
 
   <main>
     {#if snapshot}
@@ -81,6 +70,10 @@
   </main>
 </div>
 
+{#if locked}
+  <div transition:fade={{ duration: 250 }}><LockScreen onunlock={() => window.stanley.unlock()} /></div>
+{/if}
+
 {#if snapshot}
   {#each Object.entries(backgrounds) as [appId, Background] (appId)}
     {#if snapshot.surfaces[appId] !== undefined}
@@ -91,34 +84,17 @@
 
 <style>
   .shell {
-    display: grid; grid-template-columns: 1fr; grid-template-rows: 44px minmax(0, 1fr); height: 100vh;
-    background:
-      radial-gradient(1200px 600px at 15% -10%, rgba(255, 255, 255, 0.07), transparent 60%),
-      radial-gradient(900px 500px at 110% 110%, rgba(255, 99, 99, 0.06), transparent 60%),
-      var(--bg);
+    display: grid; grid-template-columns: 1fr; grid-template-rows: var(--bar-height) minmax(0, 1fr); height: 100vh;
+    background: var(--wallpaper);
+    --bar-height: 80px;
     /* Largest a window may grow; surfaces that have no natural size (e.g. a web page) fill it. */
     --window-max-width: calc(100vw - 64px);
-    --window-max-height: calc(100vh - 44px - 64px);
+    --window-max-height: calc(100vh - var(--bar-height) - 64px);
   }
-  header {
-    position: relative; z-index: 1;
-    grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; padding: 0 10px 0 84px;
-    -webkit-app-region: drag;
-  }
-  header button { -webkit-app-region: no-drag; }
-  .crumb { background: none; border: 0; font-weight: 600; padding: 4px 6px; }
-  .crumb:hover { background: var(--hover); }
-  .muted { color: var(--muted); }
-  .spacer { flex: 1; }
-  .pill {
-    display: flex; align-items: center; gap: 4px; height: 28px; padding: 0 10px; font-size: 12px;
-    background: var(--window); border: 1px solid var(--border); border-radius: 8px; backdrop-filter: blur(20px);
-  }
-  .pill.live { border-color: rgba(255, 99, 99, 0.5); }
-  .pill.working { color: var(--muted); cursor: default; }
-  .pill :global(kbd:last-of-type) { margin-right: 2px; }
-  .dot { width: 7px; height: 7px; margin-right: 4px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: pulse 1.2s ease-in-out infinite; }
-  @keyframes pulse { 50% { opacity: 0.35; } }
+
+  /* Locked, only the aura stays: the bar and windows fade with the lock screen's own fade. */
+  .shell > :global(header), main { transition: opacity 0.25s; }
+  .shell.locked > :global(header), .shell.locked > main { opacity: 0; }
 
   main { overflow: auto; position: relative; }
   main:has(> .window) { display: grid; place-items: center; overflow: hidden; }

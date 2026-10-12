@@ -154,14 +154,14 @@
   .event { display: flex; gap: 6px; }
   .event.muted .text { color: var(--muted); }
   .event.strong .text { font-weight: 600; }
-  .event.bad .text, .bad { color: var(--accent); }
+  .event.bad .text, .bad { color: var(--danger); }
   .text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .task { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding: 6px 10px; border-top: 1px solid var(--border); background: var(--panel); }
   .task .utterance { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .task button { font-size: 11px; background: none; border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; cursor: pointer; }
   .tick { border-left: 3px solid #22c55e; margin: 2px 0; }
   .tick.gated, .tick.stale-discarded { border-left-color: #f59e0b; }
-  .tick.forced-stop, .tick.error { border-left-color: var(--accent); }
+  .tick.forced-stop, .tick.error { border-left-color: var(--danger); }
   .tick.pending { border-left-color: var(--muted); }
   .tick.selected { background: var(--focus); }
   .tick button { display: flex; gap: 6px; width: 100%; background: none; border: 0; padding: 2px 0; text-align: left; cursor: pointer; }
