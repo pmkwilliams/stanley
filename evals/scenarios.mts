@@ -1,4 +1,4 @@
-import { targetOf, type Agent } from '@stanley/agent'
+import { lookupsOf, saidOf, stepsOf, targetOf, type Agent } from '@stanley/agent'
 import type { Shell } from '../apps/desktop/src/main/shell'
 
 /** Returns a failure message, or nothing when the check passes. */
@@ -8,6 +8,8 @@ export interface Scenario {
   name: string
   utterances: string[]
   checks: Check[]
+  /** Limits on thinking's input over the run: the share read from the cache, and the largest call. */
+  cache?: { minReadRatio: number; maxInputTokens: number }
 }
 
 const visible = (appId: string | null): Check => (shell) =>
@@ -21,7 +23,8 @@ const route = (appId: string, pattern: RegExp): Check => (shell) => {
 const state = (appId: string, test: (s: any) => boolean, what: string): Check => (shell) =>
   test(shell.surfaces.get(appId)) ? undefined : `expected ${what}`
 
-const stanleySteps = (agent: Agent) => agent.log.entries.flatMap((e) => (e.role === 'step' && e.by !== 'user' ? [e] : []))
+const stanleySteps = (agent: Agent) => stepsOf(agent.history.view()).filter((e) => e.by !== 'user')
+const spoken = (agent: Agent) => saidOf(agent.history.view())
 
 /** Stanley took no steps at all: it only listened, or said something. */
 const changedNothing: Check = (_, agent) => {
@@ -43,10 +46,31 @@ const webPage = (pattern: RegExp): Check => (shell) => {
 }
 
 /** Thinking searched the web in the background. */
-const searched: Check = (_, agent) => (agent.log.entries.some((e) => e.role === 'search' && !e.error) ? undefined : 'expected a web search')
+const searches = (agent: Agent) => lookupsOf(agent.history.view()).filter((l) => l.kind === 'search' && !l.error)
+const searched: Check = (_, agent) => (searches(agent).length ? undefined : 'expected a web search')
+/** Thinking searched exactly `n` times: what it found earlier is reused, not looked up again. */
+const searchCount = (n: number): Check => (_, agent) => (searches(agent).length === n ? undefined : `expected ${n} web search${n === 1 ? '' : 'es'}, got ${searches(agent).map((l) => (l.kind === 'search' ? `"${l.query}"` : '')).join(', ') || 'none'}`)
 
 const said = (pattern = /\S/): Check => (_, agent) =>
-  agent.log.entries.some((e) => e.role === 'said' && pattern.test(e.content)) ? undefined : `expected Stanley to say something matching ${pattern}`
+  spoken(agent).some((t) => pattern.test(t)) ? undefined : `expected Stanley to say something matching ${pattern}`
+
+/** Stanley never told the user to look it up themselves, or that it can't know current facts. */
+const noHedge: Check = (_, agent) => {
+  const hedge = spoken(agent).find((t) => /check (a|an|the)? ?(current|up-to-date|reliable|official|latest)|as of my (last|knowledge)|(don't|can't|cannot) (have|access) (real-time|current|live)/i.test(t))
+  return hedge ? `expected an answer, not a hedge: "${hedge}"` : undefined
+}
+
+/** No sentence of an earlier reply comes back in a later one. */
+const noRepeat: Check = (_, agent) => {
+  const replies = spoken(agent).map((t) => normalizeWords(t).join(' '))
+  for (const [i, later] of replies.entries()) {
+    for (const earlier of replies.slice(0, i)) {
+      const repeated = earlier.split(/(?<=[.!?])\s+/).map((s) => s.trim()).find((s) => s.split(' ').length > 3 && later.includes(s))
+      if (repeated) return `expected no repeat, but "${repeated}" was said again`
+    }
+  }
+  return undefined
+}
 
 const samsEmail = (s: any) => s?.emails?.find((e: any) => e.id === 'm1')
 const sentCount = (n: number): Check => (shell) => {
@@ -59,7 +83,7 @@ const draft = (test: (text: string | undefined) => boolean, what: string) => sta
 const saidDraft: Check = (shell, agent) => {
   const text = (shell.surfaces.get('email') as any)?.drafts?.m1 as string | undefined
   const words = normalizeWords(text ?? '')
-  const heard = agent.log.entries.some((e) => e.role === 'said' && words.length > 0 && words.every((w) => normalizeWords(e.content).includes(w)))
+  const heard = spoken(agent).some((t) => words.length > 0 && words.every((w) => normalizeWords(t).includes(w)))
   return heard ? undefined : `expected Stanley to read back the draft "${text}"`
 }
 const normalizeWords = (t: string) => t.toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? []
@@ -338,5 +362,62 @@ export const scenarios: Scenario[] = [
     name: 'arithmetic-answer',
     utterances: ["what's fifteen percent of eighty"],
     checks: [said(/\b12\b|twelve/i), changedNothing],
+  },
+  {
+    // A follow-up is answered on its own: what was already said isn't said again.
+    name: 'follow-up-no-repeat',
+    utterances: ['what is the capital of Australia', 'and roughly how many people live there'],
+    checks: [said(/\d/), noRepeat],
+  },
+  {
+    // Who holds an office now is looked up and answered, not deferred to the user.
+    name: 'current-office-holder',
+    utterances: ["who's the mayor of Denver"],
+    checks: [searched, said(/\w{3,}/), noHedge],
+  },
+  {
+    // What a search already found is in the conversation, so asking about it needs no new search.
+    name: 'reuse-earlier-results',
+    utterances: ['who won the most recent Nobel Prize in Literature', 'what did the second one say'],
+    checks: [searchCount(1), said(/\w{3,}/)],
+  },
+  {
+    // A long session: thinking keeps reading its history from the cache, and stays well under the
+    // size where input gets dearer.
+    name: 'long-session',
+    utterances: [
+      'open my to-do list',
+      'add water the plants',
+      'add renew my library card',
+      'what is on my list now',
+      'tick off water the plants',
+      'open my email',
+      'who wrote to me about the roadmap',
+      'open that one',
+      'go back',
+      "what's the weather in Boston",
+      'and in Miami',
+      'play some jazz',
+      'skip this song',
+      'pause the music',
+      'add book a haircut to my list',
+      'how many things are left on my list',
+      'what is twelve times eight',
+      'open the email from Sam',
+      'what day is he suggesting',
+      'go home',
+      "what's the weather in Austin tomorrow",
+      'add pack an umbrella',
+      'mark renew my library card as done',
+      'open my email',
+      'how many emails are there',
+      'open the first one',
+      'go back',
+      'what is the boiling point of water in Fahrenheit',
+      'thanks',
+      'open my to-do list',
+    ],
+    checks: [newTodos(4)],
+    cache: { minReadRatio: 0.7, maxInputTokens: 100_000 },
   },
 ]

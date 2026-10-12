@@ -1,4 +1,4 @@
-import type { AgentConfig, AgentDebugEvent, AgentStatus, LogEntry } from '@stanley/agent'
+import type { AgentConfig, AgentDebugEvent, AgentStatus, HistoryRecord } from '@stanley/agent'
 import type { ActionArgs, Layout } from '@stanley/app-sdk'
 import type { DecideRequest, MultiChoiceResult } from '@stanley/jev'
 import type { SttDebugEvent } from '@stanley/stt'
@@ -35,7 +35,8 @@ export interface Snapshot {
 }
 
 export type AppDebugEvent =
-  | { type: 'session-start'; session: string; config: AgentConfig; systemPrompt: string; mock: boolean }
+  /** `systemPrompt` is Jev's; `instructions` thinking's, fixed for the session (absent in older sessions). */
+  | { type: 'session-start'; session: string; config: AgentConfig; systemPrompt: string; instructions?: string; mock: boolean }
   | { type: 'listening'; on: boolean; via: 'ptt' | 'button' | 'silence' | 'typed' | 'lock' | 'unlock' }
   | { type: 'status'; status: AgentStatus }
   | { type: 'typed'; text: string }
@@ -43,13 +44,18 @@ export type AppDebugEvent =
   | { type: 'stt-state'; stt: Snapshot['stt']; error?: string }
   | { type: 'tts-state'; tts: Snapshot['tts']; error?: string }
 
+/** An entry of the message log older sessions recorded. */
+export type LegacyLogEntry = { role: string; at: number; [key: string]: unknown }
+
 /** One line of a session's debug JSONL, and one message to the debug window. */
 export type DebugEvent = { seq: number; at: number } & (
   | { source: 'agent'; event: AgentDebugEvent }
   | { source: 'stt'; event: SttDebugEvent }
   | { source: 'tts'; event: TtsDebugEvent }
-  /** The agent's message log, as the agent believes things happened. */
-  | { source: 'log'; event: LogEntry }
+  /** The history thinking reads, as it changes. */
+  | { source: 'history'; event: HistoryRecord }
+  /** Older sessions: the agent's message log, before the history. Shown, never replayed. */
+  | { source: 'log'; event: LegacyLogEntry }
   | { source: 'app'; event: AppDebugEvent }
 )
 

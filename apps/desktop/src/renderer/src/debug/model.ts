@@ -1,5 +1,6 @@
-import type { AgentDebugEvent, LogEntry } from '@stanley/agent'
-import type { AppDebugEvent, DebugEvent } from '../../../shared/ipc'
+import type { AgentDebugEvent, Entry } from '@stanley/agent'
+import type { ModelMessage } from 'ai'
+import type { AppDebugEvent, DebugEvent, LegacyLogEntry } from '../../../shared/ipc'
 
 type Of<T extends AgentDebugEvent['type']> = Extract<AgentDebugEvent, { type: T }>
 
@@ -12,14 +13,17 @@ export interface TickView {
   gates: Of<'gate'>[]
   /** What a button does, judged before pressing it. */
   effects: Of<'effect'>[]
-  /** Thinking deciding what goes in a field the fast part chose. */
-  write?: Of<'write'>
-  /** Thinking deciding whether to press a button that commits. */
-  confirm?: Of<'confirm'>
-  /** Steps taken, by the fast part or by thinking. */
+  /** Steps taken, by Jev or by thinking. */
   acts: Of<'act'>[]
-  thinking?: { start: Of<'think-start'>; steps: Of<'think-step'>[]; end?: Of<'think-end'> }
+  /** Thinking calls: a single step on a field or button Jev chose, or a whole turn (one may follow the other). */
+  thinking: ThinkView[]
   end?: Of<'tick-end'>
+}
+
+export interface ThinkView {
+  start: Of<'think-start'>
+  steps: Of<'think-step'>[]
+  end?: Of<'think-end'>
 }
 
 export interface TaskView {
@@ -45,33 +49,58 @@ export interface DebugModel {
   rows: Row[]
   ticks: TickView[]
   tasks: TaskView[]
-  log: LogEntry[]
+  /** The history thinking reads, committed, rebuilt from its records. */
+  history: Entry[]
+  /** What thinking hasn't seen yet, as it was staged. */
+  staged: Entry[]
+  /** Older sessions recorded a message log instead. */
+  legacy: LegacyLogEntry[]
 }
 
 export function buildModel(events: DebugEvent[]): DebugModel {
-  const model: DebugModel = { startAt: events[0]?.at ?? 0, rows: [], ticks: [], tasks: [], log: [] }
+  const model: DebugModel = { startAt: events[0]?.at ?? 0, rows: [], ticks: [], tasks: [], history: [], staged: [], legacy: [] }
   const ticks = new Map<number, TickView>()
   const utterances = new Map<number, string[]>()
   let task: TaskView | null = null
+  const startTask = (at: number) => {
+    task = { index: model.tasks.length + 1, at, utterances: [], ticks: [] }
+    utterances.clear()
+    model.tasks.push(task)
+    model.rows.push({ kind: 'task', task })
+  }
+  const endTask = (at: number) => {
+    if (task) task.endAt = at
+    task = null
+  }
+  const heard = (utteranceId: number, text: string) => {
+    if (!task) return
+    const parts = utterances.get(utteranceId) ?? []
+    if (!parts.length) utterances.set(utteranceId, parts)
+    parts.push(text)
+    task.utterances = [...utterances.values()].map((p) => p.join(' '))
+  }
 
   for (const e of events) {
+    if (e.source === 'history') {
+      const r = e.event
+      // Staged as it happens, so that is when a task starts or ends; committed later, in order.
+      if (r.type === 'staged') {
+        model.staged.push(r.entry)
+        if (r.entry.meta.event === 'task-start') startTask(e.at)
+        else if (r.entry.meta.event === 'task-end') endTask(e.at)
+      } else if (r.type === 'words') heard(r.utteranceId, r.text)
+      else if (r.type === 'commit') {
+        model.history.push(...r.entries)
+        if (r.placed) model.staged = []
+      } else if (r.type === 'amend') model.history.splice(r.at, r.remove, ...r.insert)
+      continue
+    }
     if (e.source === 'log') {
       const entry = e.event
-      model.log.push(entry)
-      if (entry.role === 'event' && entry.kind === 'task-start') {
-        task = { index: model.tasks.length + 1, at: e.at, utterances: [], ticks: [] }
-        utterances.clear()
-        model.tasks.push(task)
-        model.rows.push({ kind: 'task', task })
-      } else if (entry.role === 'event' && entry.kind === 'task-end' && task) {
-        task.endAt = e.at
-        task = null
-      } else if (entry.role === 'user' && task) {
-        const parts = utterances.get(entry.utteranceId) ?? []
-        if (!parts.length) utterances.set(entry.utteranceId, parts)
-        parts.push(entry.content)
-        task.utterances = [...utterances.values()].map((p) => p.join(' '))
-      }
+      model.legacy.push(entry)
+      if (entry.role === 'event' && entry.kind === 'task-start') startTask(e.at)
+      else if (entry.role === 'event' && entry.kind === 'task-end') endTask(e.at)
+      else if (entry.role === 'user') heard(entry.utteranceId as number, entry.content as string)
       continue
     }
 
@@ -83,10 +112,10 @@ export function buildModel(events: DebugEvent[]): DebugModel {
         continue
       }
       if (ev.type === 'tick-start') {
-        const tick: TickView = { id: ev.tickId, at: e.at, task: task?.index ?? null, start: ev, gates: [], effects: [], acts: [] }
+        const tick: TickView = { id: ev.tickId, at: e.at, task: (task as TaskView | null)?.index ?? null, start: ev, gates: [], effects: [], acts: [], thinking: [] }
         ticks.set(ev.tickId, tick)
         model.ticks.push(tick)
-        task?.ticks.push(tick)
+        ;(task as TaskView | null)?.ticks.push(tick)
         model.rows.push({ kind: 'tick', tick })
         continue
       }
@@ -99,15 +128,14 @@ export function buildModel(events: DebugEvent[]): DebugModel {
       if (!tick) continue
       if (ev.type === 'gate') tick.gates.push(ev)
       else if (ev.type === 'decision') tick.decision = ev
-      else if (ev.type === 'write') tick.write = ev
-      else if (ev.type === 'confirm') tick.confirm = ev
       else if (ev.type === 'act') tick.acts.push(ev)
       else if (ev.type === 'effect') tick.effects.push(ev)
-      else if (ev.type === 'think-start') tick.thinking = { start: ev, steps: [] }
-      else if (ev.type === 'think-step') tick.thinking?.steps.push(ev)
+      else if (ev.type === 'think-start') tick.thinking.push({ start: ev, steps: [] })
+      else if (ev.type === 'think-step') tick.thinking.at(-1)?.steps.push(ev)
       else if (ev.type === 'think-end') {
-        if (tick.thinking) tick.thinking.end = ev
-      } else tick.end = ev
+        const t = tick.thinking.at(-1)
+        if (t) t.end = ev
+      } else if (ev.type === 'tick-end') tick.end = ev
       continue
     }
 
@@ -124,6 +152,38 @@ function categorize(e: DebugEvent): Category | undefined {
   }
   if (e.source === 'app' && e.event.type === 'status') return 'status'
   return undefined
+}
+
+/** What a thinking call was sent: the first `entries` of the history (it is append-only), as messages. */
+export function modelInput(model: DebugModel, think: ThinkView): ModelMessage[] {
+  return model.history.slice(0, think.start.entries).flatMap((e) => (e.message ? [e.message] : []))
+}
+
+/** One part of a message, as the debug window shows it. */
+export interface MessagePart {
+  kind: 'text' | 'reasoning' | 'call' | 'result' | 'other'
+  text: string
+}
+
+export function messageParts(m: ModelMessage): MessagePart[] {
+  if (typeof m.content === 'string') return [{ kind: 'text', text: m.content }]
+  return m.content.map((p): MessagePart => {
+    if (p.type === 'text') return { kind: 'text', text: p.text }
+    if (p.type === 'reasoning') return { kind: 'reasoning', text: p.text }
+    if (p.type === 'tool-call') return { kind: 'call', text: `${p.toolName} ${JSON.stringify(p.input)}  · ${p.toolCallId}` }
+    if (p.type === 'tool-result') {
+      const o = p.output
+      const value = o.type === 'text' || o.type === 'error-text' ? o.value : o.type === 'json' || o.type === 'error-json' ? JSON.stringify(o.value, null, 2) : o.type
+      return { kind: 'result', text: `${o.type.startsWith('error') ? 'error: ' : ''}${value}` }
+    }
+    return { kind: 'other', text: p.type }
+  })
+}
+
+/** A thinking call's exact input as text: instructions, then each message. For pasting elsewhere. */
+export function inputText(model: DebugModel, think: ThinkView): string {
+  const messages = modelInput(model, think)
+  return [`# instructions\n${model.session?.instructions ?? '(not recorded)'}`, ...messages.map((m) => `# ${m.role}\n${JSON.stringify(m.content, null, 2)}`)].join('\n\n')
 }
 
 /** `+12.34s` from session start. */

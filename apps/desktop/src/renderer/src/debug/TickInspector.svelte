@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { decided, ms, offset, rankedOptions, tickLabel, type DebugModel, type TickView } from './model'
+  import { decided, inputText, messageParts, modelInput, ms, offset, rankedOptions, tickLabel, type DebugModel, type TickView } from './model'
   import Replay from './Replay.svelte'
 
   let { tick, model, oncopy }: { tick: TickView; model: DebugModel; oncopy: (text: string, what: string) => void } = $props()
@@ -78,36 +78,6 @@
     </ul>
   {/if}
 
-  {#if tick.write}
-    {@const w = tick.write}
-    <h2>Writing</h2>
-    {#if w.aborted}
-      <p class="warn">Dropped: the user said more. <span class="muted">· {ms(w.latencyMs)}</span></p>
-    {:else}
-      <p>
-        <strong>{w.option}</strong>: {w.source} <code>{w.text || '—'}</code>
-        {#if w.say}· said <strong>"{w.say}"</strong>{/if}
-        <span class="muted">· {ms(w.latencyMs)}</span>
-      </p>
-    {/if}
-    <details><summary>Context sent to thinking</summary><pre>{w.context}</pre></details>
-  {/if}
-
-  {#if tick.confirm}
-    {@const c = tick.confirm}
-    <h2>Go-ahead</h2>
-    {#if c.aborted}
-      <p class="warn">Dropped: the user said more. <span class="muted">· {ms(c.latencyMs)}</span></p>
-    {:else}
-      <p>
-        <strong>{c.option}</strong>: {c.press ? 'pressed it' : 'asked first'}
-        {#if c.say}· said <strong>"{c.say}"</strong>{/if}
-        <span class="muted">· {ms(c.latencyMs)}</span>
-      </p>
-    {/if}
-    <details><summary>Context sent to thinking</summary><pre>{c.context}</pre></details>
-  {/if}
-
   {#if tick.acts.length}
     <h2>Steps</h2>
     {#each tick.acts as act, i (i)}
@@ -120,10 +90,11 @@
     {/each}
   {/if}
 
-  {#if tick.thinking}
-    {@const t = tick.thinking}
-    <h2>Thinking</h2>
-    <p>{t.start.reason}</p>
+  {#each tick.thinking as t, ti (ti)}
+    {@const input = modelInput(model, t)}
+    {@const u = t.end?.usage}
+    <h2>Thinking{t.start.mode === 'run' ? '' : `: one step, ${t.start.mode === 'write' ? 'typing into' : 'pressing'} [${t.start.option}]`}</h2>
+    <p class="muted">Why: {t.start.handover}</p>
     <ol class="gates">
       {#each t.steps as step, i (i)}
         <li>
@@ -137,14 +108,32 @@
         {#if t.end.aborted}<span class="warn">Dropped: the user said more.</span>
         {:else if t.end.text}Said <strong>"{t.end.text}"</strong>
         {:else}<span class="muted">Said nothing.</span>{/if}
+        {#if t.end.calls?.length}· chose {t.end.calls.map((c) => `${c.tool} ${JSON.stringify(c.input)}`).join(', ')}{/if}
         <span class="muted">· {t.end.steps} steps · {ms(t.end.latencyMs)}</span>
+        {#if u}<span class="muted"> · {u.inputTokens ?? "?"} in ({u.cacheReadTokens ?? 0} cached, {u.cacheWriteTokens ?? 0} written; last step {u.lastInputTokens ?? "?"}) / {u.outputTokens ?? '?'} out tokens</span>{/if}
       </p>
     {:else}
       <p class="muted">working…</p>
     {/if}
-    <details><summary>Context sent to thinking</summary><pre>{t.start.context}</pre></details>
-    <details><summary>Options it had</summary><pre>{t.start.options}</pre></details>
-  {/if}
+    <details>
+      <summary>Model input ({input.length} messages{t.start.cacheAt !== undefined ? `, cache read at #${t.start.cacheAt}` : ''})</summary>
+      <button class="copy" onclick={() => oncopy(inputText(model, t), 'the model input')}>Copy model input</button>
+      <details><summary>Instructions</summary><pre>{model.session?.instructions ?? '(not recorded in this session)'}</pre></details>
+      <ol class="messages">
+        {#each input as m, i (i)}
+          <li class={m.role}>
+            <span class="role">#{i} {m.role}</span>
+            {#each messageParts(m) as p, j (j)}
+              {#if p.kind === 'reasoning'}<details><summary>reasoning</summary><pre>{p.text}</pre></details>
+              {:else if p.kind === 'call'}<div><strong>→ {p.text}</strong></div>
+              {:else if p.kind === 'result'}<details><summary>result</summary><pre>{p.text}</pre></details>
+              {:else}<pre>{p.text}</pre>{/if}
+            {/each}
+          </li>
+        {/each}
+      </ol>
+    </details>
+  {/each}
 
   {#each [{ title: 'What now', options: nextOptions, question: 'next' }, { title: 'Which step', options: stepOptions, question: 'step' }] as q (q.question)}
     {@const chosen = answers?.[q.question]?.choice}
@@ -202,6 +191,11 @@
   pre { font-family: ui-monospace, monospace; font-size: 11px; white-space: pre-wrap; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 8px; max-height: 420px; overflow: auto; }
   details { margin: 4px 0; }
   summary { cursor: pointer; color: var(--muted); }
+  .messages { list-style: none; margin: 6px 0; padding: 0; }
+  .messages li { border-top: 1px solid var(--border); padding: 4px 0; }
+  .messages .role { font-size: 11px; color: var(--muted); }
+  .messages li.assistant { background: var(--panel); }
+  .copy { font-size: 11px; background: none; border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; cursor: pointer; margin: 4px 0; }
   table { width: 100%; border-collapse: collapse; }
   td { padding: 4px 6px; border-top: 1px solid var(--border); vertical-align: top; }
   td.p { width: 110px; font-variant-numeric: tabular-nums; font-size: 12px; }

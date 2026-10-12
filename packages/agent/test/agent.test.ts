@@ -5,7 +5,7 @@ import { Agent, type AgentDeps, type AgentStatus, type TickReport } from '../src
 import { defaultConfig } from '../src/config'
 import type { AgentDebugEvent } from '../src/debug'
 import type { Effect } from '../src/effects'
-import type { Confirmation, ThinkRequest, Thinker, Writing } from '../src/think'
+import { scriptedTurn, type ThinkRequest, type Thinker, type ThinkResult } from '../src/think'
 import type { WebTools } from '../src/web'
 import type { World } from '../src/world'
 
@@ -76,20 +76,55 @@ function scripted(script: Script, effect: Effect = 'changes'): DecisionClient & 
   return client
 }
 
-/** Types what the user said, and otherwise says nothing and does nothing. Tests override parts. */
-function fakeThinker(over: Partial<Thinker> = {}): Thinker & { runs: ThinkRequest[] } {
+/** What a single-step turn on a field decides, as a test states it. */
+interface Writing {
+  source: 'user' | 'stanley' | 'missing' | 'unclear'
+  text: string
+  say: string
+}
+
+/** Thinking stand-ins: a full turn, and the single-step turns on a field and on a button that commits. */
+interface FakeThinking {
+  run?: (req: ThinkRequest) => Promise<{ text: string } | ThinkResult>
+  /** Any single-step turn, as it comes back: before `write` and `confirm`. */
+  single?: (req: ThinkRequest) => Promise<ThinkResult>
+  write?: (req: ThinkRequest) => Promise<Writing>
+  confirm?: (req: ThinkRequest) => Promise<{ press: boolean; say: string }>
+}
+
+/** Types what the user said, presses when asked, and otherwise says nothing and does nothing. Tests override parts. */
+function fakeThinker(over: FakeThinking = {}): Thinker & { runs: ThinkRequest[]; writes: ThinkRequest[]; confirms: ThinkRequest[] } {
   const runs: ThinkRequest[] = []
+  const writes: ThinkRequest[] = []
+  const confirms: ThinkRequest[] = []
   return {
     runs,
-    run: async (req) => {
+    writes,
+    confirms,
+    async run(req) {
+      const option = req.single?.option ?? ''
+      if (req.single && over.single) return over.single(req)
+      if (req.single?.kind === 'write') {
+        writes.push(req)
+        const w = await (over.write ?? (async () => ({ source: 'user', text: 'Buy eggs', say: '' }) as Writing))(req)
+        if (w.source === 'user' || w.source === 'stanley') return scriptedTurn(w.say, { option, text: w.text, wrote: w.source })
+        return scriptedTurn(w.source === 'unclear' ? w.say : '')
+      }
+      if (req.single?.kind === 'confirm') {
+        confirms.push(req)
+        const c = await (over.confirm ?? (async () => ({ press: true, say: '' })))(req)
+        return c.press ? scriptedTurn('', { option }) : scriptedTurn(c.say)
+      }
       runs.push(req)
-      return { text: '' }
+      const result = await (over.run ?? (async () => ({ text: '' })))(req)
+      return 'messages' in result ? result : scriptedTurn(result.text)
     },
-    write: async (): Promise<Writing> => ({ source: 'user', text: 'Buy eggs', say: '' }),
-    confirm: async (): Promise<Confirmation> => ({ press: true, say: '' }),
-    ...over,
   }
 }
+
+/** What the last thinking call was sent as its observation. */
+const observation = (req: ThinkRequest) => String(req.messages.at(-1)!.content)
+const handover = (debug: AgentDebugEvent[]) => debug.flatMap((e) => (e.type === 'think-start' && e.mode === 'run' ? [e.handover] : []))
 
 const settle = () => new Promise((r) => setTimeout(r, 20))
 
@@ -106,7 +141,7 @@ const say = (agent: Agent, text: string) => {
   agent.partial(text)
 }
 
-function setup(script: Script, opts: { world?: Parameters<typeof fakeWorld>[0]; thinker?: Partial<Thinker>; effect?: Effect; deps?: Partial<AgentDeps> } = {}) {
+function setup(script: Script, opts: { world?: Parameters<typeof fakeWorld>[0]; thinker?: FakeThinking; effect?: Effect; deps?: Partial<AgentDeps> } = {}) {
   const { world, performed } = fakeWorld(opts.world)
   const jev = scripted(script, opts.effect)
   const thinker = fakeThinker(opts.thinker)
@@ -273,7 +308,8 @@ describe('Agent loop', () => {
     await settle()
     expect(performed).not.toContain('todo:delete')
     expect(debug.some((e) => e.type === 'gate' && e.rule === 'step-confidence')).toBe(true)
-    expect(thinker.runs[0]!.reason).toBe('No step stood out clearly.')
+    expect(thinker.runs).toHaveLength(1)
+    expect(handover(debug)).toEqual(['no step stood out clearly'])
   })
 
   it('stops when it keeps choosing the same step from the same screen', async () => {
@@ -449,12 +485,13 @@ describe('Agent writing', () => {
   })
 
   it('asks through thinking when the user finished without saying what to type', async () => {
-    const { agent, thinker } = setup(plan({ next: 'act', step: 'Add a task' }), { thinker: { write: async () => ({ source: 'missing', text: '', say: '' }) } })
+    const { agent, thinker, debug } = setup(plan({ next: 'act', step: 'Add a task' }), { thinker: { write: async () => ({ source: 'missing', text: '', say: '' }) } })
     agent.utteranceStart()
     agent.segment('add one')
     agent.utteranceEnd()
     await settle()
-    expect(thinker.runs[0]!.reason).toContain('nothing to type yet')
+    expect(thinker.runs).toHaveLength(1)
+    expect(handover(debug)[0]).toContain('nothing to type yet')
   })
 
   it('drops what it was writing when the user keeps talking', async () => {
@@ -476,7 +513,8 @@ describe('Agent writing', () => {
     release()
     await settle()
     expect(performed).toEqual([])
-    expect(debug.some((e) => e.type === 'write' && e.aborted)).toBe(true)
+    expect(debug.some((e) => e.type === 'think-start' && e.mode === 'write')).toBe(true)
+    expect(debug.some((e) => e.type === 'think-end' && e.aborted)).toBe(true)
   })
 })
 
@@ -524,7 +562,6 @@ describe('Agent and misheard words', () => {
       effect: 'commits',
       thinker: { write: async () => ({ source: 'user', text: "I'm in, see you Friday", say: '' }) },
     })
-    const confirm = vi.spyOn(thinker, 'confirm')
     agent.utteranceStart()
     agent.segment("reply I'm in see you fry day", [
       ...["reply", "I'm", 'in', 'see', 'you'].map((word) => ({ word, confidence: 0.95 })),
@@ -534,7 +571,7 @@ describe('Agent and misheard words', () => {
     agent.utteranceEnd()
     await settle()
     expect(performed).not.toContain('todo:delete')
-    expect(confirm).not.toHaveBeenCalled()
+    expect(thinker.confirms).toHaveLength(0)
     expect(said).toEqual(['I heard: "I\'m in, see you Friday". Should I go ahead?'])
   })
 
@@ -565,8 +602,8 @@ describe('Agent buttons that commit', () => {
     const { agent, performed } = setup(plan({ next: 'act', step: 'Delete' }, { next: 'done' }), {
       effect: 'commits',
       thinker: {
-        confirm: async ({ option, context }) => {
-          asked = `${option} | ${context.split('\n')[1]}`
+        confirm: async (req) => {
+          asked = `${req.single!.option} | ${req.messages[0]!.content}`
           return { press: true, say: '' }
         },
       },
@@ -575,7 +612,7 @@ describe('Agent buttons that commit', () => {
     agent.segment('delete it')
     agent.utteranceEnd()
     await settle()
-    expect(asked).toBe('Delete | User: delete it')
+    expect(asked).toBe('Delete | delete it')
     expect(performed).toEqual(['todo:delete', 'show'])
   })
 
@@ -608,8 +645,8 @@ describe('Agent thinking', () => {
       thinker: {
         run: async (req) => {
           thinker.runs.push(req)
-          const seen = await req.act('add a task', 'Call mom')
-          expect(seen).toContain('## Screen: To-do')
+          const seen = await req.act({ option: 'add a task', text: 'Call mom' }, 'call_1')
+          expect(seen).toContain('<screen title="To-do"')
           return { text: 'Added it.' }
         },
       },
@@ -620,7 +657,7 @@ describe('Agent thinking', () => {
     await settle()
     expect(performed).toEqual(['todo:title=Call mom', 'show'])
     expect(said).toEqual(['Added it.'])
-    expect(thinker.runs[0]!.options).toContain('- [Add a task] field, empty')
+    expect(observation(thinker.runs[0]!)).toContain('- [Add a task] field, empty')
   })
 
   it('only takes the turn at a pause, never mid-word', async () => {
@@ -669,7 +706,7 @@ describe('Agent task boundaries', () => {
     agent.segment('open email')
     await settle()
     expect(jev.calls).toBe(calls + 1)
-    expect(agent.log.entries.filter((e) => e.role === 'event' && e.kind === 'task-start')).toHaveLength(2)
+    expect(agent.history.view().filter((e) => e.meta.event === 'task-start')).toHaveLength(2)
   })
 })
 
@@ -784,7 +821,25 @@ describe('Agent turn-taking', () => {
     say(agent, 'no wait the dentist one')
     await settle()
     expect(agent.turnOpen).toBe(true)
-    expect(states.at(-1)).toContain('User (still speaking): tick off the passport one no wait the dentist one')
+    // Thinking took the turn at the early end, which fixed the words so far in the history: the
+    // rest follows as the same utterance going on.
+    expect(states.at(-1)).toContain('User: tick off the passport one\nUser (went on, still speaking): no wait the dentist one')
+  })
+
+  it('reads back unsure words said after a task ended, even when they rejoin its utterance', async () => {
+    const { agent, performed, said } = setup(
+      (req, i) => (i === 0 ? { next: 'act', step: 'open Email' } : i === 1 ? { next: 'done' } : req.state.includes('fry') ? (performed.some((p) => p.startsWith('todo:title')) ? { next: 'act', step: 'Delete' } : { next: 'act', step: 'Add a task' }) : { next: 'listen' }),
+      { effect: 'commits', thinker: { write: async () => ({ source: 'user', text: "I'm in, see you Friday", say: '' }) }, deps: { config: quick } },
+    )
+    agent.utteranceStart()
+    spoke(agent, 'open my email')
+    await new Promise((r) => setTimeout(r, 150))
+    expect(agent.turnOpen).toBe(false)
+    agent.utteranceStart()
+    spoke(agent, "reply I'm in see you fry(?) day(?)")
+    await new Promise((r) => setTimeout(r, 300))
+    expect(performed).not.toContain('todo:delete')
+    expect(said).toContain('I heard: "I\'m in, see you Friday". Should I go ahead?')
   })
 
   it('never ends the turn while the user is speaking', async () => {
@@ -933,7 +988,7 @@ describe('Agent web lookups', () => {
       {
         thinker: {
           run: async (req) => {
-            expect(await req.search!('first US president')).toContain('https://en.wikipedia.org/wiki/George_Washington')
+            expect((await req.search!('first US president', 's1')).results[0]!.url).toBe('https://en.wikipedia.org/wiki/George_Washington')
             return { text: 'George Washington.' }
           },
         },
@@ -959,9 +1014,9 @@ describe('Agent web lookups', () => {
     const { agent, performed } = setup(() => ({ next: 'think' }), {
       thinker: {
         run: async (req) => {
-          await req.search!('first US president')
-          expect(req.options).not.toContain('open page')
-          await req.openPage!('https://www.loc.gov/item/gw-papers/')
+          await req.search!('first US president', 's1')
+          expect(observation(req)).not.toContain('open page')
+          await req.openPage!('https://www.loc.gov/item/gw-papers/', 'o1')
           return { text: '' }
         },
       },
@@ -983,5 +1038,108 @@ describe('Agent web lookups', () => {
     agent.utteranceEnd()
     await settle()
     expect(thinker.runs[0]?.search).toBeUndefined()
+  })
+})
+
+describe('Agent history', () => {
+  const text = (req: ThinkRequest) => req.messages.map((m) => (typeof m.content === 'string' ? m.content : m.content.map((p) => (p.type === 'tool-call' ? `call ${p.toolCallId}` : p.type === 'tool-result' ? `result ${p.toolCallId}` : p.type === 'text' ? p.text : p.type)).join(' + ')))
+
+  it("continues one history: each thinking call is sent all the last one was, then what happened since, with Jev's steps as calls", async () => {
+    const { agent, thinker } = setup(plan({ next: 'act', step: 'open Email' }, { next: 'think' }, { next: 'think' }), {
+      thinker: {
+        run: async (req) => {
+          if (thinker.runs.length === 1) await req.act({ option: 'Sort' }, 'call_1')
+          return { text: thinker.runs.length === 1 ? 'Sorted.' : 'Sure.' }
+        },
+      },
+    })
+    agent.utteranceStart()
+    agent.segment('open my email and sort it')
+    agent.utteranceEnd()
+    await settle()
+    agent.utteranceStart()
+    agent.segment('thanks')
+    agent.utteranceEnd()
+    await settle()
+    const [first, second] = thinker.runs.map(text)
+    expect(first!.slice(0, 3)).toEqual(['open my email and sort it', 'call jev_step-1', 'result jev_step-1'])
+    expect(second!.slice(0, first!.length)).toEqual(first)
+    expect(second!.slice(first!.length)).toEqual(['call call_1', 'result call_1', 'Sorted.', 'thanks', '<screen unchanged/>'])
+    // This stand-in reports no steps of its own, so the cache is read at the first call's observation.
+    expect(thinker.runs[1]!.cacheAt).toBe(first!.length - 1)
+  })
+
+  it("ends the instructions with today's date, gives Jev the date each tick, and tells thinking when the day changes", async () => {
+    let now = new Date('2026-10-12T10:00:00')
+    const states: string[] = []
+    const { agent, thinker } = setup((req) => (states.push(req.state), { next: 'think' }), { deps: { clock: () => now } })
+    expect(agent.instructions.endsWith('Today is Monday, 12 October 2026.')).toBe(true)
+    agent.utteranceStart()
+    agent.segment('what day is it')
+    agent.utteranceEnd()
+    await settle()
+    expect(states[0]).toContain('Today is Monday, 12 October 2026.\n\n## Conversation')
+    now = new Date('2026-10-13T00:05:00')
+    agent.utteranceStart()
+    agent.segment('and now')
+    agent.utteranceEnd()
+    await settle()
+    expect(thinker.runs[1]!.instructions).toBe(thinker.runs[0]!.instructions)
+    expect(observation(thinker.runs[1]!)).toContain('<note>It is now Tuesday, 13 October 2026.</note>')
+  })
+
+  it('types into a field as the answer to the single step, and hands a different choice to a whole turn', async () => {
+    let choice = 'Add a task'
+    const { agent, thinker, performed } = setup(plan({ next: 'act', step: 'Add a task' }, { next: 'done' }, { next: 'act', step: 'Add a task' }), {
+      thinker: { single: async () => scriptedTurn('', { option: choice, text: 'Eggs', wrote: 'user' }) },
+    })
+    agent.utteranceStart()
+    agent.segment('add eggs')
+    agent.utteranceEnd()
+    await settle()
+    expect(performed[0]).toBe('todo:title=Eggs')
+    const history = agent.history.messages()
+    const call = history.findIndex((m) => m.role === 'assistant' && Array.isArray(m.content) && m.content.some((p) => p.type === 'tool-call' && p.toolCallId.startsWith('scripted_')))
+    expect(history[call + 1]?.role).toBe('tool')
+    expect(thinker.runs).toHaveLength(0)
+
+    choice = 'Sort'
+    agent.utteranceStart()
+    agent.segment('add milk')
+    agent.utteranceEnd()
+    await settle()
+    expect(thinker.runs).toHaveLength(1)
+    expect(performed).not.toContain('todo:sort')
+  })
+
+  it('keeps the steps of a turn cut short, so the history stays valid', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((r) => (release = r))
+    const { agent, thinker } = setup((_, i) => (i === 0 ? { next: 'think' } : i === 1 ? { next: 'listen' } : { next: 'think' }), {
+      thinker: {
+        run: async (req) => {
+          if (thinker.runs.length > 1) return { text: '' }
+          await req.act({ option: 'Sort' }, 'call_1')
+          await gate
+          req.signal.throwIfAborted()
+          return { text: 'Sorted.' }
+        },
+      },
+    })
+    agent.utteranceStart()
+    spoke(agent, 'sort it')
+    await settle()
+    agent.voice(true)
+    say(agent, 'by date')
+    release()
+    await settle()
+    spoke(agent, 'by date')
+    agent.utteranceEnd()
+    await settle()
+    expect(thinker.runs).toHaveLength(2)
+    const last = text(thinker.runs.at(-1)!)
+    expect(last).toContain('call call_1')
+    expect(last.indexOf('result call_1')).toBe(last.indexOf('call call_1') + 1)
+    expect(last).not.toContain('Sorted.')
   })
 })

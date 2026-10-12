@@ -22,6 +22,8 @@ export interface AgentConfig {
   thinkingElements: number
   /** Tool steps per thinking turn. */
   thinkingSteps: number
+  /** User turns Jev reads, the most recent ones: its input is re-read on every tick. */
+  jevTurns: number
   /**
    * When the user has finished a thought (see `Agent.thoughtDone`): Jev's P(they finished saying
    * what the next part needs) must reach `heard`, and Smart Turn's P(their voice finished the
@@ -52,6 +54,7 @@ export const defaultConfig: AgentConfig = {
   maxElements: 150,
   thinkingElements: 300,
   thinkingSteps: 10,
+  jevTurns: 50,
   finished: { heard: 0.6, voice: 0.5, heardAlone: 0.85 },
   endpoint: { fastMs: 250, normalMs: 1000, slowMs: 2600, moreBelow: 0.25, resumeMs: 2000 },
   unsureWord: 0.5,

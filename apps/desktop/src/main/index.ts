@@ -1,7 +1,7 @@
 import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parallelWeb } from '@stanley/app-web/parallel'
-import { Agent, BargeIn, createThinker, defaultConfig, findElement, screenVocabulary, SYSTEM_PROMPT, type AgentStatus, type Overheard, type Thinker } from '@stanley/agent'
+import { Agent, BargeIn, createThinker, defaultConfig, findElement, screenVocabulary, scriptedTurn, SYSTEM_PROMPT, type AgentStatus, type Overheard, type Thinker } from '@stanley/agent'
 import { createJevClient, createMockJevClient, type DecisionClient } from '@stanley/jev'
 import { SAMPLE_RATE, Transcriber, writeWav } from '@stanley/stt'
 import { KOKORO, loadKokoro, Speaker } from '@stanley/tts'
@@ -68,9 +68,12 @@ async function refreshHotwords() {
 /** Offline, thinking types the user's last words and otherwise apologises. */
 const thinker: Thinker = mock
   ? {
-      run: async () => ({ text: "I'm offline, so I can't help with that one." }),
-      write: async ({ context }) => ({ source: 'user', text: context.split('\n').filter((l) => l.startsWith('User')).at(-1)?.replace(/^[^:]*: /, '') ?? '', say: '' }),
-      confirm: async () => ({ press: false, say: "I'm offline, so I won't send or delete anything." }),
+      run: async ({ single, messages }) => {
+        // The user's words are the plain user messages: observations and notes are in tags.
+        const words = messages.findLast((m) => m.role === 'user' && typeof m.content === 'string' && !m.content.startsWith('<'))?.content
+        if (single?.kind === 'write') return scriptedTurn('', { option: single.option, text: typeof words === 'string' ? words : '', wrote: 'user' })
+        return scriptedTurn(single?.kind === 'confirm' ? "I'm offline, so I won't send or delete anything." : "I'm offline, so I can't help with that one.")
+      },
     }
   : createThinker()
 
@@ -110,11 +113,12 @@ let agent!: Agent
  * reports afterwards is ignored.
  */
 function startSession() {
+  // What thinking hasn't seen yet goes into the ending session's file, before its sink goes quiet.
+  agent?.history.commit()
   agent?.cancel()
   sessionName = new Date().toISOString().replace(/[:.]/g, '-')
   sessionFile = join(sessionsDir, `${sessionName}.jsonl`)
   debug = new DebugRecorder(sessionsDir, sessionName, (e) => debugWin?.webContents.send('debug:event', e))
-  appEvent({ type: 'session-start', session: sessionName, config: defaultConfig, systemPrompt: SYSTEM_PROMPT, mock })
   const world: Shell = new Shell(apps, { env: process.env, fetch }, () => {
     if (world !== shell) return
     sendSnapshot()
@@ -156,13 +160,14 @@ function startSession() {
         }),
     },
     config: defaultConfig,
-    sink: (entry) => {
+    sink: (record) => {
       if (self !== agent) return
-      appendFileSync(sessionFile, JSON.stringify(entry) + '\n')
-      debug.record({ source: 'log', event: entry })
+      appendFileSync(sessionFile, JSON.stringify(record) + '\n')
+      debug.record({ source: 'history', event: record })
     },
   })
   agent = self
+  appEvent({ type: 'session-start', session: sessionName, config: defaultConfig, systemPrompt: SYSTEM_PROMPT, instructions: agent.instructions, mock })
   status = 'idle'
   said = null
   void refreshHotwords()
@@ -583,5 +588,9 @@ app.whenReady().then(() => {
   void loadTts()
 })
 
-app.on('will-quit', () => globalShortcut.unregisterAll())
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll()
+  // What thinking hasn't seen yet goes into the session file too.
+  agent.history.commit()
+})
 app.on('window-all-closed', () => app.quit())

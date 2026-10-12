@@ -130,9 +130,7 @@
           {#if t.decision}<span class="muted">{t.decision.result.answers.next?.confidence.toFixed(2)} · {ms(t.decision.result.latencyMs)}</span>{/if}
         </button>
         {#each t.acts as act, i (i)}{#if act.summary}<div class="sub">→ {act.summary}</div>{/if}{/each}
-        {#if t.write?.say}<div class="sub">said "{t.write.say}"</div>{/if}
-        {#if t.confirm?.say}<div class="sub">said "{t.confirm.say}"</div>{/if}
-        {#if t.thinking?.end?.text}<div class="sub">said "{t.thinking.end.text}"</div>{/if}
+        {#each t.thinking as th, i (i)}{#if th.end?.text}<div class="sub">said "{th.end.text}"</div>{/if}{/each}
         {#if t.end?.outcome === 'error'}<div class="sub bad">{t.end.detail}</div>{/if}
       </li>
     {:else}

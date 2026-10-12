@@ -2,8 +2,18 @@ import type { ActionArgs } from '@stanley/app-sdk'
 import type { MultiChoiceResult, Question } from '@stanley/jev'
 import type { TickOutcome } from './agent'
 import type { EffectVerdict } from './effects'
-import type { Confirmation, Writing } from './think'
+import type { UnrunCall } from './think'
 import type { TranscriptSnapshot } from './transcript'
+
+/** Tokens a thinking turn used, all its steps together. */
+export interface ThinkUsage {
+  inputTokens?: number
+  outputTokens?: number
+  cacheReadTokens?: number
+  cacheWriteTokens?: number
+  /** The last step's input: the largest the turn sent. */
+  lastInputTokens?: number
+}
 
 /** Why a tick was asked for. */
 export type TickReason = 'words' | 'action' | 'end' | 'pause'
@@ -35,14 +45,14 @@ export type AgentDebugEvent =
   | { type: 'gate'; tickId: number; rule: GateRule; detail: string }
   /** What pressing a button does, judged before it runs. */
   | ({ type: 'effect'; tickId: number; option: string; latencyMs: number } & EffectVerdict)
-  /** The turn went to thinking; `context` and `options` are its exact input. */
-  | { type: 'think-start'; tickId: number; reason: string; context: string; options: string }
+  /**
+   * The turn went to thinking. `run` is a turn with tools; `write` and `confirm` decide one step
+   * Jev chose (`option`). Its exact input is the first `entries` of the history (the history is
+   * append-only), after the session's instructions. `handover` is why, for the debug window only.
+   */
+  | { type: 'think-start'; tickId: number; mode: 'run' | 'write' | 'confirm'; handover: string; option?: string; entries: number; cacheAt?: number }
   | { type: 'think-step'; tickId: number; option: string; text?: string; result: string }
-  | { type: 'think-end'; tickId: number; text: string; steps: number; latencyMs: number; aborted: boolean }
-  /** Thinking decided whether to press a button that commits; `context` is its exact input. */
-  | ({ type: 'confirm'; tickId: number; option: string; context: string; latencyMs: number; aborted: boolean } & Partial<Confirmation>)
-  /** Thinking decided what goes in a field the fast part chose; `context` is its exact input. */
-  | ({ type: 'write'; tickId: number; option: string; context: string; latencyMs: number; aborted: boolean } & Partial<Writing>)
+  | { type: 'think-end'; tickId: number; text: string; steps: number; latencyMs: number; aborted: boolean; calls?: UnrunCall[]; usage?: ThinkUsage }
   | {
       type: 'act'
       tickId: number
