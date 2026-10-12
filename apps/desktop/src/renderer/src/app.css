@@ -7,7 +7,14 @@
   --border: rgba(255, 255, 255, 0.09);
   --text: #ececee;
   --muted: #8e8e93;
-  --accent: #ff6363;
+  --accent: #5697d7;
+  /** Stop, errors, and anything that went wrong. */
+  --danger: #ff6363;
+  /** Desktop background, behind the shell and the lock screen. */
+  --wallpaper:
+    radial-gradient(1200px 600px at 15% -10%, rgba(255, 255, 255, 0.07), transparent 60%),
+    radial-gradient(900px 500px at 110% 110%, color-mix(in srgb, var(--accent) 6%, transparent), transparent 60%),
+    var(--bg);
   /** Selected/focused row. */
   --focus: rgba(255, 255, 255, 0.09);
   color-scheme: dark;

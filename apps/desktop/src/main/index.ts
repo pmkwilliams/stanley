@@ -23,6 +23,8 @@ let ptt: string | null = null
 
 let win: BrowserWindow | null = null
 let debugWin: BrowserWindow | null = null
+/** Starts locked, like a computer coming on. While locked the mic stays off. */
+let locked = true
 let listening = false
 /** The transcriber is fed between a start and a stop transition; audio arriving before the start runs is held. */
 let accepting = false
@@ -54,10 +56,8 @@ let lead: Float32Array[] = []
 let clip: Float32Array[] | null = null
 let clipCount = 0
 
-const shell = new Shell(apps, { env: process.env, fetch }, () => {
-  sendSnapshot()
-  void refreshHotwords()
-})
+/** The apps' state and what's on screen. Replaced whole when the user locks, which starts a new session. */
+let shell!: Shell
 
 /** Speech recognition favours the names and labels on the screen Stanley is working on. */
 async function refreshHotwords() {
@@ -76,12 +76,10 @@ const thinker: Thinker = mock
 
 const sessionsDir = join(app.getPath('userData'), 'sessions')
 mkdirSync(sessionsDir, { recursive: true })
-const sessionName = new Date().toISOString().replace(/[:.]/g, '-')
-const sessionFile = join(sessionsDir, `${sessionName}.jsonl`)
-
-const debug = new DebugRecorder(sessionsDir, sessionName, (e) => debugWin?.webContents.send('debug:event', e))
+let sessionName = ''
+let sessionFile = ''
+let debug!: DebugRecorder
 const appEvent = (event: AppDebugEvent) => debug.record({ source: 'app', event })
-appEvent({ type: 'session-start', session: sessionName, config: defaultConfig, systemPrompt: SYSTEM_PROMPT, mock })
 
 const jev = mock ? offlineJev() : createJevClient()
 
@@ -104,42 +102,72 @@ function offlineJev(): DecisionClient {
     },
   }
 }
-const agent = new Agent({
-  world: shell,
-  jev,
-  thinker,
-  web: process.env.PARALLEL_API_KEY ? parallelWeb(process.env.PARALLEL_API_KEY) : undefined,
-  events: {
-    status: (s) => {
-      status = s
-      appEvent({ type: 'status', status: s })
-      sendSnapshot()
-    },
-    // Shown as it is written, and spoken as it comes.
-    speak: (id, text, done) => {
-      said = { text, at: Date.now() }
-      speaker?.update(id, text, done)
-      sendSnapshot()
-    },
-    hush: (id) => {
-      const spoken = speaker?.stop(id)
-      if (spoken !== null && spoken !== undefined) agent.cutOff(id, spoken)
-    },
-    debug: (event) => debug.record({ source: 'agent', event }),
-    // Words and voice both say the user finished: end the utterance now, not at the silence backstop.
-    turnEnd: () =>
-      transition(() => {
-        transcriber?.endUtterance()
-        endUtterance()
+let agent!: Agent
+
+/**
+ * A fresh session: its own log and debug files, apps at their starting state, and an agent that
+ * remembers nothing. Whatever the previous agent was still doing is cancelled, and anything it
+ * reports afterwards is ignored.
+ */
+function startSession() {
+  agent?.cancel()
+  sessionName = new Date().toISOString().replace(/[:.]/g, '-')
+  sessionFile = join(sessionsDir, `${sessionName}.jsonl`)
+  debug = new DebugRecorder(sessionsDir, sessionName, (e) => debugWin?.webContents.send('debug:event', e))
+  appEvent({ type: 'session-start', session: sessionName, config: defaultConfig, systemPrompt: SYSTEM_PROMPT, mock })
+  const world: Shell = new Shell(apps, { env: process.env, fetch }, () => {
+    if (world !== shell) return
+    sendSnapshot()
+    void refreshHotwords()
+  })
+  shell = world
+  const self: Agent = new Agent({
+    world: shell,
+    jev,
+    thinker,
+    web: process.env.PARALLEL_API_KEY ? parallelWeb(process.env.PARALLEL_API_KEY) : undefined,
+    events: {
+      status: (s) => {
+        if (self !== agent) return
+        status = s
+        appEvent({ type: 'status', status: s })
         sendSnapshot()
-      }),
-  },
-  config: defaultConfig,
-  sink: (entry) => {
-    appendFileSync(sessionFile, JSON.stringify(entry) + '\n')
-    debug.record({ source: 'log', event: entry })
-  },
-})
+      },
+      // Shown as it is written, and spoken as it comes.
+      speak: (id, text, done) => {
+        if (self !== agent) return
+        said = { text, at: Date.now() }
+        speaker?.update(id, text, done)
+        sendSnapshot()
+      },
+      hush: (id) => {
+        if (self !== agent) return
+        const spoken = speaker?.stop(id)
+        if (spoken !== null && spoken !== undefined) agent.cutOff(id, spoken)
+      },
+      debug: (event) => self === agent && debug.record({ source: 'agent', event }),
+      // Words and voice both say the user finished: end the utterance now, not at the silence backstop.
+      turnEnd: () =>
+        self === agent &&
+        transition(() => {
+          transcriber?.endUtterance()
+          endUtterance()
+          sendSnapshot()
+        }),
+    },
+    config: defaultConfig,
+    sink: (entry) => {
+      if (self !== agent) return
+      appendFileSync(sessionFile, JSON.stringify(entry) + '\n')
+      debug.record({ source: 'log', event: entry })
+    },
+  })
+  agent = self
+  status = 'idle'
+  said = null
+  void refreshHotwords()
+}
+startSession()
 
 /**
  * While Stanley talks, what the mic hears goes here first: Stanley's own voice is taken out, it
@@ -191,6 +219,7 @@ function sendSnapshot() {
     surfaces: Object.fromEntries(shell.surfaces),
     focus: shell.focus,
     apps: apps.map(({ id, title, description }) => ({ id, title, description })),
+    locked,
     listening,
     speaking,
     utteranceOpen,
@@ -281,7 +310,47 @@ function writeClip() {
   console.log(`Saved clip ${id}: "${heard}"`)
 }
 
+/**
+ * Locking ends the session: the mic goes off with what it heard dropped (and stays off until
+ * unlocked), Stanley stops talking and whatever it was doing, and a new session starts with every
+ * app back at its start.
+ */
+function lock() {
+  locked = true
+  transition(() => {
+    if (listening) {
+      listening = false
+      appEvent({ type: 'listening', on: false, via: 'lock' })
+      win?.webContents.send('listening', false)
+    }
+    accepting = false
+    held.length = 0
+    transcriber?.reset()
+    speaking = false
+    utteranceOpen = false
+    transcript.finalized = []
+    transcript.partial = ''
+    clip = null
+    lead = []
+    bargeIn.cancel()
+    speaker?.stopAll()
+    startSession()
+    sendSnapshot()
+    // Its timeline is the session's, so it starts over with the new one.
+    debugWin?.webContents.reload()
+  })
+}
+
+/** Back to the home screen, listening. */
+function unlock() {
+  if (!locked) return
+  locked = false
+  void shell.open(null).then(() => shell.global('show'))
+  startListening('unlock')
+}
+
 function toggleListening(via: Via) {
+  if (locked) return
   if (listening) stopListening(via)
   else startListening(via)
 }
@@ -375,13 +444,15 @@ function createWindow() {
     height: 820,
     title: 'Stanley',
     backgroundColor: '#0a0a0b',
-    titleBarStyle: 'hiddenInset',
+    titleBarStyle: 'hidden',
     webPreferences: {
       preload: join(import.meta.dirname, '../preload/index.mjs'),
       sandbox: false,
       webviewTag: true,
     },
   })
+  // The renderer's status bar spans the full width, like an OS menu bar; ⌘W / ⌘Q still close.
+  win.setWindowButtonVisibility(false)
   win.webContents.on('did-finish-load', sendSnapshot)
   win.on('closed', () => {
     win = null
@@ -443,6 +514,8 @@ ipcMain.on('audio', (_, chunk: Float32Array) => {
 ipcMain.on('speech:started', (_, reply: number, seq: number) => speaker?.started(reply, seq))
 ipcMain.on('speech:ended', (_, reply: number, seq: number) => speaker?.ended(reply, seq))
 ipcMain.on('toggle-listening', () => toggleListening('button'))
+ipcMain.on('lock', () => lock())
+ipcMain.on('unlock', () => unlock())
 ipcMain.on('open', async (_, appId: string | null) => {
   const result = await shell.open(appId)
   await shell.global('show')

@@ -11,6 +11,8 @@ export interface Snapshot {
   /** Surface the agent is working on (may be hidden). */
   focus: string | null
   apps: { id: string; title: string; description: string }[]
+  /** The lock screen is up: the mic is off and can't be turned on. */
+  locked: boolean
   listening: boolean
   /** The VAD hears speech right now. */
   speaking: boolean
@@ -34,7 +36,7 @@ export interface Snapshot {
 
 export type AppDebugEvent =
   | { type: 'session-start'; session: string; config: AgentConfig; systemPrompt: string; mock: boolean }
-  | { type: 'listening'; on: boolean; via: 'ptt' | 'button' | 'silence' | 'typed' }
+  | { type: 'listening'; on: boolean; via: 'ptt' | 'button' | 'silence' | 'typed' | 'lock' | 'unlock' }
   | { type: 'status'; status: AgentStatus }
   | { type: 'typed'; text: string }
   | { type: 'manual'; option: string; summary: string }
@@ -90,6 +92,10 @@ export interface StanleyApi {
   speechStarted(reply: number, seq: number): void
   speechEnded(reply: number, seq: number): void
   toggleListening(): void
+  /** Ends the session: Stanley stops, forgets the conversation, and every app starts over. The mic is off until unlocked. */
+  lock(): void
+  /** Goes to the home screen and turns the mic on. */
+  unlock(): void
   perform(appId: string, nodeId: string, args?: ActionArgs): void
   open(appId: string | null): void
   /** Dev fallback: send a typed utterance as if spoken. */

@@ -4,8 +4,11 @@
   import { glass } from './glass'
   import { hsl, mic, presence, Settler, STYLES, voiceOut, type Presence, type Style } from './presence'
 
-  /** `docked` moves the wave from the centre of the screen to its bottom edge, under an open window. */
-  let { snapshot, docked }: { snapshot: Snapshot; docked: boolean } = $props()
+  /**
+   * `docked` moves the wave from the centre of the screen to its bottom edge, under an open window.
+   * Without `captions`, only the wave shows (the lock screen has the clock where they would be).
+   */
+  let { snapshot, docked, captions = true }: { snapshot: Snapshot; docked: boolean; captions?: boolean } = $props()
 
   let canvas: HTMLCanvasElement
   const raw = $derived(presence(snapshot))
@@ -179,8 +182,10 @@
 </script>
 
 <canvas bind:this={canvas} data-presence={shown}></canvas>
-<p class="said" class:docked class:on={saying} aria-live="polite">{snapshot.said?.text ?? ''}</p>
-<p class="caption" class:docked class:on={captioned}>{words}</p>
+{#if captions}
+  <p class="said" class:docked class:on={saying} aria-live="polite">{snapshot.said?.text ?? ''}</p>
+  <p class="caption" class:docked class:on={captioned}>{words}</p>
+{/if}
 
 <style>
   canvas { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; }

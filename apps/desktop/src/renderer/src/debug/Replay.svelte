@@ -88,7 +88,7 @@
   button:disabled { opacity: 0.6; cursor: default; }
   .muted { color: var(--muted); }
   .warn { color: #f59e0b; }
-  .bad { color: var(--accent); }
+  .bad { color: var(--danger); }
   table { width: 100%; border-collapse: collapse; font-size: 12px; }
   th { text-align: left; color: var(--muted); font-weight: 500; }
   td, th { padding: 3px 6px; border-top: 1px solid var(--border); }
