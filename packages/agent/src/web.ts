@@ -1,4 +1,4 @@
-import type { LogEntry } from './log'
+import { lookupsOf, type Entry } from './conversation'
 
 /** A page found by a web search. */
 export interface WebResult {
@@ -49,11 +49,11 @@ export function sameUrl(a: string, b: string): boolean {
 }
 
 /** Pages from the searches and reads in `entries`, once each: most recent first, a search's in its order. */
-export function knownPages(entries: LogEntry[]): KnownPage[] {
+export function knownPages(entries: Entry[]): KnownPage[] {
   const pages: KnownPage[] = []
   let latest = true
-  for (const e of [...entries].reverse()) {
-    const found = e.role === 'search' ? e.results : e.role === 'read' && !e.error ? [e] : []
+  for (const l of lookupsOf(entries).reverse()) {
+    const found = l.kind === 'search' ? l.results : !l.error ? [l] : []
     if (!found.length) continue
     for (const { url, title } of found) if (!pages.some((p) => sameUrl(p.url, url))) pages.push({ url, title, latest })
     latest = false

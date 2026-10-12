@@ -1,4 +1,4 @@
-import type { Agent } from '@stanley/agent'
+import { saidOf, type Agent } from '@stanley/agent'
 
 /** What a check can look at after a run: each site's saved state, and what the agent did and said. */
 export interface WebRun {
@@ -25,7 +25,7 @@ const check = (siteId: string, test: (s: any) => boolean, what: string): WebChec
   test(await run.state(siteId)) ? undefined : `expected ${what}, got ${JSON.stringify(await run.state(siteId))?.slice(0, 300)}`
 
 const said = (pattern = /\S/): WebCheck => async ({ agent }) =>
-  agent.log.entries.some((e) => e.role === 'said' && pattern.test(e.content)) ? undefined : `expected Stanley to say something matching ${pattern}`
+  saidOf(agent.history.view()).some((t) => pattern.test(t)) ? undefined : `expected Stanley to say something matching ${pattern}`
 
 const either = (...checks: WebCheck[]): WebCheck => async (run) => {
   const failures = await Promise.all(checks.map((c) => c(run)))
@@ -157,7 +157,7 @@ export const liveScenarios: WebScenario[] = [
       async (run) => {
         const title: string = await run.read('hn', `document.querySelector('.titleline a')?.textContent ?? ''`)
         const key = title.split(/\s+/).filter((w) => w.length > 3).slice(0, 2)
-        const spoken = run.agent.log.entries.filter((e) => e.role === 'said').map((e) => (e.role === 'said' ? e.content : '')).join(' ')
+        const spoken = saidOf(run.agent.history.view()).join(' ')
         return key.every((w) => spoken.toLowerCase().includes(w.toLowerCase())) ? undefined : `expected the top story "${title}" said, got "${spoken}"`
       },
     ],

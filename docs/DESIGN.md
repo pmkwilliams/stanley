@@ -36,9 +36,10 @@ Several models do the work, but it should read as one Stanley, in the trace and 
   field, whether to press something that sends or deletes, answering, asking, and working out a
   request the fast part can't.
 
-Both read the same conversation (see **Context**), act through the same options, and write their
-steps to the same log in the same voice. A handoff to thinking is not an error path; it is how
-Stanley writes, talks and judges.
+There is one history (see **Context**). Thinking continues it as one long conversation: Jev's steps
+are in it as Stanley's own calls, so thinking reads everything Stanley did as its own. Jev reads a
+rendering of its last 50 turns. Both act through the same options. A handoff to thinking is not an
+error path; it is how Stanley writes, talks and judges.
 
 ### What the agent sees: the screen
 
@@ -145,7 +146,7 @@ Speech recognition is not exact, so Stanley treats the user's words as heard, no
   output ("Put dark is the content" for "Book doctor's appointment") falls to 0.1–0.4.
 - **Fixed from context, or asked about.** Writing and thinking turns read a marked word as what
   the user most likely said (a name on screen, a word that fits) and ask, quoting what was heard,
-  when a marked word matters and can't be worked out. The writer's `unclear` result types nothing.
+  when a marked word matters and can't be worked out. A write step that asks instead types nothing.
   Only marked words are in doubt: a general "ask when unsure" made confirming hesitate over clear
   requests (a booking went from 4/4 to 0/4), so confirming doesn't get this guidance.
 - **Never sent unheard.** A press that commits words the user said in a turn with unsure words
@@ -160,30 +161,47 @@ Speech recognition is not exact, so Stanley treats the user's words as heard, no
 
 ### Thinking
 
-One model, one prompt (`THINKING_PROMPT`), the same conversation, three ways in:
+One model, one set of instructions (`instructions()` in `think.ts`: `THINKING_PROMPT`, speech
+recognition, the web when the session has it, and the date), fixed for the session. Every call
+continues the same history: the screen goes in as an observation (`<screen>` and `<options>`, or
+`<screen unchanged/>` when thinking saw the same last), the turn runs on everything before it, and
+what it did is appended exactly as it was sent: reasoning, tool calls, and the screens its steps
+returned. Three ways in, all with the same tools and `toolChoice: 'auto'`:
 
-- **write** (one structured call): the fast part chose a field. Thinking returns the text, whose
-  words they are (`user`: said by the user or following directly from the request, like a search
-  query or a city; `stanley`: written from a gist or a tone; `missing`: nothing to go on), and
-  anything to say. Words Stanley wrote itself are always read back word for word (the agent adds
-  the quote if thinking paraphrased), which hands the turn to the user. Otherwise the fast part
-  continues (Enter, Send, done).
-- **confirm** (one structured call): the fast part chose a button that commits. Thinking presses it
+- **write** (one step): Jev chose a field. The observation ends with a note naming it. A call to
+  `act` on it is the decision: what to type, and whose words they are (`wrote`: `user` when said
+  by the user or following directly from the request, like a search query or a city; `stanley`
+  when written from a gist or a tone). Text without a call asks the user; neither means nothing to
+  type yet. Calls come back unrun, and typing appends the call's result. Words Stanley wrote itself
+  are always read back word for word (the agent adds the quote if thinking paraphrased), which hands
+  the turn to the user. Otherwise Jev continues (Enter, Send, done). Any other call hands over to a
+  whole turn.
+- **confirm** (one step): Jev chose a button that commits. Thinking presses it (calls `act` on it)
   only if the user asked for that and has heard any words Stanley wrote itself; otherwise it says
   what is ready and asks. Asking to reply or post with given words is asking to send; asking to
   draft is not. When the user already asked for exactly this, it presses: asking again only slows
-  them down.
-- **run** (a short tool loop over `act(option, text?)`, the same options as Jev): for `think` turns.
-  It answers, asks, or works the screen itself. Its text is speech: streamed, shown and spoken as it
-  is written (see **Speaking**). With web access it also has `search(query)` and `fetch(url)`, which
-  look things up in the background without changing the screen. A question is answered from a
-  lookup; something the user wants to see goes on screen with `open page`. What they found stays in
-  the conversation (below), so the fast part can open any of it later ("show me that", "the
-  Wikipedia one") without searching again.
+  them down. Anything else hands over to a whole turn. A single step's text waits for the step to
+  end, so a question isn't spoken just before a press.
+- **run** (a short tool loop over `act`, the same options as Jev): for `think` turns. It answers,
+  asks, or works the screen itself. Its text is speech: streamed, shown and spoken as it is written
+  (see **Speaking**). With web access it also has `search(query)` and `fetch(url)`, which look things
+  up in the background without changing the screen, and `open_page(url)`. A question is answered
+  from a lookup; something the user wants to see goes on screen. What a search found stays in the
+  history in full, so thinking can answer a follow-up from it, and Jev can open any of it later
+  ("show me that", "the Wikipedia one") without searching again.
 
-Whatever thinking does is dropped if the user says more while it works (steps already taken stay
-done and logged; it says nothing). Jev then re-decides with everything they said. After a `run`, the
-task ends; what was said is in the conversation, so a follow-up ("yes, send it") is Jev's.
+Whatever thinking is doing is dropped if the user says more while it works: it says nothing, and the
+steps it already took stay done and in the history (a step that ran in a step cut short goes in as
+Stanley's own call and result). Jev then re-decides with everything they said. After a `run`, the
+task ends; what was said is in the history, so a follow-up ("yes, send it") is Jev's. Why thinking
+was called is for the debug window only: the instructions say what to do in each case.
+
+**Prompt caching.** The history only grows, so each call's input starts with the last one's. Three
+markers, kept for an hour (gaps between calls often pass five minutes): the instructions, where the
+previous call's input ended (an exact read point however much was appended since), and the end of
+the input, moved forward each step. Nothing that was sent is ever changed. The one change allowed
+is to what was never input: the final output of the last turn (its text goes in as what Stanley
+said, as far as the user heard it), a single step's call that wasn't applied, a reply not yet sent.
 
 ### Effects: what a button does
 
@@ -235,6 +253,7 @@ count grew, or a segment finalized.
 | `think` with a field step at least this sure is handled as writing | 0.9 |
 | Elements and known pages offered per tick / to thinking | 150 / 300 |
 | Thinking tool steps | 10 |
+| User turns Jev reads | 50 |
 | Thought finished: `heard` / voice / `heard` without Smart Turn | 0.6 / 0.5 / 0.85 |
 | Utterance ends this long after a pause: both finished / mixed / either says more (< 0.25) | 0.25 / 1 / 2.6 s |
 | Speech this soon after an agent-chosen end rejoins the utterance | 2 s |
@@ -246,17 +265,35 @@ the loop guard stops a step that keeps failing.
 
 ## Context
 
-### Canonical log
+### The history
 
-One append-only message log per app launch (`log.ts`): what the user said (per VAD segment, tagged
-with its utterance), every step (target, text and whose words, result, which part of Stanley chose
-it, Jev's answers), what Stanley said, the user's own clicks and typing, and task boundaries.
-Appended to `userData/sessions/<ts>.jsonl`.
+One persistent history per app launch (`conversation.ts`), as AI SDK messages: what the user said
+(user messages), every step (an `act` call and its result, Jev's with a synthetic id), searches and
+reads (their results in full), what Stanley said (assistant text, as far as the user heard it),
+notes from the computer (`<note>`: the user's own clicks and typing, being cut off, a guard that
+stopped Stanley, a new day), and the observation at each thinking call. Each entry also carries
+metadata no model reads: who chose it, Jev's answers, how many words had been heard, the utterance.
+The sink receives records (`words`, `staged`, `commit`, `amend`) appended to
+`userData/sessions/<ts>.jsonl`; replaying them rebuilds exactly what thinking was sent.
 
-### The conversation (what every model reads)
+Thinking reads all of it. What it hasn't seen yet (the user's words, Jev's steps, notes and replies
+since its last call) is **staged**. A thinking call commits everything before it, and so does the
+start of the next utterance. At each commit the staged words are placed:
 
-The log is not the context. Every model reads the same rendering of it, `narrate()`, which keeps
-only what a person watching would need:
+1. An utterance's words up to its earliest early change come first: a field typed or a button
+   pressed on fewer words than the user ended up saying. With no early change, all of them.
+2. At each early change, the words up to what it was decided on come before it ("went on").
+3. Whatever is left comes after the utterance's last step, or at the end while it is open.
+
+Navigation never splits a turn, and words never come between a call and its result. A thinking call
+fixes the order up to that point: words the user says afterwards come after it, which is when they
+were said.
+
+### What Jev reads
+
+Jev's `state` is its system prompt, today's date, and `narrate()` of the history: committed, then
+what is staged, placed as it would be committed now. It keeps only what a person watching would
+need:
 
 ```
 ## Conversation
@@ -275,26 +312,38 @@ Stanley said: "I wrote "Ramen? I was born ready." Should I send it?"
 …markdown of the screen…
 ```
 
-- **The user's words come as turns**: all segments of an utterance on one line, placed before
-  anything Stanley did for it, marked `(still speaking)` while the utterance is open.
+- **The user's words come as turns**, in the order above, marked `(still speaking)` while the
+  utterance is open.
 - **Steps are outcomes**: links opened, text typed (and whose words), buttons pressed with the
-  app's result summary.
-- **Lookups keep what they found**: a search lists each page's title, address and a line of its
-  excerpt; a read names the page. Page text isn't kept: thinking reads it in the turn it fetched it.
+  app's result summary. Jev's and thinking's read the same.
+- **Lookups list what they found**: a search gives each page's title, address and its excerpt cut
+  to a line; a read names the page.
   ```
   Stanley searched the web for "first president of the United States":
   - "George Washington - Wikipedia" (en.wikipedia.org/wiki/George_Washington): George Washington…
   Stanley read "George Washington - Wikipedia" (en.wikipedia.org/wiki/George_Washington).
   ```
-- **Not included**: listen/done decisions, discarded or gated decisions, retries, and which model
-  took a step. Those are the agent's mechanics; the debug trace has them.
-- **The screen appears once**, at the end. Earlier screens are not repeated.
-- **Long sessions** keep the last 20 user turns.
+- **Not included**: observations, reasoning, notes, listen/done decisions, discarded or gated
+  decisions, retries, and which model took a step. Those are the agent's mechanics; the debug trace
+  has them.
+- **The screen appears once**, at the end.
+- **Long sessions** keep the last 50 user turns (`jevTurns`), and the pages Stanley offers to open
+  are the ones in them.
 
-Jev's `state` is the system prompt followed by this; its option lists are the two questions. Thinking
-gets its own prompt, the same conversation, why it was called, and the options. One rendering keeps
-the models agreeing about what has happened, and keeps the trace readable: if a person can't follow
-it, a model can't either.
+### Size
+
+| Content | Thinking (whole session) | Jev (last 50 turns) |
+| --- | --- | --- |
+| User words, notes | In full | Turn lines |
+| Steps | Jev's: call and summary. Thinking's: as sent, with the screens they returned | Step lines |
+| Screens | Every observation; `<screen unchanged/>` when identical | The current screen, once |
+| Search / fetch | In full (≤ 8 × 500 chars / ≤ 6,000 chars) | Title, address, 100-char excerpt / page title |
+| Reasoning | Replayed as sent | Never |
+
+Growth comes mostly from screens. Only the new part of each call is uncached, but time to first
+token rises with the total, and Haiku 5.5's input price rises past 100K prompt tokens. The debug
+window and the evals report each call's input size; when sessions near 100K, the plan is
+server-side compaction (`docs/plans/one-history.md`).
 
 ## Websites
 
@@ -403,9 +452,9 @@ All via **Vercel AI Gateway** with the AI SDK (`ai`, pinned exactly), one `AI_GA
   `providerMetadata.typesafe.confidence[questionId]`. `packages/jev` normalizes each answer to
   `{ choice, probabilities, confidence }`: `decide` for several questions in one call, `choose` for
   one, plus a mock.
-- **Thinking**: Claude Haiku 5.5 via gateway behind a `Thinker` interface: `write` and `confirm` are
-  single structured calls (`generateText` with `Output.object`), `run` is a tool loop with `act`,
-  plus `search` and `fetch` when the agent has `WebTools`.
+- **Thinking**: Claude Haiku 5.5 via gateway (pinned to Anthropic, for its prompt caching) behind a
+  `Thinker` interface with one method, `run`: a tool loop with `act`, plus `search`, `fetch` and
+  `open_page` when the agent has them, or one step whose calls come back unrun (write, confirm).
 - **Web**: Parallel Search and Extract APIs (`PARALLEL_API_KEY`), in `@stanley/app-web/parallel`:
   the agent's background search and fetch, and the Web app's page reader.
 - **Weather**: Open-Meteo forecast + geocoding (no key).
@@ -430,14 +479,17 @@ the same action handlers.
 The main window stays clean; **Debug → Open Debug Window** (⌘⇧D) opens a separate window for
 diagnosing agent behaviour. It is driven by one structured stream (`DebugEvent`): the agent's trace
 (`AgentDebugEvent`: every tick request including ones that never ran, exact Jev input, both answers,
-guardrail gates with thresholds, button effects, what thinking wrote, confirmed or did, step results), STT timing (VAD, decode latency, dropped
-partials, silence), app events (mic, status, typed/manual input) and the message log. Each session's
-stream is written to `userData/sessions/<session>.debug.jsonl` next to the message-log JSONL.
+guardrail gates with thresholds, button effects, each thinking call with why, step results), STT
+timing (VAD, decode latency, dropped partials, silence), app events (mic, status, typed/manual input)
+and the history's records. Each session's stream is written to
+`userData/sessions/<session>.debug.jsonl` next to the history JSONL.
 
 - **Timeline** grouped by task; optional rows for partials, VAD, skipped requests, status.
 - **Tick inspector**: what was heard and why the tick ran, what Jev decided vs what took effect,
-  gating, button effects, writing / go-ahead / thinking with their exact context, steps, both
-  questions' options ranked by probability, the full Jev state.
+  gating, button effects, each thinking call (its exact input, message by message, rebuilt from the
+  history; steps; what it said; tokens in, cached and out; Copy model input), steps, both questions'
+  options ranked by probability, the full Jev state.
+- **History**: every entry, who chose it, Jev's confidence and heard words; staged entries marked.
 - **Replay**: re-run a tick against Jev as recorded or with an edited state or questions.
 - **Copy as eval** turns a task into a scenario literal for `evals/scenarios.mts`.
 - **Past sessions** load from disk via the session picker.

@@ -29,7 +29,11 @@ export class DebugRecorder {
   record(payload: Payload): void {
     const e = { ...payload, seq: ++this.seq, at: Date.now() } as DebugEvent
     this.events.push(e)
-    if (this.events.length > MAX_IN_MEMORY) this.events.shift()
+    // The history's records stay: the debug window rebuilds what thinking was sent from all of them.
+    if (this.events.length > MAX_IN_MEMORY) {
+      const i = this.events.findIndex((x) => x.source !== 'history')
+      if (i !== -1) this.events.splice(i, 1)
+    }
     appendFileSync(join(this.dir, this.file), JSON.stringify(e) + '\n')
     this.forward(e)
   }

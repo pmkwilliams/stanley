@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { Agent, createThinker, type AgentDeps, type Thinker, type TickReport, type WebTools, type World } from '@stanley/agent'
+import { Agent, createThinker, defaultConfig, type AgentDeps, type Thinker, type TickReport, type WebTools, type World } from '@stanley/agent'
 import { parallelWeb } from '@stanley/app-web/parallel'
 import { createJevClient, type DecisionClient } from '@stanley/jev'
 import { Shell } from '../apps/desktop/src/main/shell'
@@ -16,7 +16,24 @@ export const PAUSE_MS = 800
 const SILENCE_BACKSTOP_MS = 4000
 
 /** Paid model calls, so every run says what it spent. */
-export const usage = { jev: 0, jevInputTokens: 0, jevMs: [] as number[], thinking: 0, writing: 0, confirming: 0, searches: 0, reads: 0 }
+export const usage = {
+  jev: 0,
+  jevInputTokens: 0,
+  jevMs: [] as number[],
+  thinking: 0,
+  writing: 0,
+  confirming: 0,
+  /** Thinking's input tokens, all calls and steps together, and how many of them were read from the cache. */
+  thinkingInputTokens: 0,
+  thinkingCachedTokens: 0,
+  /** The largest input one thinking call (one step) was sent. */
+  largestThinkingInput: 0,
+  /** Writes and confirms that chose something else, and so handed over to a whole turn, and what they chose. */
+  singleFallbacks: 0,
+  fallbacks: [] as string[],
+  searches: 0,
+  reads: 0,
+}
 
 export function loadEnv() {
   const envFile = join(import.meta.dirname, '..', '.env')
@@ -30,7 +47,7 @@ export function loadEnv() {
  */
 export function select<T>(items: T[], name: (t: T) => string, command: string): T[] | null {
   const args = process.argv.slice(2)
-  const filters = args.filter((a, i) => !a.startsWith('-') && !/^--(runs|concurrency)$/.test(args[i - 1] ?? ''))
+  const filters = args.filter((a, i) => !a.startsWith('-') && !/^--(runs|concurrency|jev-turns)$/.test(args[i - 1] ?? ''))
   if (!filters.length && !args.includes('--all')) {
     console.log(`${items.length} available — each makes several paid Jev/Haiku calls:`)
     for (const t of items) console.log(`  ${name(t)}`)
@@ -41,7 +58,9 @@ export function select<T>(items: T[], name: (t: T) => string, command: string): 
 }
 
 export function printUsage() {
-  console.log(`Paid calls: ${usage.jev} Jev (${usage.jevInputTokens.toLocaleString()} input tokens, p50 ${median(usage.jevMs)}s), ${usage.thinking} thinking turns, ${usage.writing} writes, ${usage.confirming} confirms (Haiku), ${usage.searches} searches, ${usage.reads} page reads (Parallel)`)
+  const ratio = usage.thinkingInputTokens ? `${Math.round((usage.thinkingCachedTokens / usage.thinkingInputTokens) * 100)}%` : '—'
+  console.log(`Paid calls: ${usage.jev} Jev (${usage.jevInputTokens.toLocaleString()} input tokens, p50 ${median(usage.jevMs)}s), ${usage.thinking} thinking turns, ${usage.writing} writes, ${usage.confirming} confirms (${usage.singleFallbacks} handed over to a whole turn) (Haiku: ${usage.thinkingInputTokens.toLocaleString()} input tokens, ${ratio} read from cache, largest call ${usage.largestThinkingInput.toLocaleString()}), ${usage.searches} searches, ${usage.reads} page reads (Parallel)`)
+  for (const f of usage.fallbacks) console.log(`  handed over: ${f}`)
 }
 
 export interface ScenarioResult {
@@ -55,8 +74,10 @@ export interface ScenarioResult {
   endMs: number[]
   /** Times the agent ended the user's turn while they were only pausing mid-thought. */
   cutIns: number
-  /** The context the models would read at the end, for reading what happened. */
+  /** The context Jev would read at the end, for reading what happened. */
   trace: string
+  /** Thinking's input over the run: all of it, what was read from the cache, and the largest call. */
+  thinking: { inputTokens: number; cachedTokens: number; largestInput: number }
 }
 
 /**
@@ -67,6 +88,9 @@ export async function runScenario(scenario: Scenario, speak: Speak): Promise<Sce
   const shell = new Shell(apps, { env: process.env, fetch }, () => {})
   const run = await drive(shell, scenario.utterances, speak)
   const failures = [...run.turnFailures, ...scenario.checks.map((c: Check) => c(shell, run.agent)).filter((r): r is string => typeof r === 'string')]
+  const t = run.result.thinking
+  if (scenario.cache && t.inputTokens && t.cachedTokens / t.inputTokens < scenario.cache.minReadRatio) failures.push(`expected ≥ ${scenario.cache.minReadRatio * 100}% of thinking's input read from the cache, got ${Math.round((t.cachedTokens / t.inputTokens) * 100)}%`)
+  if (scenario.cache && t.largestInput > scenario.cache.maxInputTokens) failures.push(`expected thinking calls under ${scenario.cache.maxInputTokens} input tokens, the largest was ${t.largestInput}`)
   return { ok: failures.length === 0, failures, ...run.result }
 }
 
@@ -100,7 +124,18 @@ export async function drive(world: World, utterances: string[], speak: Speak) {
   const turn: TurnWatch = { endedAt: null }
   let busy = false
   let changedAt = 0
+  const thinking = { inputTokens: 0, cachedTokens: 0, largestInput: 0 }
   const agent = makeAgent(world, {
+    debug: (e) => {
+      if (e.type === 'think-start' && e.mode === 'run' && /^asked (to type|whether to press)/.test(e.handover)) {
+        usage.singleFallbacks++
+        usage.fallbacks.push(e.handover)
+      }
+      if (e.type !== 'think-end' || !e.usage) return
+      thinking.inputTokens += e.usage.inputTokens ?? 0
+      thinking.cachedTokens += e.usage.cacheReadTokens ?? 0
+      thinking.largestInput = Math.max(thinking.largestInput, e.usage.lastInputTokens ?? 0)
+    },
     tick: (t) => ticks.push(t),
     said: (text) => {
       said.push(text)
@@ -129,12 +164,14 @@ export async function drive(world: World, utterances: string[], speak: Speak) {
     if (busy) console.warn(`   still busy after ${MAX_SETTLE_MS / 1000}s: ${utterance}`)
     settleMs.push(Math.max(0, changedAt - delivery.lastWordAt))
   }
-  return { agent, turnFailures, result: { ticks, said, settleMs, endMs, cutIns, trace: await agent.context() } }
+  return { agent, turnFailures, result: { ticks, said, settleMs, endMs, cutIns, trace: await agent.context(), thinking } }
 }
 
 function makeAgent(world: World, events: AgentDeps['events']): Agent {
   const key = process.env.PARALLEL_API_KEY
-  return new Agent({ world, jev: countedJev(createJevClient()), thinker: countedThinker(createThinker()), web: key ? countedWeb(parallelWeb(key)) : undefined, events })
+  // `--jev-turns N`: how many user turns Jev reads, to compare its input and latency.
+  const config = process.argv.includes('--jev-turns') ? { ...defaultConfig, jevTurns: flag('jev-turns', defaultConfig.jevTurns) } : defaultConfig
+  return new Agent({ world, jev: countedJev(createJevClient()), thinker: countedThinker(createThinker()), web: key ? countedWeb(parallelWeb(key)) : undefined, events, config })
 }
 
 /** Runs `tasks` with at most `limit` in flight. */
@@ -173,6 +210,8 @@ export function report(label: string, result: ScenarioResult) {
     console.log(`   ${t.outcome.padEnd(15)} → ${t.effective.padEnd(10)} next: ${next.padEnd(22)} step: ${step}${runnersUp ? `  | ${runnersUp}` : ''}${t.detail ? ` (${t.detail})` : ''}`)
   }
   for (const text of result.said) console.log(`   said: "${text}"`)
+  const t = result.thinking
+  if (t.inputTokens) console.log(`   thinking input: ${t.inputTokens.toLocaleString()} tokens, ${Math.round((t.cachedTokens / t.inputTokens) * 100)}% from the cache, largest call ${t.largestInput.toLocaleString()}`)
   if (result.cutIns) console.log(`   ended the user's turn early ${result.cutIns}×`)
   for (const f of result.failures) console.log(`   ! ${f}`)
 }
@@ -245,17 +284,15 @@ function countedWeb(web: WebTools): WebTools {
 
 function countedThinker(thinker: Thinker): Thinker {
   return {
-    run(req) {
-      usage.thinking++
-      return thinker.run(req)
-    },
-    write(req) {
-      usage.writing++
-      return thinker.write(req)
-    },
-    confirm(req) {
-      usage.confirming++
-      return thinker.confirm(req)
+    async run(req) {
+      if (req.single?.kind === 'write') usage.writing++
+      else if (req.single?.kind === 'confirm') usage.confirming++
+      else usage.thinking++
+      const result = await thinker.run(req)
+      usage.thinkingInputTokens += result.usage?.inputTokens ?? 0
+      usage.thinkingCachedTokens += result.usage?.inputTokenDetails.cacheReadTokens ?? 0
+      usage.largestThinkingInput = Math.max(usage.largestThinkingInput, result.lastInputTokens ?? 0)
+      return result
     },
   }
 }

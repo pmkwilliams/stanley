@@ -17,10 +17,15 @@ Options for `eval` and `eval:web`:
 
 - `--runs N` runs each scenario N times and reports a pass rate. One run is a sample, not a result.
 - `--concurrency N` (default 4).
-- `--trace` prints the conversation and screen the models read at the end of each run. Read these:
+- `--trace` prints the conversation and screen Jev reads at the end of each run. Read these:
   if a person can't follow a trace, the models can't either.
 - `--verbose` prints every run's ticks (failed runs always print them): for each tick, what took
   effect, the top "what now" answers and the chosen step with its runners-up.
+- `--jev-turns N` sets how many user turns Jev reads (default 50), to compare its input size and
+  latency on long scenarios (`long-session`).
+
+Every run also reports thinking's input: tokens, the share read from the prompt cache, and the
+largest single call.
 
 ## Turn-taking
 

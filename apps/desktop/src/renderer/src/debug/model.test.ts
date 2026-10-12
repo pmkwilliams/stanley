@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { DebugEvent } from '../../../shared/ipc'
-import { buildModel, evalScenario, rankedOptions, tickLabel } from './model'
+import { Conversation, type HistoryRecord } from '@stanley/agent'
+import { buildModel, evalScenario, inputText, modelInput, rankedOptions, tickLabel } from './model'
 
 let seq = 0
 const at = (n: number) => 1000 + n * 100
@@ -76,6 +77,28 @@ describe('buildModel', () => {
       ['open Email', null],
     ])
     expect(rankedOptions(m.ticks[1]!, 'next').map((o) => o.option)).toEqual(['act', 'listen', 'think', 'done'])
+  })
+})
+
+describe('buildModel with a history', () => {
+  it('rebuilds the history, tracks tasks from it, and slices out what each thinking call was sent', () => {
+    seq = 0
+    const events: DebugEvent[] = [{ seq: ++seq, at: at(seq), source: 'app', event: { type: 'session-start', session: 's2', config: {} as never, systemPrompt: '', instructions: '# Stanley', mock: true } }]
+    const history = new Conversation((record: HistoryRecord) => events.push({ seq: ++seq, at: at(seq), source: 'history', event: record }))
+    history.stage({ kind: 'event', event: 'task-start' })
+    history.heard(1, 'what time is it')
+    const sent = history.send('<screen title="Home">…</screen>', { utteranceId: 1, text: 'what time is it', ended: true })
+    events.push(start(1))
+    events.push(agent({ type: 'think-start', tickId: 1, mode: 'run', handover: 'Jev chose think', entries: sent.entries }))
+    history.said(1, 'It is noon.')
+    history.stage({ kind: 'event', event: 'task-end' })
+    const m = buildModel(events)
+    expect(m.tasks.map((t) => [t.utterances, t.endAt !== undefined])).toEqual([[['what time is it'], true]])
+    expect(m.history.map((e) => e.meta.kind)).toEqual(['event', 'words', 'observation'])
+    expect(m.staged.map((e) => e.meta.kind)).toEqual(['said', 'event'])
+    const think = m.ticks[0]!.thinking[0]!
+    expect(modelInput(m, think).map((x) => x.content)).toEqual(['what time is it', '<screen title="Home">…</screen>'])
+    expect(inputText(m, think)).toContain('# instructions\n# Stanley')
   })
 })
 

@@ -9,7 +9,7 @@
  *   pnpm eval todo --trace         # also print what the models read at the end of each run
  *
  * Options: --runs N (default 1), --concurrency N (default 4), --trace (every run), --verbose
- * (every run's ticks; by default only failed runs print them).
+ * (every run's ticks; by default only failed runs print them), --jev-turns N (user turns Jev reads).
  */
 import { flag, loadEnv, median, pool, printUsage, report, runScenario, select, typeUtterance, type ScenarioResult } from './harness.mts'
 import { scenarios, type Scenario } from './scenarios.mts'

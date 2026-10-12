@@ -113,7 +113,7 @@
     <section class="left">
       <nav>
         <button class:active={tab === 'timeline'} onclick={() => (tab = 'timeline')}>Timeline</button>
-        <button class:active={tab === 'log'} onclick={() => (tab = 'log')}>Message log</button>
+        <button class:active={tab === 'log'} onclick={() => (tab = 'log')}>History</button>
         <span class="spacer"></span>
         {#if tab === 'timeline'}
           {#each Object.keys(hidden) as Category[] as c (c)}

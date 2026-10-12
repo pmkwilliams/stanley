@@ -1,40 +1,23 @@
 import { describe, expect, it } from 'vitest'
-import type { LogEntry, Message } from '../src/log'
+import type { StepTarget } from '../src/conversation'
 import { narrate } from '../src/narrate'
 import type { Screen } from '../src/world'
+import { recorder } from './history'
 
 const screen: Screen = { id: 'todo:list', title: 'To-do', visible: true, markdown: '# To-do\n- [ ] Buy eggs', elements: [] }
-const entries = (...messages: Message[]): LogEntry[] => messages.map((m) => ({ ...m, at: 0 }) as LogEntry)
-const typed = (text: string, utteranceId: number, wrote?: 'user' | 'stanley'): Message => ({
-  role: 'step',
-  id: 's',
-  by: 'thinking',
-  target: { kind: 'element', name: 'Add a task', role: 'field', nodeKind: 'input', nodeId: 'todo:title' },
-  text,
-  wrote,
-  result: { summary: 'typed' },
-  utteranceId,
-})
+const field: StepTarget = { kind: 'element', name: 'Add a task', role: 'field', nodeKind: 'input', nodeId: 'todo:title' }
 
 describe('narrate', () => {
   it("puts an utterance's words before the steps taken for it, even ones decided mid-sentence", () => {
-    const log = entries(
-      { role: 'event', kind: 'task-start' },
-      { role: 'step', id: 's1', by: 'fast', target: { kind: 'app', appId: 'todo', title: 'To-do' }, result: { summary: 'Opened To-do' }, utteranceId: 1 },
-      { role: 'user', content: 'add a task called', utteranceId: 1 },
-      { role: 'user', content: 'buy eggs', utteranceId: 1 },
-      typed('Buy eggs', 1),
-      {
-        role: 'step',
-        id: 's3',
-        by: 'fast',
-        target: { kind: 'element', name: 'Add a task › press Enter', role: 'key', nodeKind: 'action', nodeId: 'todo:add' },
-        result: { summary: 'Added to-do "Buy eggs".' },
-        utteranceId: 1,
-      },
-      { role: 'event', kind: 'task-end' },
-    )
-    expect(narrate(log, screen)).toBe(
+    const r = recorder()
+    r.event('task-start')
+    r.step({ target: { kind: 'app', appId: 'todo', title: 'To-do' }, summary: 'Opened To-do', utteranceId: 1 })
+    r.words(1, 'add a task called')
+    r.words(1, 'buy eggs')
+    r.step({ target: field, text: 'Buy eggs', by: 'thinking', summary: 'typed', utteranceId: 1 })
+    r.step({ target: { kind: 'element', name: 'Add a task › press Enter', role: 'key', nodeKind: 'action', nodeId: 'todo:add' }, summary: 'Added to-do "Buy eggs".', utteranceId: 1 })
+    r.event('task-end')
+    expect(narrate(r.h.view(), screen)).toBe(
       [
         '## Conversation',
         'User: add a task called buy eggs',
@@ -49,20 +32,22 @@ describe('narrate', () => {
   })
 
   it('shows the live utterance with its unfinished words, and marks it while the user is speaking', () => {
-    const log = entries({ role: 'user', content: 'add a task', utteranceId: 2 })
-    expect(narrate(log, screen, { utteranceId: 2, text: 'add a task called um', ended: false })).toContain('User (still speaking): add a task called um')
-    expect(narrate([], screen, { utteranceId: 3, text: 'open', ended: false })).toContain('## Conversation\nUser (still speaking): open\n')
+    const r = recorder()
+    r.words(2, 'add a task')
+    const live = { utteranceId: 2, text: 'add a task called um', ended: false }
+    expect(narrate(r.h.view(live), screen, live)).toContain('User (still speaking): add a task called um')
+    const fresh = { utteranceId: 3, text: 'open', ended: false }
+    expect(narrate(recorder().h.view(fresh), screen, fresh)).toContain('## Conversation\nUser (still speaking): open\n')
   })
 
   it("says whose words were typed, what Stanley said, and the user's own clicks", () => {
-    const log = entries(
-      { role: 'user', content: 'reply with something funny', utteranceId: 1 },
-      typed('Ramen? Always.', 1, 'stanley'),
-      { role: 'said', content: 'I wrote "Ramen? Always." Send it?' },
-      { role: 'step', id: 'u1', by: 'user', target: { kind: 'element', name: 'Send reply', role: 'button', nodeKind: 'action', nodeId: 'e:send' }, result: { summary: 'Reply sent' } },
-      { role: 'step', id: 'u2', by: 'user', target: { kind: 'home' }, result: { summary: 'Went home' } },
-    )
-    expect(narrate(log, { ...screen, visible: false })).toBe(
+    const r = recorder()
+    r.words(1, 'reply with something funny')
+    r.step({ target: field, text: 'Ramen? Always.', wrote: 'stanley', by: 'thinking', summary: 'typed', utteranceId: 1 })
+    r.said('I wrote "Ramen? Always." Send it?')
+    r.userStep({ kind: 'element', name: 'Send reply', role: 'button', nodeKind: 'action', nodeId: 'e:send' }, 'Reply sent')
+    r.userStep({ kind: 'home' }, 'Went home')
+    expect(narrate(r.h.view(), { ...screen, visible: false })).toBe(
       [
         '## Conversation',
         'User: reply with something funny',
@@ -78,23 +63,21 @@ describe('narrate', () => {
   })
 
   it('splits a turn at a change made before the user finished, so a correction reads after it', () => {
-    const tick = (name: string, heardWords: number): Message => ({
-      role: 'step',
-      id: name,
-      by: 'fast',
-      target: { kind: 'element', name: `${name} › checkbox`, role: 'checkbox', nodeKind: 'action', nodeId: name },
-      result: { summary: `Marked "${name}" done` },
+    const tick = (name: string, heardWords: number) => ({
+      target: { kind: 'element' as const, name: `${name} › checkbox`, role: 'checkbox', nodeKind: 'action' as const, nodeId: name },
+      summary: `Marked "${name}" done`,
       utteranceId: 1,
       heardWords,
     })
-    const log = entries(
-      { role: 'step', id: 'o', by: 'fast', target: { kind: 'app', appId: 'todo', title: 'To-do' }, result: { summary: 'Opened' }, utteranceId: 1, heardWords: 2 },
-      { role: 'user', content: 'tick the blue one', utteranceId: 1 },
-      tick('Blue', 4),
-      { role: 'user', content: 'sorry the red one', utteranceId: 1 },
-      tick('Red', 8),
-    )
-    expect(narrate(log, screen).split('\n').slice(0, 6)).toEqual([
+    const r = recorder()
+    r.step({ target: { kind: 'app', appId: 'todo', title: 'To-do' }, summary: 'Opened', utteranceId: 1, heardWords: 2 })
+    r.words(1, 'tick the blue one')
+    r.step(tick('Blue', 4))
+    const live = { utteranceId: 1, text: 'tick the blue one sorry the', ended: false }
+    expect(narrate(r.h.view(live), screen, live)).toContain('Stanley pressed [Blue › checkbox]: Marked "Blue" done.\nUser (went on, still speaking): sorry the\n')
+    r.words(1, 'sorry the red one')
+    r.step(tick('Red', 8))
+    expect(narrate(r.h.view(), screen).split('\n').slice(0, 6)).toEqual([
       '## Conversation',
       'User: tick the blue one',
       'Stanley opened To-do.',
@@ -102,20 +85,33 @@ describe('narrate', () => {
       'User (went on): sorry the red one',
       'Stanley pressed [Red › checkbox]: Marked "Red" done.',
     ])
-    expect(narrate(log.slice(0, 3), screen, { utteranceId: 1, text: 'tick the blue one sorry the', ended: false })).toContain(
-      'Stanley pressed [Blue › checkbox]: Marked "Blue" done.\nUser (went on, still speaking): sorry the\n',
-    )
   })
 
   it('leaves out task boundaries and anything that is not a step, words or speech', () => {
-    const log = entries({ role: 'event', kind: 'task-start' }, { role: 'event', kind: 'task-end' })
-    expect(narrate(log, screen)).toContain('## Conversation\n(nothing yet)\n')
+    const r = recorder()
+    r.event('task-start')
+    r.event('task-end')
+    expect(narrate(r.h.view(), screen)).toContain('## Conversation\n(nothing yet)\n')
   })
 
   it('keeps only the most recent turns of a long session', () => {
-    const log = entries(...Array.from({ length: 5 }, (_, i): Message => ({ role: 'user', content: `turn ${i}`, utteranceId: i })))
-    const text = narrate(log, screen, undefined, 2)
+    const r = recorder()
+    for (let i = 0; i < 5; i++) {
+      r.words(i, `turn ${i}`)
+      r.h.begin()
+    }
+    const text = narrate(r.h.view(), screen, undefined, 2)
     expect(text).toContain('## Conversation\n(earlier conversation left out)\nUser: turn 3\nUser: turn 4\n')
     expect(text).not.toContain('turn 2')
+  })
+
+  it('reads the same whether the order was committed at each utterance or is still staged', () => {
+    const r = recorder()
+    r.words(1, 'open my email')
+    r.step({ target: { kind: 'app', appId: 'email', title: 'Email' }, utteranceId: 1, heardWords: 2 })
+    r.said('Here it is.')
+    const staged = narrate(r.h.view(), screen)
+    r.h.begin()
+    expect(narrate(r.h.view(), screen)).toBe(staged)
   })
 })
