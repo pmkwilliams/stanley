@@ -1,0 +1,147 @@
+/*
+ * Stanley's design tokens: shadcn's semantic colours on Tailwind's default scales.
+ * The shell's CSS imports Tailwind, then this. Dark is the default; `data-theme="light"` on <html> switches.
+ * See docs/APP-DESIGN.md for how apps use them.
+ */
+
+@import 'tw-animate-css';
+
+/* Every package's markup (apps and the kit) is scanned for classes. */
+@source '../..';
+
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+:root {
+  /* 8px, so shadcn's radius-sm/md/lg/xl land on Tailwind's defaults (4/6/8/12). */
+  --radius: 0.5rem;
+
+  --background: #0a0a0b;
+  --foreground: #ececee;
+  /* Window glass: used as bg-card/80 with a backdrop blur. */
+  --card: #1a1a1c;
+  --card-foreground: #ececee;
+  --popover: #1c1c1e;
+  --popover-foreground: #ececee;
+  --primary: #5697d7;
+  --primary-foreground: #ffffff;
+  --secondary: rgba(255, 255, 255, 0.08);
+  --secondary-foreground: #ececee;
+  /* Grouped lists and cards inside a window: a tint, so the glass shows through. */
+  --muted: rgba(255, 255, 255, 0.05);
+  --muted-foreground: #8e8e93;
+  --accent: rgba(255, 255, 255, 0.08);
+  --accent-foreground: #ececee;
+  --destructive: #ff6363;
+  --warning: #f59e0b;
+  --success: #22c55e;
+  --border: rgba(255, 255, 255, 0.1);
+  --input: rgba(255, 255, 255, 0.12);
+  --ring: #5697d7;
+
+  /* Shell-only surfaces. */
+  --pill: rgba(255, 255, 255, 0.1);
+  --player: #0c0a09;
+  /* Lock screen text: the primary, lightened to read on the dark wallpaper. */
+  --ink: color-mix(in srgb, var(--primary), white 80%);
+  /* Lifts captions off the presence behind them. */
+  --halo: rgba(0, 0, 0, 0.6);
+  --window-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 0 0 0.5px rgba(0, 0, 0, 0.8), 0 24px 80px rgba(0, 0, 0, 0.55);
+  --wallpaper:
+    radial-gradient(1200px 600px at 15% -10%, rgba(255, 255, 255, 0.07), transparent 60%),
+    radial-gradient(900px 500px at 110% 110%, color-mix(in srgb, var(--primary) 6%, transparent), transparent 60%),
+    var(--background);
+
+  color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  --background: #f2f2f4;
+  --foreground: #1c1c1e;
+  --card: #ffffff;
+  --card-foreground: #1c1c1e;
+  --popover: #ffffff;
+  --popover-foreground: #1c1c1e;
+  --primary: #3d84c9;
+  --primary-foreground: #ffffff;
+  --secondary: rgba(0, 0, 0, 0.05);
+  --secondary-foreground: #1c1c1e;
+  --muted: rgba(0, 0, 0, 0.035);
+  --muted-foreground: #6e6e73;
+  --accent: rgba(0, 0, 0, 0.05);
+  --accent-foreground: #1c1c1e;
+  --destructive: #e5484d;
+  --warning: #d97706;
+  --success: #16a34a;
+  --border: rgba(0, 0, 0, 0.08);
+  --input: rgba(0, 0, 0, 0.1);
+  --ring: #3d84c9;
+
+  --pill: rgba(255, 255, 255, 0.6);
+  --player: #ffffff;
+  --ink: color-mix(in srgb, var(--primary), black 62%);
+  --halo: rgba(255, 255, 255, 0.85);
+  --window-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 0 0 0.5px rgba(0, 0, 0, 0.12), 0 24px 80px rgba(0, 0, 0, 0.16);
+  --wallpaper:
+    radial-gradient(1200px 600px at 15% -10%, rgba(255, 255, 255, 0.8), transparent 60%),
+    radial-gradient(900px 500px at 110% 110%, color-mix(in srgb, var(--primary) 8%, transparent), transparent 60%),
+    var(--background);
+
+  color-scheme: light;
+}
+
+@theme inline {
+  --font-sans: 'Inter Variable', -apple-system, BlinkMacSystemFont, ui-sans-serif, system-ui, sans-serif;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-warning: var(--warning);
+  --color-success: var(--success);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-pill: var(--pill);
+  --color-player: var(--player);
+  --color-ink: var(--ink);
+  --color-halo: var(--halo);
+  --shadow-window: var(--window-shadow);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply bg-background font-sans text-foreground antialiased;
+  }
+  ::selection {
+    @apply bg-primary/30;
+  }
+  ::-webkit-scrollbar {
+    @apply size-2.5;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-full border-[3px] border-solid border-transparent bg-foreground/15 bg-clip-content;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+}

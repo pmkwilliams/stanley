@@ -1,1 +1,6 @@
-{ "extends": "../../tsconfig.base.json", "include": ["src/**/*.ts"] }
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "lib": ["ES2023", "DOM"], "paths": { "$ui": ["./src"], "$ui/*": ["./src/*"] } },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/components"]
+}

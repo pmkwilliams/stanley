@@ -1,4 +1,6 @@
 import { svelte } from '@sveltejs/vite-plugin-svelte'
+import tailwindcss from '@tailwindcss/vite'
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'electron-vite'
 
 // Workspace packages ship TS source, so they must be bundled rather than externalized.
@@ -19,6 +21,9 @@ const bundled = [
   '@stanley/files',
 ]
 
+/** The app kit's shadcn components import each other through `$ui`. */
+const ui = fileURLToPath(new URL('../../packages/app-ui/src', import.meta.url))
+
 export default defineConfig({
   main: {
     build: { externalizeDeps: { exclude: bundled } },
@@ -27,6 +32,7 @@ export default defineConfig({
     build: { externalizeDeps: { exclude: bundled } },
   },
   renderer: {
-    plugins: [svelte()],
+    plugins: [svelte(), tailwindcss()],
+    resolve: { alias: { $ui: ui } },
   },
 })

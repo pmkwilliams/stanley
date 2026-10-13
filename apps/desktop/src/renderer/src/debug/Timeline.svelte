@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '@stanley/app-ui/components/button'
   import type { DebugEvent } from '../../../shared/ipc'
   import { ms, offset, tickLabel, type Category, type DebugModel, type Row, type TaskView } from './model'
 
@@ -108,63 +109,51 @@
   function duration(task: TaskView) {
     return task.endAt ? `${((task.endAt - task.at) / 1000).toFixed(1)}s` : 'open'
   }
+
+  /** A tick's left edge: green when it went through, amber when held back, red when it failed. */
+  function edge(outcome: string | undefined) {
+    if (outcome === undefined) return 'border-l-muted-foreground'
+    if (outcome === 'gated' || outcome === 'stale-discarded') return 'border-l-warning'
+    if (outcome === 'forced-stop' || outcome === 'error') return 'border-l-destructive'
+    return 'border-l-success'
+  }
+
+  const tones: Record<string, string> = { muted: 'text-muted-foreground', strong: 'font-semibold', bad: 'text-destructive' }
+  const time = 'w-16 flex-none text-muted-foreground tabular-nums'
+  const who = 'w-14 flex-none text-muted-foreground'
+  const sub = 'truncate pl-33 text-muted-foreground'
 </script>
 
-<ol bind:this={list}>
+<ol class="min-h-0 overflow-auto py-1 text-xs" bind:this={list}>
   {#each rows as row (key(row))}
     {#if row.kind === 'task'}
-      <li class="task">
+      <li class="mt-2.5 flex items-center gap-2 border-t bg-muted px-2.5 py-1.5">
         <strong>Task {row.task.index}</strong>
-        <span class="utterance">{row.task.utterances.join(' / ') || '—'}</span>
-        <span class="muted">{row.task.ticks.length} ticks · {duration(row.task)}</span>
-        <button onclick={() => onexport(row.task)} title="Copy a scenario for evals/scenarios.mts">Copy as eval</button>
+        <span class="flex-1 truncate">{row.task.utterances.join(' / ') || '—'}</span>
+        <span class="text-muted-foreground">{row.task.ticks.length} ticks · {duration(row.task)}</span>
+        <Button variant="outline" size="xs" onclick={() => onexport(row.task)} title="Copy a scenario for evals/scenarios.mts">Copy as eval</Button>
       </li>
     {:else if row.kind === 'tick'}
       {@const t = row.tick}
-      <li class="tick {t.end?.outcome ?? 'pending'}" class:selected={t.id === selectedId}>
-        <button onclick={() => onselect(t.id)}>
-          <span class="time">{offset(t.at, model.startAt)}</span>
-          <span class="who">#{t.id}</span>
-          <span class="reason">{t.start.reason}</span>
-          <span class="choice">{tickLabel(t)}</span>
-          {#if t.decision}<span class="muted">{t.decision.result.answers.next?.confidence.toFixed(2)} · {ms(t.decision.result.latencyMs)}</span>{/if}
+      <li class={['my-0.5 border-l-3 px-2.5 py-0.5', edge(t.end?.outcome), t.id === selectedId && 'bg-primary/20']}>
+        <button class="flex w-full cursor-pointer gap-1.5 py-0.5 text-left" onclick={() => onselect(t.id)}>
+          <span class={time}>{offset(t.at, model.startAt)}</span>
+          <span class={who}>#{t.id}</span>
+          <span class="w-11 flex-none text-muted-foreground">{t.start.reason}</span>
+          <span class="flex-1 truncate font-semibold">{tickLabel(t)}</span>
+          {#if t.decision}<span class="text-muted-foreground">{t.decision.result.answers.next?.confidence.toFixed(2)} · {ms(t.decision.result.latencyMs)}</span>{/if}
         </button>
-        {#each t.acts as act, i (i)}{#if act.summary}<div class="sub">→ {act.summary}</div>{/if}{/each}
-        {#each t.thinking as th, i (i)}{#if th.end?.text}<div class="sub">said "{th.end.text}"</div>{/if}{/each}
-        {#if t.end?.outcome === 'error'}<div class="sub bad">{t.end.detail}</div>{/if}
+        {#each t.acts as act, i (i)}{#if act.summary}<div class={sub}>→ {act.summary}</div>{/if}{/each}
+        {#each t.thinking as th, i (i)}{#if th.end?.text}<div class={sub}>said "{th.end.text}"</div>{/if}{/each}
+        {#if t.end?.outcome === 'error'}<div class="truncate pl-33 text-destructive">{t.end.detail}</div>{/if}
       </li>
     {:else}
       {@const d = describe(row.event)}
-      <li class="event {d.tone ?? ''}">
-        <span class="time">{offset(row.event.at, model.startAt)}</span>
-        <span class="who">{d.who}</span>
-        <span class="text">{d.text}</span>
+      <li class="flex gap-1.5 px-2.5 py-0.5">
+        <span class={time}>{offset(row.event.at, model.startAt)}</span>
+        <span class={who}>{d.who}</span>
+        <span class={['truncate', d.tone && tones[d.tone]]}>{d.text}</span>
       </li>
     {/if}
   {/each}
 </ol>
-
-<style>
-  ol { list-style: none; margin: 0; padding: 4px 0; overflow: auto; font-size: 12px; min-height: 0; }
-  li { padding: 2px 10px; }
-  .time { color: var(--muted); font-variant-numeric: tabular-nums; width: 64px; flex: none; }
-  .who { width: 56px; flex: none; color: var(--muted); }
-  .event { display: flex; gap: 6px; }
-  .event.muted .text { color: var(--muted); }
-  .event.strong .text { font-weight: 600; }
-  .event.bad .text, .bad { color: var(--danger); }
-  .text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .task { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding: 6px 10px; border-top: 1px solid var(--border); background: var(--panel); }
-  .task .utterance { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .task button { font-size: 11px; background: none; border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; cursor: pointer; }
-  .tick { border-left: 3px solid #22c55e; margin: 2px 0; }
-  .tick.gated, .tick.stale-discarded { border-left-color: #f59e0b; }
-  .tick.forced-stop, .tick.error { border-left-color: var(--danger); }
-  .tick.pending { border-left-color: var(--muted); }
-  .tick.selected { background: var(--focus); }
-  .tick button { display: flex; gap: 6px; width: 100%; background: none; border: 0; padding: 2px 0; text-align: left; cursor: pointer; }
-  .tick .reason { width: 44px; flex: none; color: var(--muted); }
-  .tick .choice { font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .sub { padding-left: 132px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .muted { color: var(--muted); }
-</style>

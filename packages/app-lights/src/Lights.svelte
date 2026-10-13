@@ -1,6 +1,13 @@
 <script lang="ts">
   import type { AppUiProps } from '@stanley/app-sdk'
   import Icon from '@stanley/app-ui/Icon.svelte'
+  import * as Alert from '@stanley/app-ui/components/alert'
+  import * as App from '@stanley/app-ui/components/app'
+  import { Button } from '@stanley/app-ui/components/button'
+  import * as Empty from '@stanley/app-ui/components/empty'
+  import * as Item from '@stanley/app-ui/components/item'
+  import { Slider } from '@stanley/app-ui/components/slider'
+  import { Switch } from '@stanley/app-ui/components/switch'
   import {
     CONNECT_TEXT,
     CONNECT_TITLE,
@@ -37,189 +44,185 @@
     const on = lit(lightsOf(data, room))
     return on.length ? Math.round(on.reduce((n, l) => n + l.brightness, 0) / on.length) : 0
   })
+
+  const cap = (s: string) => s[0]!.toUpperCase() + s.slice(1)
 </script>
+
+<!-- A bulb lights up in the color it shows: content, like artwork. A single color also glows around it. -->
+{#snippet bulb(g: string | undefined)}
+  <span
+    class={[
+      'flex size-8 items-center justify-center rounded-full transition-colors duration-200',
+      g ? 'text-neutral-900 shadow-md shadow-(color:--glow)/60' : 'bg-accent text-muted-foreground',
+    ]}
+    style:--glow={g}
+    style:background={g}
+  >
+    <Icon name="lightbulb" size={18} />
+  </span>
+{/snippet}
+
+{#snippet notice(text: string)}
+  <Alert.Root variant="destructive" class="mb-3">
+    <Icon name="exclamation" size={16} />
+    <Alert.Description>{text}</Alert.Description>
+  </Alert.Root>
+{/snippet}
 
 {#snippet roomRow(r: Room)}
   {@const lights = lightsOf(data, r)}
   {@const state = roomState(lights)}
-  {@const g = glow(lights)}
   <li>
-    <div class="ui-row interactive">
-      <span class="ui-row-lead bulb" class:on={!!g} style:--glow={g}><Icon name="lightbulb" size={18} /></span>
-      <button class="ui-row-main open" onclick={() => perform(`room/${r.id}`)}>
-        <span class="ui-row-title">{r.name}</span>
-        <span class="ui-row-sub">{state === 'off' ? 'Off' : state[0]!.toUpperCase() + state.slice(1)}</span>
+    <Item.Root size="row" class="hover:bg-accent has-[.open:focus-visible]:ring-3 has-[.open:focus-visible]:ring-ring/50">
+      <Item.Media>{@render bulb(glow(lights))}</Item.Media>
+      <!-- The open button fills the row, so the whole row opens the room but the switch stays its own. -->
+      <button class="open flex min-w-0 flex-1 self-stretch text-left outline-none" onclick={() => perform(`room/${r.id}`)}>
+        <Item.Content class="justify-center gap-0">
+          <Item.Title>{r.name}</Item.Title>
+          <Item.Description class="text-xs">{state === 'off' ? 'Off' : cap(state)}</Item.Description>
+        </Item.Content>
       </button>
-      <input type="checkbox" role="switch" class="ui-switch" aria-label="switch" checked={state !== 'off'} onchange={() => perform(`room/${r.id}/power`)} />
-    </div>
+      <Switch aria-label="switch" checked={state !== 'off'} onCheckedChange={() => perform(`room/${r.id}/power`)} />
+    </Item.Root>
   </li>
 {/snippet}
 
-<section class="ui-app compact lights">
+<App.Root size="compact">
   {#if data.status !== 'ready'}
-    <header class="ui-bar"><h1 class="ui-title">Lights</h1></header>
-    <div class="ui-body">
-      <div class="ui-empty">
-        <Icon name="lightbulb" size={40} />
-        {#if data.status === 'unpaired'}
-          <p class="ui-empty-title">{CONNECT_TITLE}</p>
-          <p class="ui-empty-text">{CONNECT_TEXT}</p>
-          {#if data.error}<p class="ui-empty-text problem" role="alert">{data.error}</p>{/if}
-          <button class="ui-btn primary" onclick={() => perform('connect')}>Connect</button>
-        {:else}
-          <p class="ui-empty-title">{OFFLINE_TITLE}</p>
-          {#if data.error}<p class="ui-empty-text">{data.error}</p>{/if}
-          <button class="ui-btn" onclick={() => perform('retry')}>Try again</button>
-        {/if}
-      </div>
-    </div>
+    <App.Bar><App.Title>Lights</App.Title></App.Bar>
+    <App.Body>
+      <Empty.Root>
+        <Empty.Header>
+          <Empty.Media class="text-muted-foreground/60"><Icon name="lightbulb" size={40} /></Empty.Media>
+          {#if data.status === 'unpaired'}
+            <Empty.Title>{CONNECT_TITLE}</Empty.Title>
+            <Empty.Description>{CONNECT_TEXT}</Empty.Description>
+            {#if data.error}<Empty.Description class="text-destructive" role="alert">{data.error}</Empty.Description>{/if}
+          {:else}
+            <Empty.Title>{OFFLINE_TITLE}</Empty.Title>
+            {#if data.error}<Empty.Description>{data.error}</Empty.Description>{/if}
+          {/if}
+        </Empty.Header>
+        <Empty.Content>
+          {#if data.status === 'unpaired'}
+            <Button onclick={() => perform('connect')}>Connect</Button>
+          {:else}
+            <Button variant="secondary" onclick={() => perform('retry')}>Try again</Button>
+          {/if}
+        </Empty.Content>
+      </Empty.Root>
+    </App.Body>
   {:else if room}
     {@const lights = lightsOf(data, room)}
     {@const preset = roomPreset(lights)}
     {@const presets = presetsFor(lights)}
-    <header class="ui-bar">
-      <button class="ui-btn plain small back" onclick={() => perform('home')}><Icon name="chevron-left" size={16} weight={2} />Rooms</button>
-      <h1 class="ui-title">{room.name}</h1>
-      <span class="ui-spacer"></span>
-      <input type="checkbox" role="switch" class="ui-switch" aria-label={room.name} checked={roomState(lights) !== 'off'} onchange={() => perform(`room/${room.id}/power`)} />
-    </header>
+    <App.Bar>
+      <Button variant="ghost" size="sm" class="-ml-2 gap-0.5 pl-1 text-muted-foreground" onclick={() => perform('home')}>
+        <Icon name="chevron-left" size={16} weight={2} />Rooms
+      </Button>
+      <App.Title>{room.name}</App.Title>
+      <Switch aria-label={room.name} checked={roomState(lights) !== 'off'} onCheckedChange={() => perform(`room/${room.id}/power`)} />
+    </App.Bar>
 
-    <div class="ui-body">
-      {#if data.error}<p class="ui-notice" role="alert"><Icon name="exclamation" size={16} /><span>{data.error}</span></p>{/if}
+    <App.Body>
+      {#if data.error}{@render notice(data.error)}{/if}
 
       {#if lights.some((l) => l.dims)}
-        <div class="ui-card dimmer">
+        <div class="flex items-center gap-3 rounded-lg bg-muted px-4 py-3 text-muted-foreground">
           <Icon name="sun" size={16} />
-          <input
-            type="range"
-            aria-label="Brightness"
-            min="0"
-            max="100"
+          <Slider
+            thumbLabel="Brightness"
+            type="single"
+            min={0}
+            max={100}
             value={dragging ?? brightness}
-            style:--fill="{dragging ?? brightness}%"
-            oninput={(e) => (dragging = Number(e.currentTarget.value))}
-            onchange={(e) => {
-              perform(`room/${room.id}/brightness`, { text: `${e.currentTarget.value}%` })
+            onValueChange={(v) => (dragging = v)}
+            onValueCommit={(v) => {
+              perform(`room/${room.id}/brightness`, { text: `${v}%` })
               dragging = null
             }}
           />
-          <span class="pct ui-num">{dragging ?? brightness}%</span>
+          <span class="w-10 text-right text-sm text-foreground tabular-nums">{dragging ?? brightness}%</span>
         </div>
       {/if}
 
       {#if room.scenes.length}
-        <section class="ui-section">
-          <h2 class="ui-section-title">Scenes</h2>
-          <div class="scenes">
+        <App.Section title="Scenes">
+          <div class="flex flex-wrap gap-2 px-1">
             {#each room.scenes as sc (sc.id)}
-              <button class="ui-btn small" onclick={() => perform(`room/${room.id}/scene/${sc.id}`)}>{sc.name}</button>
+              <Button variant="secondary" size="sm" onclick={() => perform(`room/${room.id}/scene/${sc.id}`)}>{sc.name}</Button>
             {/each}
           </div>
-        </section>
+        </App.Section>
       {/if}
 
       {#if presets.length}
-        <section class="ui-section">
-          <h2 class="ui-section-title" id="lights-color">Color</h2>
-          <div class="swatches" role="radiogroup" aria-labelledby="lights-color">
+        {#snippet colorTitle()}<span id="lights-color">Color</span>{/snippet}
+        <App.Section title={colorTitle}>
+          <div class="flex flex-wrap gap-2.5 px-1.5 py-0.5" role="radiogroup" aria-labelledby="lights-color">
             {#each presets as p (p.id)}
+              <!-- Swatches are content: each shows the light's own color. -->
               <button
-                class="swatch"
+                class="size-8 rounded-full inset-ring inset-ring-foreground/20 outline-2 outline-offset-2 outline-transparent transition-[outline-color,scale] duration-200 hover:scale-110 focus-visible:ring-3 focus-visible:ring-ring/50 aria-checked:outline-primary"
                 role="radio"
                 aria-checked={p === preset}
                 aria-label={p.label}
                 title={p.label}
-                style:--swatch={p.swatch}
+                style:background={p.swatch}
                 onclick={() => perform(`room/${room.id}/color/${p.id}`)}
               ></button>
             {/each}
           </div>
-        </section>
+        </App.Section>
       {/if}
 
-      <section class="ui-section">
-        <h2 class="ui-section-title">Lights</h2>
-        <ul class="ui-group">
+      <App.Section title="Lights">
+        <App.Group>
           {#each lights as l (l.id)}
-            {@const g = glowOf(l)}
             <li>
-              <label class="ui-row" class:unreachable={!l.reachable}>
-                <span class="ui-row-lead bulb" class:on={!!g} style:--glow={g}><Icon name="lightbulb" size={18} /></span>
-                <span class="ui-row-main">
-                  <span class="ui-row-title">{l.name}</span>
-                  <span class="ui-row-sub">{lightState(l)[0]!.toUpperCase() + lightState(l).slice(1)}</span>
-                </span>
-                <input type="checkbox" role="switch" class="ui-switch" aria-label={l.name} checked={l.on} disabled={!l.reachable} onchange={() => perform(`light/${l.id}/power`)} />
-              </label>
+              <Item.Root size="row" class={l.reachable ? undefined : 'opacity-50'}>
+                {#snippet child({ props })}
+                  <label {...props}>
+                    <Item.Media>{@render bulb(glowOf(l))}</Item.Media>
+                    <Item.Content class="gap-0">
+                      <Item.Title>{l.name}</Item.Title>
+                      <Item.Description class="text-xs">{cap(lightState(l))}</Item.Description>
+                    </Item.Content>
+                    <Switch aria-label={l.name} checked={l.on} disabled={!l.reachable} onCheckedChange={() => perform(`light/${l.id}/power`)} />
+                  </label>
+                {/snippet}
+              </Item.Root>
             </li>
           {/each}
-        </ul>
-      </section>
-    </div>
+        </App.Group>
+      </App.Section>
+    </App.Body>
   {:else}
-    <header class="ui-bar">
-      <h1 class="ui-title">Lights</h1>
-      <span class="ui-spacer"></span>
-      {#if data.lights.length}<button class="ui-btn small" onclick={() => perform('all')}>{anyOn ? 'Turn all off' : 'Turn all on'}</button>{/if}
-    </header>
-    <div class="ui-body">
-      {#if data.error}<p class="ui-notice" role="alert"><Icon name="exclamation" size={16} /><span>{data.error}</span></p>{/if}
+    <App.Bar>
+      <App.Title>Lights</App.Title>
+      {#if data.lights.length}<Button variant="secondary" size="sm" onclick={() => perform('all')}>{anyOn ? 'Turn all off' : 'Turn all on'}</Button>{/if}
+    </App.Bar>
+    <App.Body>
+      {#if data.error}{@render notice(data.error)}{/if}
       {#each [['Rooms', 'room'], ['Zones', 'zone']] as const as [title, kind] (kind)}
         {@const rooms = data.rooms.filter((r) => r.kind === kind)}
         {#if rooms.length}
-          <section class="ui-section">
-            <h2 class="ui-section-title">{title}</h2>
-            <ul class="ui-group">
+          <App.Section {title}>
+            <App.Group>
               {#each rooms as r (r.id)}{@render roomRow(r)}{/each}
-            </ul>
-          </section>
+            </App.Group>
+          </App.Section>
         {/if}
       {/each}
       {#if !data.rooms.length}
-        <div class="ui-empty">
-          <Icon name="lightbulb" size={40} />
-          <p class="ui-empty-title">No rooms yet</p>
-          <p class="ui-empty-text">Set up rooms in the Hue app and they'll show here.</p>
-        </div>
+        <Empty.Root>
+          <Empty.Header>
+            <Empty.Media class="text-muted-foreground/60"><Icon name="lightbulb" size={40} /></Empty.Media>
+            <Empty.Title>No rooms yet</Empty.Title>
+            <Empty.Description>Set up rooms in the Hue app and they'll show here.</Empty.Description>
+          </Empty.Header>
+        </Empty.Root>
       {/if}
-    </div>
+    </App.Body>
   {/if}
-</section>
-
-<style>
-  .ui-notice { margin: 0 0 12px; }
-  .problem { color: var(--danger); }
-  .ui-empty .ui-btn { margin-top: 10px; }
-
-  .back { margin-left: -8px; gap: 2px; padding-left: 4px; }
-  .ui-bar .ui-title { min-width: 0; }
-
-  /* The open button fills the row, so the whole row opens the room but the switch stays its own. */
-  .open { align-self: stretch; justify-content: center; padding: 0; color: inherit; font: inherit; text-align: left; background: none; border: 0; cursor: default; }
-
-  /* A bulb lights up in the color it shows: content, like artwork. */
-  .bulb { width: 30px; height: 30px; border-radius: 50%; background: var(--fill); transition: background var(--dur) var(--ease), color var(--dur) var(--ease); }
-  .bulb.on { color: #1d1d1f; background: var(--glow); box-shadow: 0 0 14px -2px color-mix(in srgb, var(--glow) 60%, transparent); }
-  .unreachable { opacity: 0.5; }
-
-  .dimmer { display: flex; align-items: center; gap: 12px; padding: 12px 16px; color: var(--muted); }
-  .pct { width: 38px; text-align: right; color: var(--text); font-size: 13px; }
-  .dimmer input {
-    flex: 1; height: 28px; margin: 0; appearance: none; border-radius: var(--r-capsule); cursor: default;
-    background: linear-gradient(90deg, var(--accent) var(--fill), var(--fill-active) var(--fill));
-  }
-  .dimmer input::-webkit-slider-thumb { appearance: none; width: 28px; height: 28px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35); }
-  .dimmer input:focus-visible { outline: none; box-shadow: var(--focus-ring); }
-
-  .scenes { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 4px; }
-
-  .swatches { display: flex; flex-wrap: wrap; gap: 10px; padding: 2px 6px; }
-  .swatch {
-    width: 30px; height: 30px; padding: 0; border: 0; border-radius: 50%; cursor: default;
-    background: var(--swatch); box-shadow: inset 0 0 0 0.5px rgba(127, 127, 127, 0.4);
-    outline: 2px solid transparent; outline-offset: 2px; transition: outline-color var(--dur) var(--ease), transform var(--dur-fast);
-  }
-  .swatch:hover { transform: scale(1.08); }
-  .swatch[aria-checked='true'] { outline-color: var(--accent); }
-  .swatch:focus-visible { box-shadow: var(--focus-ring); }
-</style>
+</App.Root>

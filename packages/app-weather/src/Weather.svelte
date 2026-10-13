@@ -2,6 +2,12 @@
   import { DEFAULT_AGENT_NAME, type AppUiProps } from '@stanley/app-sdk'
   import Icon from '@stanley/app-ui/Icon.svelte'
   import type { IconName } from '@stanley/app-ui/icons'
+  import * as Alert from '@stanley/app-ui/components/alert'
+  import * as App from '@stanley/app-ui/components/app'
+  import * as Empty from '@stanley/app-ui/components/empty'
+  import * as InputGroup from '@stanley/app-ui/components/input-group'
+  import * as Item from '@stanley/app-ui/components/item'
+  import { Spinner } from '@stanley/app-ui/components/spinner'
   import { EMPTY_TITLE, emptyText, conditionLabel, forecastTitle, shortDay, splitPlace, temp, type WeatherState } from './core'
 
   let { data, perform, agentName = DEFAULT_AGENT_NAME }: AppUiProps<WeatherState> = $props()
@@ -24,16 +30,31 @@
     perform('location')
   }
 
-  /** WMO code → glyph, and which part of it carries colour (the sun, the rain…); the cloud stays in text colour. */
+  /**
+   * Weather glyph colours are content, like artwork, so they're fixed per theme rather than tokens.
+   * Only the part that carries colour is tinted (the sun, the rain…); the cloud stays in text colour.
+   */
+  const tones = {
+    sun: 'text-amber-500 dark:text-amber-300',
+    partly: '[&_path:not(:last-child)]:stroke-amber-500 dark:[&_path:not(:last-child)]:stroke-amber-300',
+    cloud: '',
+    fog: '[&_path:not(:first-child)]:stroke-muted-foreground',
+    rain: '[&_path:not(:first-child)]:stroke-sky-600 dark:[&_path:not(:first-child)]:stroke-sky-400',
+    // Flakes are dots: a heavier stroke so they read at row size.
+    snow: '[&_path:not(:first-child)]:stroke-sky-400 dark:[&_path:not(:first-child)]:stroke-sky-200 [&_path:not(:first-child)]:stroke-[2.6]',
+    storm: '[&_path:not(:first-child)]:stroke-amber-500 dark:[&_path:not(:first-child)]:stroke-amber-300',
+  }
+
+  /** WMO code → glyph, and the classes that colour it. */
   function glyph(code: number): { icon: IconName; tone: string } {
-    if (code <= 1) return { icon: 'sun', tone: 'sun' }
-    if (code === 2) return { icon: 'cloud-sun', tone: 'partly' }
-    if (code === 3) return { icon: 'cloud', tone: 'cloud' }
-    if (code === 45 || code === 48) return { icon: 'cloud-fog', tone: 'fog' }
-    if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) return { icon: 'cloud-rain', tone: 'rain' }
-    if ((code >= 71 && code <= 77) || code === 85 || code === 86) return { icon: 'cloud-snow', tone: 'snow' }
-    if (code >= 95) return { icon: 'cloud-bolt', tone: 'storm' }
-    return { icon: 'cloud', tone: 'cloud' }
+    if (code <= 1) return { icon: 'sun', tone: tones.sun }
+    if (code === 2) return { icon: 'cloud-sun', tone: tones.partly }
+    if (code === 3) return { icon: 'cloud', tone: tones.cloud }
+    if (code === 45 || code === 48) return { icon: 'cloud-fog', tone: tones.fog }
+    if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) return { icon: 'cloud-rain', tone: tones.rain }
+    if ((code >= 71 && code <= 77) || code === 85 || code === 86) return { icon: 'cloud-snow', tone: tones.snow }
+    if (code >= 95) return { icon: 'cloud-bolt', tone: tones.storm }
+    return { icon: 'cloud', tone: tones.cloud }
   }
 
   /** Colours along the temperature scale (°C), cold to hot, like iOS Weather's range bars. */
@@ -68,13 +89,12 @@
   })
 </script>
 
-<section class="ui-app compact weather">
-  <header class="ui-bar">
-    <h1 class="ui-title">Weather</h1>
-    <form class="find" onsubmit={search}>
-      <label class="ui-field search">
-        <Icon name="search" size={16} />
-        <input
+<App.Root size="compact">
+  <App.Bar class="gap-4">
+    <App.Title>Weather</App.Title>
+    <form class="min-w-0 flex-1" onsubmit={search}>
+      <InputGroup.Root>
+        <InputGroup.Input
           name="city"
           placeholder="Search for a city"
           aria-label="Search for a city"
@@ -83,125 +103,86 @@
           value={data.box}
           onchange={(e) => perform('city', { text: e.currentTarget.value })}
         />
+        <InputGroup.Addon><Icon name="search" size={16} /></InputGroup.Addon>
         <!-- A new lookup over a forecast already on screen: spin here rather than move the forecast. -->
-        {#if busy && data.result}<span class="ui-spinner" role="status" aria-label="Looking up {data.box || data.query}"></span>{/if}
-      </label>
+        {#if busy && data.result}
+          <InputGroup.Addon align="inline-end"><Spinner aria-label="Looking up {data.box || data.query}" /></InputGroup.Addon>
+        {/if}
+      </InputGroup.Root>
     </form>
-  </header>
+  </App.Bar>
 
-  <div class="ui-body">
+  <App.Body>
     {#if data.error}
-      <p class="ui-notice" role="alert"><Icon name="exclamation" size={16} /><span>{data.error}</span></p>
+      <Alert.Root variant="destructive" class="mb-3">
+        <Icon name="exclamation" size={16} />
+        <Alert.Description>{data.error}</Alert.Description>
+      </Alert.Root>
     {/if}
 
     {#if data.result}
       {@const r = data.result}
       {@const place = splitPlace(r.place)}
       {@const today = r.days[0]}
-
       {@const g = glyph(r.code)}
-      <button class="hero" class:selected={data.route === 'home'} aria-current={data.route === 'home'} onclick={() => perform('home')}>
-        <span class="where">
-          <span class="city">{place.city}</span>
-          {#if place.region}<span class="region">{place.region}</span>{/if}
-          <span class="temp ui-num">{temp(r.temperature)}</span>
-        </span>
-        <span class="now-detail">
-          <span class="glyph big {g.tone}"><Icon name={g.icon} size={32} weight={1.5} /></span>
-          <span class="cond">{conditionLabel(r.code)}</span>
-          {#if today}<span class="meta ui-num">H:{temp(today.high)}&ensp;L:{temp(today.low)}</span>{/if}
-          <span class="meta wind ui-num"><Icon name="wind" size={14} />{Math.round(r.windSpeed)} km/h</span>
-        </span>
-      </button>
+      <!-- Now: like an iOS Weather widget. Where and how warm on the left, what it's like on the right.
+           Selectable like a row, so it is where Stanley "is" on home. -->
+      <Item.Root data-selected={data.route === 'home'} class="flex-none flex-nowrap items-stretch justify-between gap-4 px-4 pt-3.5 pb-4 hover:bg-accent">
+        {#snippet child({ props })}
+          <button {...props} aria-current={data.route === 'home'} onclick={() => perform('home')}>
+            <span class="flex min-w-0 flex-col text-left">
+              <span class="truncate text-xl leading-tight font-semibold tracking-tight">{place.city}</span>
+              {#if place.region}<span class="mt-px truncate text-xs text-muted-foreground">{place.region}</span>{/if}
+              <span class="mt-auto -mb-1.5 -ml-1 pt-2 text-7xl leading-none font-extralight tracking-tighter tabular-nums">{temp(r.temperature)}</span>
+            </span>
+            <span class="flex flex-none flex-col items-end text-right">
+              <span class={['-mr-0.5 mb-auto pb-3', g.tone]}><Icon name={g.icon} size={32} weight={1.5} /></span>
+              <span class="text-base font-medium">{conditionLabel(r.code)}</span>
+              {#if today}<span class="mt-0.5 text-sm text-muted-foreground tabular-nums">H:{temp(today.high)}&ensp;L:{temp(today.low)}</span>{/if}
+              <span class="mt-0.5 inline-flex items-center gap-1 text-sm text-muted-foreground tabular-nums"><Icon name="wind" size={14} />{Math.round(r.windSpeed)} km/h</span>
+            </span>
+          </button>
+        {/snippet}
+      </Item.Root>
 
       {#if r.days.length && week}
-        <section class="ui-section forecast">
-          <h2 class="ui-section-title">{forecastTitle(r)}</h2>
-          <ul class="ui-group">
+        <App.Section class="mt-4" title={forecastTitle(r)}>
+          <App.Group>
             {#each r.days as d, i (d.date)}
               {@const g = glyph(d.code)}
               {@const selected = data.route === `day/${i}`}
               <li>
-                <button class="ui-row day" class:selected aria-current={selected} onclick={() => perform(`day/${i}`)}>
-                  <span class="name">{i === 0 ? 'Today' : shortDay(d.date)}</span>
-                  <span class="glyph {g.tone}"><Icon name={g.icon} size={20} /></span>
-                  <span class="lo ui-num">{temp(d.low)}</span>
-                  <span class="range" aria-hidden="true">
-                    <span class="fill" style:background={week.gradient} style:clip-path="inset(0 {100 - week.at(d.high)}% 0 {week.at(d.low)}% round 3px)"></span>
-                    {#if i === 0}<span class="now" style:left="{week.at(r.temperature)}%"></span>{/if}
-                  </span>
-                  <span class="hi ui-num">{temp(d.high)}</span>
-                </button>
+                <!-- Day · glyph · low · range bar · high, in fixed columns so the bars line up. -->
+                <Item.Root size="row" data-selected={selected} class="gap-2.5 hover:bg-accent">
+                  {#snippet child({ props })}
+                    <button {...props} aria-current={selected} onclick={() => perform(`day/${i}`)}>
+                      <span class="w-13 flex-none text-left font-medium">{i === 0 ? 'Today' : shortDay(d.date)}</span>
+                      <span class={['grid w-7 flex-none place-items-center', g.tone]}><Icon name={g.icon} size={20} /></span>
+                      <span class="w-9 flex-none text-right text-muted-foreground tabular-nums">{temp(d.low)}</span>
+                      <span class="relative mx-1 h-1.5 flex-1 rounded-full bg-input" aria-hidden="true">
+                        <span class="absolute inset-0 rounded-full" style:background={week.gradient} style:clip-path="inset(0 {100 - week.at(d.high)}% 0 {week.at(d.low)}% round 3px)"></span>
+                        <!-- Today's bar: a dot at the current temperature. -->
+                        {#if i === 0}<span class="absolute top-1/2 size-2 -translate-1/2 rounded-full bg-white ring-2 ring-black/40" style:left="{week.at(r.temperature)}%"></span>{/if}
+                      </span>
+                      <span class="w-9 flex-none text-right font-medium tabular-nums">{temp(d.high)}</span>
+                    </button>
+                  {/snippet}
+                </Item.Root>
               </li>
             {/each}
-          </ul>
-        </section>
+          </App.Group>
+        </App.Section>
       {/if}
     {:else if busy}
-      <p class="busy"><span class="ui-spinner"></span>Looking up {data.box || data.query}…</p>
+      <p class="flex flex-1 items-center justify-center gap-2.5 text-sm text-muted-foreground"><Spinner />Looking up {data.box || data.query}…</p>
     {:else}
-      <div class="ui-empty">
-        <Icon name="cloud-sun" size={40} />
-        <p class="ui-empty-title">{EMPTY_TITLE}</p>
-        <p class="ui-empty-text">{emptyText(agentName)}</p>
-      </div>
+      <Empty.Root>
+        <Empty.Header>
+          <Empty.Media class="text-muted-foreground/60"><Icon name="cloud-sun" size={40} /></Empty.Media>
+          <Empty.Title>{EMPTY_TITLE}</Empty.Title>
+          <Empty.Description>{emptyText(agentName)}</Empty.Description>
+        </Empty.Header>
+      </Empty.Root>
     {/if}
-  </div>
-</section>
-
-<style>
-  /* Weather glyph colours: content, like artwork, so fixed per theme rather than tokens. */
-  .weather { --wx-sun: #ffcf33; --wx-rain: #5cb8ff; --wx-snow: #a9dcff; }
-  :global([data-theme='light']) .weather { --wx-sun: #f0a000; --wx-rain: #2b86e0; --wx-snow: #5fa6e0; }
-
-  .ui-bar { gap: 16px; }
-  .find { flex: 1; min-width: 0; }
-  .ui-body { display: flex; flex-direction: column; }
-  .ui-notice { margin: 0 0 12px; }
-
-  .busy { display: flex; align-items: center; justify-content: center; gap: 10px; flex: 1; margin: 0; color: var(--muted); font-size: 13px; }
-
-  /* Now: like an iOS Weather widget. Where and how warm on the left, what it's like on the right.
-     Selectable like a row, so it is where Stanley "is" on home. */
-  .hero {
-    flex: none; display: flex; justify-content: space-between; gap: 16px; width: 100%; padding: 14px 16px 16px;
-    color: inherit; font: inherit; text-align: left; background: none; border: 0; border-radius: var(--r-group); cursor: default;
-    transition: background var(--dur-fast);
-  }
-  .hero:hover { background: var(--fill); }
-  .hero.selected { background: var(--selected); }
-  .hero:focus-visible { outline: none; box-shadow: var(--focus-ring); }
-  .where, .now-detail { display: flex; flex-direction: column; min-width: 0; }
-  .now-detail { flex: none; align-items: flex-end; text-align: right; }
-  .city { font-size: var(--fs-title); font-weight: 600; letter-spacing: -0.02em; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .region { margin-top: 1px; font-size: var(--fs-footnote); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .temp { margin: auto 0 -6px -4px; padding-top: 8px; font-size: 76px; font-weight: 200; letter-spacing: -0.045em; line-height: 1; }
-  .glyph.big { width: auto; margin: 0 -2px auto 0; padding-bottom: 12px; }
-  .cond { font-size: var(--fs-headline); font-weight: 500; }
-  .meta { margin-top: 2px; font-size: 13px; color: var(--muted); }
-  .wind { display: inline-flex; align-items: center; gap: 4px; }
-
-  .forecast { margin-top: 16px; }
-
-  /* Day · glyph · low · range bar · high, in fixed columns so the bars line up. */
-  .day { gap: 10px; }
-  .name { flex: none; width: 52px; font-weight: 500; }
-  .glyph { flex: none; display: grid; place-items: center; width: 28px; color: var(--text); }
-  .glyph.sun { color: var(--wx-sun); }
-  .glyph.partly :global(path:not(:last-child)) { stroke: var(--wx-sun); }
-  .glyph.rain :global(path:not(:first-child)) { stroke: var(--wx-rain); }
-  /* Flakes are dots: a heavier stroke so they read at row size. */
-  .glyph.snow :global(path:not(:first-child)) { stroke: var(--wx-snow); stroke-width: 2.6; }
-  .glyph.storm :global(path:not(:first-child)) { stroke: var(--wx-sun); }
-  .glyph.fog :global(path:not(:first-child)) { stroke: var(--muted); }
-  .lo, .hi { flex: none; width: 34px; text-align: right; }
-  .lo { color: var(--muted); }
-  .hi { font-weight: 500; }
-  .range { position: relative; flex: 1; height: 5px; margin: 0 4px; border-radius: var(--r-capsule); background: var(--fill-active); }
-  .fill { position: absolute; inset: 0; border-radius: var(--r-capsule); }
-  /* Today's bar: a dot at the current temperature. */
-  .now {
-    position: absolute; top: 50%; width: 7px; height: 7px; translate: -50% -50%; border-radius: 50%;
-    background: #fff; box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.45);
-  }
-</style>
+  </App.Body>
+</App.Root>

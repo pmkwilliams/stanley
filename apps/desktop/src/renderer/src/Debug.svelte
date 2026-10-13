@@ -1,4 +1,9 @@
 <script lang="ts">
+  import { Badge } from '@stanley/app-ui/components/badge'
+  import { Checkbox } from '@stanley/app-ui/components/checkbox'
+  import { Input } from '@stanley/app-ui/components/input'
+  import { Label } from '@stanley/app-ui/components/label'
+  import * as Tabs from '@stanley/app-ui/components/tabs'
   import type { DebugEvent, DebugSession, Snapshot } from '../../shared/ipc'
   import LogView from './debug/LogView.svelte'
   import { buildModel, evalScenario, type Category, type TaskView } from './debug/model'
@@ -81,45 +86,54 @@
     'missing-models': 'STT models missing — run pnpm models',
     error: 'STT failed to load',
   }
+
+  /** Status pills: blue while something's happening, amber when something's off. */
+  const hot = 'border-primary text-primary'
+  const warn = 'border-warning/35 text-warning'
+  const toggle = 'gap-1 text-xs font-normal text-muted-foreground'
 </script>
 
-<div class="debug">
-  <header>
+<div class="grid h-screen grid-rows-[auto_1fr] text-sm">
+  <header class="flex flex-wrap items-center gap-1.5 border-b px-3 py-2">
     {#if snapshot}
-      <span class="tag" class:hot={snapshot.status !== 'idle'}>{snapshot.status}</span>
-      <span class="tag" class:hot={snapshot.listening}>{snapshot.listening ? 'mic on' : 'mic off'}</span>
-      <span class="tag" class:warn={snapshot.stt !== 'ready'}>{sttLabel[snapshot.stt]}</span>
-      {#if snapshot.mock}<span class="tag warn">mock Jev</span>{/if}
+      <Badge variant="outline" class={snapshot.status !== 'idle' ? hot : undefined}>{snapshot.status}</Badge>
+      <Badge variant="outline" class={snapshot.listening ? hot : undefined}>{snapshot.listening ? 'mic on' : 'mic off'}</Badge>
+      <Badge variant="outline" class={snapshot.stt !== 'ready' ? warn : undefined}>{sttLabel[snapshot.stt]}</Badge>
+      {#if snapshot.mock}<Badge variant="outline" class={warn}>mock Jev</Badge>{/if}
     {/if}
     {#if config}
-      <span class="config" title="Agent guardrail config for this session">
+      <span class="ml-1.5 text-xs text-muted-foreground" title="Agent guardrail config for this session">
         act {config.act} · speaking {config.speakingAct} · done {config.done} · step {config.stepConfidence} · commits {config.commits} · stale nav {config.staleNavConfidence} ·
         steps {config.maxStepsPerUtterance} · oscillation {config.oscillation.repeats}/{config.oscillation.window} · elements {config.maxElements}
       </span>
     {/if}
-    <span class="spacer"></span>
-    <select onfocus={refreshSessions} onchange={pickSession}>
+    <span class="flex-1"></span>
+    <select class="h-7 rounded-md border border-input bg-transparent px-2 text-xs outline-none focus-visible:border-ring dark:bg-input/30" onfocus={refreshSessions} onchange={pickSession}>
       <option value="">Live session</option>
       {#each sessions as s (s.file)}
         <option value={s.file}>{new Date(s.modified).toLocaleString()} · {Math.round(s.bytes / 1024)} KB</option>
       {/each}
     </select>
     {#if !loaded}
-      <form onsubmit={say}><input placeholder="Type an utterance…" bind:value={typed} /></form>
+      <form onsubmit={say}><Input class="h-7 w-60 text-xs md:text-xs" placeholder="Type an utterance…" bind:value={typed} /></form>
     {/if}
   </header>
 
-  <div class="panes">
-    <section class="left">
-      <nav>
-        <button class:active={tab === 'timeline'} onclick={() => (tab = 'timeline')}>Timeline</button>
-        <button class:active={tab === 'log'} onclick={() => (tab = 'log')}>History</button>
-        <span class="spacer"></span>
+  <div class="grid min-h-0 grid-cols-[minmax(24rem,2fr)_3fr]">
+    <section class="grid min-h-0 grid-rows-[auto_1fr] border-r">
+      <nav class="flex items-center gap-2 border-b px-2 py-1.5">
+        <Tabs.Root value={tab} onValueChange={(v) => (tab = v as typeof tab)}>
+          <Tabs.List>
+            <Tabs.Trigger value="timeline" class="text-xs">Timeline</Tabs.Trigger>
+            <Tabs.Trigger value="log" class="text-xs">History</Tabs.Trigger>
+          </Tabs.List>
+        </Tabs.Root>
+        <span class="flex-1"></span>
         {#if tab === 'timeline'}
           {#each Object.keys(hidden) as Category[] as c (c)}
-            <label><input type="checkbox" checked={!hidden[c]} onchange={() => (hidden[c] = !hidden[c])} />{c}</label>
+            <Label class={toggle}><Checkbox checked={!hidden[c]} onCheckedChange={() => (hidden[c] = !hidden[c])} />{c}</Label>
           {/each}
-          {#if !loaded}<label><input type="checkbox" bind:checked={follow} />follow</label>{/if}
+          {#if !loaded}<Label class={toggle}><Checkbox bind:checked={follow} />follow</Label>{/if}
         {/if}
       </nav>
       {#if tab === 'timeline'}
@@ -129,37 +143,16 @@
       {/if}
     </section>
 
-    <section class="right">
+    <section class="min-h-0 overflow-auto">
       {#if selected}
         {#key selected.id}
           <TickInspector tick={selected} {model} oncopy={copy} />
         {/key}
       {:else}
-        <p class="empty">{model.ticks.length ? 'Select a tick to inspect it.' : 'No decisions yet. Speak, or type an utterance above.'}</p>
+        <p class="p-6 text-muted-foreground">{model.ticks.length ? 'Select a tick to inspect it.' : 'No decisions yet. Speak, or type an utterance above.'}</p>
       {/if}
     </section>
   </div>
 
-  {#if toast}<div class="toast">{toast}</div>{/if}
+  {#if toast}<div class="fixed right-4 bottom-4 rounded-lg border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md">{toast}</div>{/if}
 </div>
-
-<style>
-  .debug { display: grid; grid-template-rows: auto 1fr; height: 100vh; }
-  header { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
-  .tag { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); }
-  .tag.hot { color: var(--accent); border-color: var(--accent); }
-  .tag.warn { color: #f59e0b; border-color: #f59e0b55; }
-  .config { font-size: 11px; color: var(--muted); margin-left: 6px; }
-  .spacer { flex: 1; }
-  select, form input { font-size: 12px; padding: 4px 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; color: inherit; }
-  form input { width: 240px; }
-  .panes { display: grid; grid-template-columns: minmax(380px, 2fr) 3fr; min-height: 0; }
-  .left { display: grid; grid-template-rows: auto 1fr; min-height: 0; border-right: 1px solid var(--border); }
-  .right { overflow: auto; min-height: 0; }
-  nav { display: flex; align-items: center; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--border); font-size: 12px; }
-  nav button { background: none; border: 0; padding: 4px 8px; border-radius: 6px; color: var(--muted); cursor: pointer; }
-  nav button.active { background: var(--panel); color: var(--text); }
-  nav label { display: flex; align-items: center; gap: 3px; color: var(--muted); font-size: 11px; }
-  .empty { color: var(--muted); padding: 24px; }
-  .toast { position: fixed; bottom: 16px; right: 16px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; font-size: 12px; }
-</style>

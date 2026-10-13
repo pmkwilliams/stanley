@@ -34,43 +34,44 @@
     const { role, at: _, ...rest } = e
     return `${role}: ${JSON.stringify(rest)}`
   }
+
+  const note = 'mx-2.5 my-1 text-xs text-muted-foreground'
+  const list = 'min-h-0 overflow-auto py-1 text-xs'
+  const time = 'w-16 flex-none text-muted-foreground tabular-nums'
 </script>
 
-{#if model.legacy.length}
-  <p class="note">An older session: its message log, before the history.</p>
-  <ol>
-    {#each model.legacy as e, i (i)}
-      <li><span class="time">{offset(e.at, model.startAt)}</span><div class="body">{legacy(e)}</div></li>
-    {/each}
-  </ol>
-{:else}
-  <p class="note">The history thinking reads, in the order it was committed; staged entries haven't been sent to thinking yet. Jev reads it rendered; see a tick's Jev input.</p>
-  <ol>
-    {#each [...model.history.map((e) => ({ e, staged: false })), ...model.staged.filter((e) => e.meta.kind !== 'heard').map((e) => ({ e, staged: true }))] as { e, staged }, i (i)}
-      <li class="{e.meta.kind} {e.message?.role ?? ''}" class:staged>
-        <span class="time">{offset(e.meta.at, model.startAt)}</span>
-        <span class="role">{e.meta.kind}{e.meta.by ? ` · ${e.meta.by}` : ''}{staged ? ' · staged' : ''}</span>
-        <div class="body">
-          {line(e)}
-          {#if e.meta.results?.some((r) => r.step?.observation)}
-            <details><summary>full result</summary><pre>{e.meta.results.map((r) => r.step?.observation ?? '').join('\n')}</pre></details>
-          {/if}
-        </div>
-      </li>
-    {/each}
-  </ol>
-{/if}
-
-<style>
-  .note { margin: 4px 10px; font-size: 11px; color: var(--muted); }
-  ol { list-style: none; margin: 0; padding: 4px 0; overflow: auto; font-size: 12px; min-height: 0; }
-  li { display: flex; gap: 6px; padding: 3px 10px; }
-  li.staged { opacity: 0.6; }
-  .time { color: var(--muted); font-variant-numeric: tabular-nums; width: 64px; flex: none; }
-  .role { color: var(--muted); width: 120px; flex: none; }
-  .body { flex: 1; min-width: 0; white-space: pre-wrap; }
-  li.words .body { font-weight: 600; }
-  li.event .body, li.observation .body { color: var(--muted); }
-  summary { cursor: pointer; color: var(--muted); }
-  pre { font-family: ui-monospace, monospace; font-size: 11px; white-space: pre-wrap; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 8px; }
-</style>
+<div class="flex min-h-0 flex-col">
+  {#if model.legacy.length}
+    <p class={note}>An older session: its message log, before the history.</p>
+    <ol class={list}>
+      {#each model.legacy as e, i (i)}
+        <li class="flex gap-1.5 px-2.5 py-0.5"><span class={time}>{offset(e.at, model.startAt)}</span><div class="min-w-0 flex-1 whitespace-pre-wrap">{legacy(e)}</div></li>
+      {/each}
+    </ol>
+  {:else}
+    <p class={note}>The history thinking reads, in the order it was committed; staged entries haven't been sent to thinking yet. Jev reads it rendered; see a tick's Jev input.</p>
+    <ol class={list}>
+      {#each [...model.history.map((e) => ({ e, staged: false })), ...model.staged.filter((e) => e.meta.kind !== 'heard').map((e) => ({ e, staged: true }))] as { e, staged }, i (i)}
+        <li class={['flex gap-1.5 px-2.5 py-0.5', staged && 'opacity-60']}>
+          <span class={time}>{offset(e.meta.at, model.startAt)}</span>
+          <span class="w-30 flex-none text-muted-foreground">{e.meta.kind}{e.meta.by ? ` · ${e.meta.by}` : ''}{staged ? ' · staged' : ''}</span>
+          <div
+            class={[
+              'min-w-0 flex-1 whitespace-pre-wrap',
+              e.meta.kind === 'words' && 'font-semibold',
+              (e.meta.kind === 'event' || e.meta.kind === 'observation') && 'text-muted-foreground',
+            ]}
+          >
+            {line(e)}
+            {#if e.meta.results?.some((r) => r.step?.observation)}
+              <details>
+                <summary class="cursor-pointer text-muted-foreground">full result</summary>
+                <pre class="rounded-md border bg-muted p-2 font-mono text-xs whitespace-pre-wrap">{e.meta.results.map((r) => r.step?.observation ?? '').join('\n')}</pre>
+              </details>
+            {/if}
+          </div>
+        </li>
+      {/each}
+    </ol>
+  {/if}
+</div>
