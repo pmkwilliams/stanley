@@ -5,6 +5,12 @@ import type { DecideRequest, MultiChoiceResult } from '@stanley/jev'
 import type { SttDebugEvent } from '@stanley/stt'
 import type { Piece, TtsDebugEvent } from '@stanley/tts'
 
+/** A word as heard: `unsure` when speech recognition gave it low confidence. */
+export interface CaptionWord {
+  word: string
+  unsure: boolean
+}
+
 export interface Snapshot {
   layout: Layout
   /** appId → state, for every open surface. */
@@ -19,7 +25,12 @@ export interface Snapshot {
   speaking: boolean
   /** An utterance is in progress: speech started and neither the toggle nor ~2 s of silence has ended it. */
   utteranceOpen: boolean
-  transcript: { finalized: string[]; partial: string }
+  transcript: {
+    finalized: string[]
+    partial: string
+    /** The words of each of `finalized` and of `partial` as heard, for showing unsure ones; absent for typed text. */
+    words?: { finalized: (CaptionWord[] | undefined)[]; partial?: CaptionWord[] }
+  }
   status: AgentStatus
   /** What Stanley last said to the user, as far as it has been written; null once the user has answered. */
   said: { text: string; at: number } | null

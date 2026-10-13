@@ -6,10 +6,10 @@ import { parallelWeb } from '@stanley/app-web/parallel'
 import { localFiles } from '@stanley/files'
 import { Agent, BargeIn, createThinker, defaultConfig, findElement, named, screenVocabulary, scriptedTurn, SYSTEM_PROMPT, type AgentStatus, type FileTools, type Overheard, type Thinker } from '@stanley/agent'
 import { createJevClient, createMockJevClient, type DecisionClient } from '@stanley/jev'
-import { SAMPLE_RATE, Transcriber, writeWav } from '@stanley/stt'
+import { SAMPLE_RATE, Transcriber, writeWav, type HeardWord } from '@stanley/stt'
 import { KOKORO, loadKokoro, Speaker } from '@stanley/tts'
 import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, Menu, nativeTheme, session } from 'electron'
-import type { AppDebugEvent, ReplayRequest, Snapshot } from '../shared/ipc'
+import type { AppDebugEvent, CaptionWord, ReplayRequest, Snapshot } from '../shared/ipc'
 import { apps } from './apps'
 import { DebugRecorder } from './debug'
 import { Shell } from './shell'
@@ -48,7 +48,27 @@ let transcriber: Transcriber | null = null
 let tts: Snapshot['tts'] = 'loading'
 /** Stanley's voice, once Kokoro has loaded. */
 let speaker: Speaker | null = null
-const transcript = { finalized: [] as string[], partial: '' }
+const transcript = { finalized: [] as string[], partial: '', words: { finalized: [] as (CaptionWord[] | undefined)[], partial: undefined as CaptionWord[] | undefined } }
+
+/** A segment of the utterance ended: `words` carry speech recognition's confidence, none for typed text. */
+function addSegment(text: string, words?: HeardWord[]) {
+  transcript.finalized.push(text)
+  transcript.words.finalized.push(captioned(words))
+}
+
+function setPartial(text: string, words?: HeardWord[]) {
+  transcript.partial = text
+  transcript.words.partial = captioned(words)
+}
+
+function clearTranscript() {
+  transcript.finalized = []
+  transcript.words.finalized = []
+  setPartial('')
+}
+
+const captioned = (words?: HeardWord[]): CaptionWord[] | undefined =>
+  words?.map(({ word, confidence }) => ({ word, unsure: confidence < defaultConfig.unsureWord }))
 
 /** Debug › Save Utterances as Eval Clips: each spoken utterance is written to evals/speech/clips. */
 const clipsDir = join(root, 'evals', 'speech', 'clips')
@@ -232,11 +252,11 @@ function cutIn(heard: Overheard) {
   beginUtterance()
   agent.voice(speaking)
   for (const s of heard.segments) {
-    transcript.finalized.push(s.text)
+    addSegment(s.text, s.words)
     agent.segment(s.text, s.words)
   }
   if (heard.partial) {
-    transcript.partial = heard.partial.text
+    setPartial(heard.partial.text, heard.partial.words)
     agent.partial(heard.partial.text, heard.partial.words)
   }
   sendSnapshot()
@@ -307,8 +327,7 @@ function stopListening(via: Via) {
 }
 
 function beginUtterance() {
-  transcript.finalized = []
-  transcript.partial = ''
+  clearTranscript()
   clip = saveClips ? lead : null
   lead = []
   utteranceStartedAt = Date.now()
@@ -317,7 +336,7 @@ function beginUtterance() {
 }
 
 function endUtterance() {
-  transcript.partial = ''
+  setPartial('')
   if (!utteranceOpen) return
   utteranceOpen = false
   writeClip()
@@ -359,8 +378,7 @@ function lock() {
     transcriber?.reset()
     speaking = false
     utteranceOpen = false
-    transcript.finalized = []
-    transcript.partial = ''
+    clearTranscript()
     clip = null
     lead = []
     bargeIn.cancel()
@@ -402,15 +420,15 @@ async function loadStt() {
         partial: (text, words) => {
           if (overheard()) return bargeIn.partial(text, words)
           if (!utteranceOpen) beginUtterance()
-          transcript.partial = text
+          setPartial(text, words)
           agent.partial(text, words)
           sendSnapshot()
         },
         segment: (text, words) => {
           if (overheard()) return bargeIn.segment(text, words)
           if (!utteranceOpen) beginUtterance()
-          transcript.finalized.push(text)
-          transcript.partial = ''
+          addSegment(text, words)
+          setPartial('')
           agent.segment(text, words)
           sendSnapshot()
         },
@@ -597,7 +615,7 @@ ipcMain.on('say', (_, text: string) => {
       endUtterance()
       beginUtterance()
       clip = null
-      transcript.finalized.push(text)
+      addSegment(text)
       agent.segment(text)
       endUtterance()
       sendSnapshot()
@@ -606,7 +624,7 @@ ipcMain.on('say', (_, text: string) => {
   startListening('typed')
   transition(() => {
     clip = null
-    transcript.finalized.push(text)
+    addSegment(text)
     agent.segment(text)
   })
   stopListening('typed')

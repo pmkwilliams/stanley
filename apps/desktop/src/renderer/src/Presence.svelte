@@ -2,12 +2,12 @@
   import { untrack } from 'svelte'
   import type { Snapshot } from '../../shared/ipc'
   import { glass } from './glass'
-  import { hsl, mic, presence, Settler, STYLES, voiceOut, type Presence, type Style } from './presence'
+  import { captionWords, hsl, mic, presence, Settler, STYLES, voiceOut, type Presence, type Style } from './presence'
   import { theme } from './theme.svelte'
 
   /**
    * `docked` moves the wave from the centre of the screen to its bottom edge, under an open window.
-   * Without `captions`, only the wave shows (the lock screen has the clock where they would be).
+   * Without `captions`, only the wave shows (the lock screen covers the strip they'd be in).
    */
   let { snapshot, docked, captions = true }: { snapshot: Snapshot; docked: boolean; captions?: boolean } = $props()
 
@@ -191,18 +191,23 @@
     return [r! / 255, g! / 255, b! / 255]
   }
 
-  const words = $derived([...snapshot.transcript.finalized, snapshot.transcript.partial].join(' ').trim())
-  const captioned = $derived(!!words && (snapshot.utteranceOpen || shown === 'guessing' || shown === 'thinking'))
+  const words = $derived(captionWords(snapshot.transcript))
+  const captioned = $derived(words.length > 0 && (snapshot.utteranceOpen || shown === 'guessing' || shown === 'thinking'))
 </script>
 
 <canvas bind:this={canvas} data-presence={shown} class="pointer-events-none fixed inset-0 z-0 size-full"></canvas>
 {#if captions}
-  <!-- The halo lifts the words off the presence behind them. -->
-  <p
-    class={[
-      'pointer-events-none fixed inset-x-0 z-2 px-[15%] text-center text-foreground opacity-0 transition-[opacity,top,font-size] duration-500 ease-out [text-shadow:0_1px_12px_var(--halo)]',
-      docked ? 'top-[calc(100%-4rem)] text-sm' : 'top-[36%] text-lg',
-      captioned && 'opacity-100',
-    ]}
-  >{words}</p>
+  <!-- In the strip App reserves at the bottom. Two lines at most: older words scroll off the top. -->
+  <div class="pointer-events-none fixed inset-x-0 bottom-0 z-2 flex h-(--caption-height) items-center justify-center px-8">
+    <div
+      class={[
+        'max-w-3xl rounded-xl bg-background/50 px-4 py-2 text-center text-foreground opacity-0 backdrop-blur-sm transition-opacity duration-500 ease-out',
+        captioned && 'opacity-100',
+      ]}
+    >
+      <p class="flex max-h-12 flex-col justify-end overflow-hidden">
+        <span>{#each words as w, i (i)}{#if i}{' '}{/if}<span class={[w.unsure && 'text-muted-foreground']}>{w.word}</span>{/each}</span>
+      </p>
+    </div>
+  </div>
 {/if}

@@ -60,18 +60,20 @@
 
 <!--
   Inert while locked, so nothing under the lock screen can be focused or clicked.
+  `--caption-height`: a strip at the bottom kept clear for the captions (see Presence). It is main's padding,
+  not its own row, so a window's shadow can still spill into it rather than being clipped.
   `--window-max-*`: the largest a window may grow; surfaces with no natural size (e.g. a web page) fill it.
   Locked, only the aura stays: the bar and windows fade with the lock screen's own fade.
 -->
 <div
   class={['grid h-screen grid-cols-1 grid-rows-[var(--bar-height)_minmax(0,1fr)] bg-background [&>header]:transition-opacity [&>header]:duration-250', locked && '[&>header]:opacity-0']}
-  style="--bar-height: 80px; --window-max-width: calc(100vw - 64px); --window-max-height: calc(100vh - var(--bar-height) - 64px)"
+  style="--bar-height: 80px; --caption-height: 80px; --window-max-width: calc(100vw - 64px); --window-max-height: calc(100vh - var(--bar-height) - var(--caption-height) - 64px)"
   inert={locked}
 >
   {#if snapshot}<Presence {snapshot} docked={!!visible && !locked} captions={!locked} />{/if}
   <StatusBar {snapshot} onlock={() => window.stanley.lock()} />
 
-  <main class={['relative overflow-auto transition-opacity duration-250 has-[>div]:grid has-[>div]:place-items-center has-[>div]:overflow-hidden', locked && 'opacity-0']}>
+  <main class={['relative overflow-auto pb-(--caption-height) transition-opacity duration-250 has-[>div]:grid has-[>div]:place-items-center has-[>div]:overflow-hidden', locked && 'opacity-0']}>
     {#if snapshot}
       <!-- Keyed on the app, so switching plays the old window's outro while the new one pops in over it. -->
       <!-- Windows share one cell, so an outgoing one sinks behind the incoming one instead of pushing it aside; Svelte marks it inert. -->

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { presence, Settler } from './presence'
+import { captionWords, presence, Settler } from './presence'
 
 const said = { finalized: ['open my'], partial: '' }
 const ear: Parameters<typeof presence>[0] = {
@@ -55,5 +55,17 @@ describe('Settler', () => {
     expect(s.update('done', 1000)).toBe('done')
     expect(s.update('done', 1500)).toBe('armed')
     expect(s.update('done', 1600)).toBe('armed')
+  })
+})
+
+describe('captionWords', () => {
+  it('flags the words speech recognition was unsure of, and none of typed text', () => {
+    const words = captionWords({
+      finalized: ['email the', 'typed bit'],
+      partial: 'Aconquo invoice',
+      words: { finalized: [[{ word: 'email', unsure: false }, { word: 'the', unsure: false }], undefined], partial: [{ word: 'Aconquo', unsure: true }, { word: 'invoice', unsure: false }] },
+    })
+    expect(words.filter((w) => w.unsure).map((w) => w.word)).toEqual(['Aconquo'])
+    expect(words.map((w) => w.word).join(' ')).toBe('email the typed bit Aconquo invoice')
   })
 })

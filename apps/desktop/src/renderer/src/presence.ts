@@ -1,4 +1,4 @@
-import type { Snapshot } from '../../shared/ipc'
+import type { CaptionWord, Snapshot } from '../../shared/ipc'
 
 /**
  * What the presence wave shows: Stanley's voice, the ear (mic, VAD, utterance) and the brain (agent
@@ -32,6 +32,12 @@ export function presence(s: Inputs): Presence {
   if (s.utteranceOpen && (s.transcript.finalized.length || s.transcript.partial)) return 'trailing'
   if (s.status === 'done' || s.status === 'didnt-get-that' || s.status === 'stuck' || s.status === 'error') return s.status
   return 'armed'
+}
+
+/** The utterance's words for the captions, unsure ones flagged. Typed text has no confidence, so none are. */
+export function captionWords(t: Snapshot['transcript']): CaptionWord[] {
+  const segment = (text: string, words?: CaptionWord[]) => words ?? text.split(/\s+/).filter(Boolean).map((word) => ({ word, unsure: false }))
+  return [...t.finalized.flatMap((text, i) => segment(text, t.words?.finalized[i])), ...segment(t.partial, t.words?.partial)]
 }
 
 /** How long a state is held before giving way: guesses arrive in bursts, outcomes fade back to armed. */
