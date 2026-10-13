@@ -1,6 +1,6 @@
 /**
- * Generated cover art: tracks without an image (the bundled ones) get a gradient picked
- * deterministically from their id and title. Same track, same cover, everywhere it's shown.
+ * Generated cover art: a gradient picked deterministically from a track's id and title, shown
+ * while its real cover loads or if it fails. Same track, same cover, everywhere it's shown.
  */
 
 /** Deep edge, bright highlight, mid tone, shadow: the same four-stop shape as the status bar's stub art. */
@@ -37,8 +37,8 @@ export function tint(track: { id: string; title: string }): string {
 }
 
 /**
- * A CSS `background` for a track's cover: its real image when it has one (Jamendo), over the
- * generated cover, which shows while the image loads or if it fails.
+ * A CSS `background` for a track's cover: its real image when it has one, over the generated
+ * cover, which shows while the image loads or if it fails.
  */
 export function cover(track: { id: string; title: string; image?: string }): string {
   if (!track.image) return artwork(track)

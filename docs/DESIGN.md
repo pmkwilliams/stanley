@@ -518,7 +518,7 @@ All via **Vercel AI Gateway** with the AI SDK (`ai`, pinned exactly), one `AI_GA
 | To-do | seeded, in-memory | "Add a task" box (Enter adds); each task row has a checkbox and Delete |
 | Email | seeded, in-memory | Inbox / Sent tabs, the inbox list, an open email with Mark unread / Archive / Delete, a reply box and Send reply |
 | Weather | Open-Meteo | "Search a city" box (Enter looks up), current conditions, one button per day |
-| Music | bundled tracks | Previous / Play / Next / Volume buttons, one button per track |
+| Music | a hard-coded 12-track playlist (streamed from Jamendo) | Previous / Play / Next / Volume buttons, one button per track |
 | Lights | your Philips Hue Bridge | Rooms and zones, each a row with a switch, and "Turn all off"; a room has its switch, a Brightness slider (a field taking a percentage), scene buttons, color swatches and a switch per light |
 | Web | Parallel extract + webview | No elements: shows the page Stanley opened (`openUrl`). Not in the agent's app list, since it shows nothing on its own; known pages open in it |
 

@@ -1,5 +1,5 @@
 import type { LightsState } from '@stanley/app-lights/core'
-import type { MusicState, Track } from '@stanley/app-music/core'
+import { playlist, type MusicState } from '@stanley/app-music/core'
 import type { WeatherState } from '@stanley/app-weather/core'
 import type { WebState } from '@stanley/app-web/core'
 
@@ -30,13 +30,10 @@ export const fixtures: Record<string, Record<string, unknown>> = {
     offline: { route: 'home', status: 'offline', error: "Couldn't reach the Hue Bridge at 192.168.1.20", rooms: [], lights: [] } satisfies LightsState,
   },
   music: {
-    /** With JAMENDO_CLIENT_ID: this week's popular tracks, real covers, one playing. */
-    jamendo: null as unknown as MusicState,
-    /** Search results, while a track from the popular list keeps playing. */
-    results: null as unknown as MusicState,
-    searching: null as unknown as MusicState,
-    error: null as unknown as MusicState,
-    empty: null as unknown as MusicState,
+    /** The playlist, its first track playing. */
+    playing: { tracks: playlist, currentId: playlist[0]!.id, playing: true, volume: 0.6 } satisfies MusicState,
+    /** Paused partway down the list. */
+    paused: { tracks: playlist, currentId: playlist[5]!.id, playing: false, volume: 0.6 } satisfies MusicState,
   },
   weather: {
     denver: {
@@ -83,44 +80,6 @@ export const fixtures: Record<string, Record<string, unknown>> = {
 
 const weather = fixtures.weather as Record<string, WeatherState>
 weather.refreshing = { ...weather.denver!, query: 'Lisbon', box: 'Lisbon', loading: true }
-
-/** Jamendo-shaped tracks: real Jamendo cover and stream URLs, made-up names. */
-const jamendo = (id: number, album: number, title: string, artist: string, durationSec: number): Track => ({
-  id: `j${id}`,
-  title,
-  artist,
-  durationSec,
-  audio: `https://prod-1.storage.jamendo.com/?trackid=${id}&format=mp32`,
-  image: `https://usercontent.jamendo.com?type=album&id=${album}&width=400&trackid=${id}`,
-  license: 'http://creativecommons.org/licenses/by-sa/3.0/',
-  url: `https://www.jamendo.com/track/${id}`,
-})
-const popular: Track[] = [
-  jamendo(1532771, 170000, 'Wide Open Spaces', 'Lisofv', 214),
-  jamendo(1890011, 10000, 'A Long Way Home Through the Quiet Hills (Extended Mix)', 'The Evening Cartographers', 389),
-  jamendo(1204455, 30000, 'Paper Lanterns', 'Mika Sol', 187),
-  jamendo(1777302, 70000, 'Fireflies', 'Arctic Owls', 242),
-  jamendo(1601987, 120000, 'Low Tide', 'Saltwater', 198),
-  jamendo(1450032, 180000, 'Satellite Hearts', 'Neon Coast', 231),
-  jamendo(1333190, 145774, 'Driftwood', 'Juniper Lane', 176),
-  jamendo(1287765, 50000, 'Golden Hour', 'Cassia', 205),
-]
-const jazz: Track[] = [
-  jamendo(1702210, 200000, 'Blue in the Afternoon', 'Sax Club Quartet', 312),
-  jamendo(1702211, 100000, 'Late Set', 'Sax Club Quartet', 284),
-  jamendo(1544120, 20000, 'Smoke Rings', 'Marta Ruiz Trio', 356),
-  jamendo(1388001, 90000, 'Rainy Brushes', 'The Hollow Bones', 241),
-  jamendo(1650400, 150000, 'Night Train to Lyon', 'Oscar Bell', 299),
-]
-const music = fixtures.music as Record<string, MusicState>
-music.jamendo = {
-  tracks: popular, queue: popular, currentId: popular[0]!.id, playing: true, volume: 0.6,
-  listing: 'popular', query: null, box: '', search: true, loading: false, error: null,
-}
-music.results = { ...music.jamendo, tracks: jazz, listing: 'results', query: 'jazz' }
-music.searching = { ...music.jamendo, box: 'jazz', loading: true }
-music.error = { ...music.jamendo, playing: false, error: "Search failed: Jamendo didn't respond in time" }
-music.empty = { ...music.jamendo, tracks: [], listing: 'results', query: 'zzzyx' }
 
 const lights = fixtures.lights as Record<string, LightsState>
 lights.room = { ...lights.home!, route: 'room/1' }
