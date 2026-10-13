@@ -56,7 +56,7 @@ export function loadEnv() {
  */
 export function select<T>(items: T[], name: (t: T) => string, command: string): T[] | null {
   const args = process.argv.slice(2)
-  const filters = args.filter((a, i) => !a.startsWith('-') && !/^--(runs|concurrency|jev-turns|word-ms|effort)$/.test(args[i - 1] ?? ''))
+  const filters = args.filter((a, i) => !a.startsWith('-') && !/^--(runs|concurrency|jev-turns|word-ms|effort|single-model)$/.test(args[i - 1] ?? ''))
   if (!filters.length && !args.includes('--all')) {
     console.log(`${items.length} available — each makes several paid Jev/Sonnet calls:`)
     for (const t of items) console.log(`  ${name(t)}`)
@@ -211,7 +211,10 @@ function makeAgent(world: World, events: AgentDeps['events'], files?: FileTools)
   // `--effort low|medium|high`: thinking's effort, to compare speed and results.
   const i = process.argv.indexOf('--effort')
   const effort = i === -1 ? undefined : (process.argv[i + 1] as ThinkEffort)
-  return new Agent({ world, jev: countedJev(createJevClient()), thinker: countedThinker(createThinker({ effort })), web: key ? countedWeb(parallelWeb(key)) : undefined, files, events, config })
+  // `--single-model <gateway id>`: the model for single-step writes and confirms.
+  const j = process.argv.indexOf('--single-model')
+  const singleModel = j === -1 ? undefined : process.argv[j + 1]
+  return new Agent({ world, jev: countedJev(createJevClient()), thinker: countedThinker(createThinker({ effort, singleModel })), web: key ? countedWeb(parallelWeb(key)) : undefined, files, events, config })
 }
 
 /** Runs `tasks` with at most `limit` in flight. */

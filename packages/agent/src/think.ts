@@ -256,8 +256,10 @@ export function scriptedTurn(text: string, ...calls: ActCall[]): ThinkResult {
 export type ThinkEffort = 'provider-default' | 'low' | 'medium' | 'high'
 
 /** Claude through Vercel AI Gateway, driving the same options as Jev. */
-export function createThinker(opts: { model?: LanguageModel; effort?: ThinkEffort } = {}): Thinker {
+export function createThinker(opts: { model?: LanguageModel; singleModel?: LanguageModel; effort?: ThinkEffort } = {}): Thinker {
   const model = opts.model ?? 'anthropic/claude-sonnet-5.5'
+  // Deciding one step (typing a field, pressing a button that commits) may use a quicker model.
+  const singleModel = opts.singleModel ?? model
   // One effort for the whole session: changing it between calls would lose the messages cache.
   const reasoning = opts.effort ?? 'provider-default'
   return {
@@ -266,7 +268,7 @@ export function createThinker(opts: { model?: LanguageModel; effort?: ThinkEffor
       let captured: ModelMessage[] = []
       try {
         const result = streamText({
-          model,
+          model: req.single ? singleModel : model,
           abortSignal: req.signal,
           instructions: { role: 'system', content: req.instructions, providerOptions: CACHE },
           messages: req.messages,

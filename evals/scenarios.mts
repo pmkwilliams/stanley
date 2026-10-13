@@ -325,6 +325,12 @@ export const scenarios: Scenario[] = [
     checks: [todoDone(/dentist/i, true), todoDone(/passport/i, false), newTodos(1), state('todo', (s) => todos(s).some((t) => /banana/i.test(t.title)), 'a bananas to-do')],
   },
   {
+    // The same without a pause: the tick goes in while they're still talking.
+    name: 'todo-done-then-add-run-on',
+    utterances: ['show me my to-dos', 'right so the dentist one is done now and we also need some bananas'],
+    checks: [todoDone(/dentist/i, true), todoDone(/passport/i, false), newTodos(1), state('todo', (s) => todos(s).some((t) => /banana/i.test(t.title)), 'a bananas to-do')],
+  },
+  {
     // Ticked mid-sentence, then the user keeps talking: re-deciding over the same words must not
     // tick it again (that would untick it).
     name: 'todo-tick-then-ask',
