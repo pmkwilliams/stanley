@@ -81,8 +81,8 @@
         {@const Surface = surfaces[id]}
         <div
           class={[appWindow, 'z-1 col-start-1 row-start-1 inert:z-0']}
-          in:scale={{ start: 0.96, duration: 180, easing: cubicOut }}
-          out:scale={{ start: 0.94, duration: 140, easing: cubicIn }}
+          in:scale={{ start: 0.85, duration: 340, easing: cubicOut }}
+          out:scale={{ start: 0.88, duration: 260, easing: cubicIn }}
         >
           <Surface data={snapshot.surfaces[id]} perform={(nodeId: string, args?: { text?: string }) => window.stanley.perform(id, nodeId, args)} agentName={snapshot.name} />
         </div>
