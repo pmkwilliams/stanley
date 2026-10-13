@@ -318,6 +318,31 @@ export const scenarios: Scenario[] = [
     checks: [state('email', (s) => emails(s).find((e) => e.from === 'Mom')?.archived === false, "Mom's email back in the inbox")],
   },
   {
+    // An undoable change said first, then more: the tick can go in while they're still talking,
+    // and the rest still gets done.
+    name: 'todo-done-then-add',
+    utterances: ["okay I finished the dentist one | and we're out of bananas so add those"],
+    checks: [todoDone(/dentist/i, true), todoDone(/passport/i, false), newTodos(1), state('todo', (s) => todos(s).some((t) => /banana/i.test(t.title)), 'a bananas to-do')],
+  },
+  {
+    // Ticked mid-sentence, then the user keeps talking: re-deciding over the same words must not
+    // tick it again (that would untick it).
+    name: 'todo-tick-then-ask',
+    utterances: ['cross off the oat milk | and then how many are left'],
+    checks: [todoDone(/oat milk/i, true), newTodos(0), said(/\d|one|two|three/i)],
+  },
+  {
+    name: 'todo-two-ticks',
+    utterances: ['tick off the oat milk and the passport ones'],
+    checks: [todoDone(/oat milk/i, true), todoDone(/passport/i, true), todoDone(/dentist/i, false)],
+  },
+  {
+    // Archiving can't wait on a guess: taken back before the end, nothing is archived.
+    name: 'archive-taken-back',
+    utterances: ['archive the one from my mom | hmm no actually leave it there'],
+    checks: [inboxIntact],
+  },
+  {
     name: 'question-after-pause',
     utterances: ["what's the weather | in Chicago tomorrow"],
     checks: [state('weather', (s) => /chicago/i.test(JSON.stringify(s?.result ?? '')), 'Chicago weather loaded')],

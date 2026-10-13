@@ -38,8 +38,13 @@ if (selected) {
   printUsage()
 }
 
+function mean(all: (number | null)[]): string {
+  const ms = all.filter((m): m is number => m !== null)
+  return ms.length ? (ms.reduce((a, b) => a + b, 0) / ms.length / 1000).toFixed(2) : '—'
+}
+
 function summarize(selected: Scenario[], results: { scenario: Scenario; result: ScenarioResult }[]) {
-  console.log('\nscenario                          pass   settle p50 (s)  turn end p50 (s)  early ends')
+  console.log('\nscenario                          pass   settle p50 (s)  first step p50  last step p50  turn end p50 (s)  early ends')
   let passed = 0
   for (const scenario of selected) {
     const mine = results.filter((r) => r.scenario === scenario).map((r) => r.result)
@@ -48,7 +53,12 @@ function summarize(selected: Scenario[], results: { scenario: Scenario; result: 
     const p50 = median(mine.flatMap((r) => r.settleMs))
     const endP50 = median(mine.flatMap((r) => r.endMs))
     const cutIns = mine.reduce((n, r) => n + r.cutIns, 0)
-    console.log(`${ok === mine.length ? ' ' : '✗'} ${scenario.name.padEnd(32)} ${`${ok}/${mine.length}`.padEnd(6)} ${p50.padEnd(15)} ${endP50.padEnd(17)} ${cutIns || ''}`)
+    const first = median(mine.flatMap((r) => r.firstStepMs))
+    const last = median(mine.flatMap((r) => r.lastStepMs))
+    console.log(`${ok === mine.length ? ' ' : '✗'} ${scenario.name.padEnd(32)} ${`${ok}/${mine.length}`.padEnd(6)} ${p50.padEnd(15)} ${first.padEnd(15)} ${last.padEnd(14)} ${endP50.padEnd(17)} ${cutIns || ''}`)
   }
+  // Only each scenario's last utterance: earlier ones mostly set the scene ("open the email from Sam").
+  const lastOf = (pick: (r: ScenarioResult) => (number | null)[]) => results.flatMap(({ result }) => pick(result).slice(-1))
+  console.log(`\nLast utterance, all runs: settle p50 ${median(lastOf((r) => r.settleMs))}s, mean ${mean(lastOf((r) => r.settleMs))}s; last step p50 ${median(lastOf((r) => r.lastStepMs))}s, mean ${mean(lastOf((r) => r.lastStepMs))}s`)
   console.log(`\n${passed}/${results.length} runs passed (${Math.round((passed / results.length) * 100)}%)`)
 }

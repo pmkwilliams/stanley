@@ -16,6 +16,11 @@ const MAX_SETTLE_MS = 120_000
 export const PAUSE_MS = 800
 /** The transcriber ends an utterance after this much silence if the agent hasn't. */
 const SILENCE_BACKSTOP_MS = 4000
+/**
+ * A typed word every this many ms, each a new partial: about 150 words a minute, and about how
+ * often the live transcriber emits one. `--word-ms N` overrides it.
+ */
+const WORD_MS = flag('word-ms', 400)
 
 /** Paid model calls, so every run says what it spent. */
 export const usage = {
@@ -74,6 +79,9 @@ export interface ScenarioResult {
   settleMs: number[]
   /** Per utterance: ms from the user's last word until the agent ended their turn. */
   endMs: number[]
+  /** Per utterance: ms from the user's last word to its first and last step (negative: while they spoke); null without a step. */
+  firstStepMs: (number | null)[]
+  lastStepMs: (number | null)[]
   /** Times the agent ended the user's turn while they were only pausing mid-thought. */
   cutIns: number
   /** The context Jev would read at the end, for reading what happened. */
@@ -137,9 +145,12 @@ export async function drive(world: World, utterances: string[], speak: Speak, fi
   const turn: TurnWatch = { endedAt: null }
   let busy = false
   let changedAt = 0
+  /** When each step on the screen ran (not Jev's background file reads). */
+  const stepsAt: number[] = []
   const thinking = { inputTokens: 0, cachedTokens: 0, largestInput: 0 }
   const agent = makeAgent(world, {
     debug: (e) => {
+      if (e.type === 'act' && !e.summary?.startsWith('ran ')) stepsAt.push(Date.now())
       if (e.type === 'think-start' && e.mode === 'run' && /^asked (to type|whether to press)/.test(e.handover)) {
         usage.singleFallbacks++
         usage.fallbacks.push(e.handover)
@@ -162,11 +173,14 @@ export async function drive(world: World, utterances: string[], speak: Speak, fi
   }, files)
   const settleMs: number[] = []
   const endMs: number[] = []
+  const firstStepMs: (number | null)[] = []
+  const lastStepMs: (number | null)[] = []
   const turnFailures: string[] = []
   let cutIns = 0
   for (const [i, utterance] of utterances.entries()) {
     turn.endedAt = null
     const saidBefore = said.length
+    const stepsBefore = stepsAt.length
     const delivery = await speak(agent, utterance, i, turn, world)
     cutIns += delivery.cutIns
     const early = said.slice(saidBefore).filter((_, j) => saidAt[saidBefore + j]! < delivery.lastWordAt)
@@ -176,8 +190,11 @@ export async function drive(world: World, utterances: string[], speak: Speak, fi
     while ((busy || Date.now() - changedAt < QUIET_MS) && Date.now() < deadline) await sleep(100)
     if (busy) console.warn(`   still busy after ${MAX_SETTLE_MS / 1000}s: ${utterance}`)
     settleMs.push(Math.max(0, changedAt - delivery.lastWordAt))
+    const mine = stepsAt.slice(stepsBefore)
+    firstStepMs.push(mine.length ? mine[0]! - delivery.lastWordAt : null)
+    lastStepMs.push(mine.length ? mine.at(-1)! - delivery.lastWordAt : null)
   }
-  return { agent, turnFailures, result: { ticks, said, settleMs, endMs, cutIns, trace: await agent.context(), thinking } }
+  return { agent, turnFailures, result: { ticks, said, settleMs, endMs, firstStepMs, lastStepMs, cutIns, trace: await agent.context(), thinking } }
 }
 
 function makeAgent(world: World, events: AgentDeps['events'], files?: FileTools): Agent {
@@ -202,7 +219,8 @@ export async function pool<T>(tasks: (() => Promise<T>)[], limit: number): Promi
 }
 
 /** The median of some durations in ms, as seconds; '—' for none. */
-export function median(ms: number[]): string {
+export function median(all: (number | null)[]): string {
+  const ms = all.filter((m): m is number => m !== null)
   if (!ms.length) return '—'
   const sorted = [...ms].sort((a, b) => a - b)
   return (sorted[Math.floor(sorted.length / 2)]! / 1000).toFixed(1)
@@ -223,6 +241,8 @@ export function report(label: string, result: ScenarioResult) {
     console.log(`   ${t.outcome.padEnd(15)} → ${t.effective.padEnd(10)} next: ${next.padEnd(22)} step: ${step}${runnersUp ? `  | ${runnersUp}` : ''}${t.detail ? ` (${t.detail})` : ''}`)
   }
   for (const text of result.said) console.log(`   said: "${text}"`)
+  const secs = (ms: (number | null)[]) => ms.map((m) => (m === null ? '—' : (m / 1000).toFixed(1))).join(', ')
+  console.log(`   after the last word: settle ${secs(result.settleMs)}s, first step ${secs(result.firstStepMs)}s, last step ${secs(result.lastStepMs)}s`)
   const t = result.thinking
   if (t.inputTokens) console.log(`   thinking input: ${t.inputTokens.toLocaleString()} tokens, ${Math.round((t.cachedTokens / t.inputTokens) * 100)}% from the cache, largest call ${t.largestInput.toLocaleString()}`)
   if (result.cutIns) console.log(`   ended the user's turn early ${result.cutIns}×`)
@@ -253,7 +273,7 @@ export async function typeUtterance(agent: Agent, utterance: string, _index = 0,
     const words = part.split(' ')
     for (let w = 1; w <= words.length; w++) {
       agent.partial(words.slice(0, w).join(' '))
-      await sleep(180)
+      await sleep(WORD_MS)
     }
     agent.voice(false)
     lastWordAt = Date.now()
