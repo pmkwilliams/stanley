@@ -20,11 +20,11 @@ import {
   type StepMeta,
   type StepTarget,
 } from './conversation'
-import { markUnsure, unmarked, type HeardWord } from './heard'
+import { anyUnsure, markUnsure, unmarked, type HeardWord } from './heard'
 import { describeStep, named, namedOptions, narrate } from './narrate'
 import { navigates, stepOptions, type OptionSet, type Target } from './options'
 import { confirmNote, DONE_CHECK, EARLY_GUESS, instructions, longDate, PartialTurn, writeNote, type ActCall, type PageOutput, type SearchOutput, type Thinker, type ThinkResult } from './think'
-import { extendsWords, fullText, hasNewWords, normalize, type TranscriptSnapshot } from './transcript'
+import { extendsWords, fullText, hasNewWords, letters, type TranscriptSnapshot } from './transcript'
 import { knownPages, sameUrl, shortUrl, type KnownPage, type WebTools } from './web'
 import type { Screen, StepResult, World } from './world'
 
@@ -201,7 +201,12 @@ type StepRecord =
 export class Agent {
   readonly history: Conversation
   readonly config: AgentConfig
+  /** The user's words as said: what all the agent's own logic reads. */
   private transcript: TranscriptSnapshot = { finalized: [], partial: '' }
+  /** Speech recognition's confidence in the transcript's words: only for marking unsure ones where the models read them. */
+  private confidence: { finalized: (HeardWord[] | undefined)[]; partial?: HeardWord[] } = { finalized: [] }
+  /** The last segment the user said, for when nothing is being said now. */
+  private lastSegment = ''
   private seen: TranscriptSnapshot | null = null
   private seenUtterance = 0
   private utteranceEnded = false
@@ -244,10 +249,10 @@ export class Agent {
   /** The date thinking was last told. */
   private today: string
   /**
-   * Segments heard since the task started. The history places words where they read best, which
-   * can be before the task's start, so whether this task's words were unsure is kept here.
+   * Whether speech recognition was unsure of words heard since the task started. The history places
+   * words where they read best, which can be before the task's start, so this is kept here.
    */
-  private taskHeard: string[] = []
+  private taskUnsure = false
   private clock: () => Date
   private name: () => string
   /** When the session started: the day its instructions give. */
@@ -336,6 +341,7 @@ export class Agent {
     this.history.begin()
     this.utteranceId++
     this.transcript = { finalized: [], partial: '' }
+    this.confidence = { finalized: [] }
     this.seen = null
     this.utteranceEnded = false
     this.steps = 0
@@ -352,32 +358,33 @@ export class Agent {
   private openTask(): void {
     if (this.taskOpen) return
     this.taskOpen = true
-    this.taskHeard = []
+    this.taskUnsure = false
     this.history.stage({ kind: 'event', event: 'task-start' })
   }
 
-  /** `words` carry speech recognition's confidence; unsure ones are marked `(?)` for the models. */
+  /** `words` carry speech recognition's confidence; unsure ones are marked `(?)` where the models read them. */
   partial(text: string, words?: HeardWord[]): void {
-    text = markUnsure(text, words, this.config.unsureWord)
     this.noteWords({ ...this.transcript, partial: text })
     this.transcript = { ...this.transcript, previous: this.transcript.partial, partial: text }
+    this.confidence = { ...this.confidence, partial: words }
     this.dropStale()
     this.request('words')
   }
 
-  /** Notes when the user said more words than before (a revision of the same words isn't more). */
+  /** Notes when the user said more than before (the same words revised or re-punctuated aren't more). */
   private noteWords(next: TranscriptSnapshot): void {
-    if (normalize(fullText(next)).length > normalize(fullText(this.transcript)).length) this.wordsAt = Date.now()
+    if (letters(fullText(next)).length > letters(fullText(this.transcript)).length) this.wordsAt = Date.now()
   }
 
   /** A VAD segment finalized. Logged as what the user said. */
   segment(text: string, words?: HeardWord[]): void {
     if (!text.trim()) return
-    text = markUnsure(text, words, this.config.unsureWord)
     this.noteWords({ finalized: [...this.transcript.finalized, text], partial: '' })
     this.transcript = { finalized: [...this.transcript.finalized, text], partial: '', previous: '' }
-    this.history.heard(this.utteranceId, text)
-    this.taskHeard.push(text)
+    this.confidence = { finalized: [...this.confidence.finalized, words] }
+    this.lastSegment = text
+    this.history.heard(this.utteranceId, this.marked(text, words))
+    if (anyUnsure(words, this.config.unsureWord)) this.taskUnsure = true
     this.dropStale()
     this.scheduleEnd()
     this.request('words')
@@ -463,8 +470,12 @@ export class Agent {
   /** What the user is asking for now: the live utterance, else the last thing they said. */
   private focus(): string {
     const live = fullText(this.transcript)
-    if (live.trim()) return unmarked(live)
-    return unmarked(this.history.lastWords())
+    return live.trim() ? live : this.lastSegment
+  }
+
+  /** The user's words as the models read them, unsure ones marked. */
+  private marked(text: string, words: HeardWord[] | undefined): string {
+    return markUnsure(text, words, this.config.unsureWord)
   }
 
   /**
@@ -493,7 +504,10 @@ export class Agent {
   }
 
   private live(): LiveUtterance | undefined {
-    return this.utteranceId ? { utteranceId: this.utteranceId, text: fullText(this.transcript), ended: this.utteranceEnded } : undefined
+    if (!this.utteranceId) return undefined
+    const { finalized, partial } = this.transcript
+    const text = [...finalized.map((t, i) => this.marked(t, this.confidence.finalized[i])), this.marked(partial, this.confidence.partial)].filter(Boolean).join(' ')
+    return { utteranceId: this.utteranceId, text, ended: this.utteranceEnded }
   }
 
   private async tick(reason: TickReason): Promise<void> {
@@ -635,6 +649,13 @@ export class Agent {
     const button = mode === 'act' && target.kind === 'element' && target.node.kind === 'action' ? target.node : null
     const added = () => this.seenUtterance === this.utteranceId && !!this.seen && extendsWords(this.transcript, this.seen)
     const sureStep = mode === 'act' && step.confidence >= c.staleNavConfidence
+    if (stale && mode === 'done') {
+      // Done changes nothing, so new words can't make it wrong: it stands, quietly, and the new
+      // words get a decision of their own.
+      this.report(id, d, 'done', 'executed')
+      await this.finishTask('done')
+      return 'done'
+    }
     if (stale) {
       const confidentNav = sureStep && navigates(target)
       if (mode !== 'listen' && !confidentNav && !(sureStep && button && added())) {
@@ -1344,7 +1365,7 @@ export class Agent {
 
   /** The user's words typed this task, when speech recognition was unsure of any they said this task. */
   private unsureDictation(): string | null {
-    if (!this.taskHeard.some((t) => t.includes('(?)'))) return null
+    if (!this.taskUnsure) return null
     return stepsOf(this.task()).findLast((e) => e.by !== 'user' && e.wrote === 'user' && !!e.text)?.text ?? null
   }
 

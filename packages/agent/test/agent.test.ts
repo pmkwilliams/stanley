@@ -334,6 +334,42 @@ describe('Agent loop', () => {
     expect(performed).toContain('open email')
   })
 
+  it('lets a done stand when new words arrive during the call, and decides on the new words', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((r) => (release = r))
+    const { agent, jev, ticks, thinker } = setup(async (_, i) => {
+      if (i === 0) {
+        await gate
+        return { next: 'done', nextConfidence: 0.3 }
+      }
+      return { next: 'listen' }
+    })
+    agent.utteranceStart()
+    agent.segment('open my email')
+    await settle()
+    agent.segment('and play some music')
+    release()
+    await settle()
+    expect(ticks[0]).toMatchObject({ effective: 'done', outcome: 'executed' })
+    expect(jev.calls).toBe(2)
+    expect(thinker.runs).toHaveLength(0)
+  })
+
+  it('does not decide again when the same words settle, finalize or come back re-punctuated', async () => {
+    const { agent, jev } = setup(() => ({ next: 'listen' }))
+    agent.utteranceStart()
+    agent.voice(true)
+    agent.partial('Play Lofi Chillout and')
+    agent.partial('Play Lofi Chillout and go to my Email.')
+    await settle()
+    const calls = jev.calls
+    expect(calls).toBe(1)
+    agent.partial('Play Lofi Chillout and go to my Email.')
+    agent.segment('Play Lo-Fi, chill out, and go to my email.')
+    await settle()
+    expect(jev.calls).toBe(calls)
+  })
+
   it('thinks instead of listening when the utterance ends mid-call', async () => {
     let release!: () => void
     const gate = new Promise<void>((r) => (release = r))
@@ -652,7 +688,7 @@ describe('Agent writing', () => {
 describe('Agent and misheard words', () => {
   it('marks words speech recognition was unsure of in what the models read', async () => {
     const states: string[] = []
-    const { agent } = setup((req) => (states.push(req.state), { next: 'listen' }))
+    const { agent, debug } = setup((req) => (states.push(req.state), { next: 'listen' }))
     agent.utteranceStart()
     agent.segment('pay the Aconquo invoice', [
       { word: 'pay', confidence: 0.9 },
@@ -662,6 +698,9 @@ describe('Agent and misheard words', () => {
     ])
     await settle()
     expect(states.at(-1)).toContain('User (still speaking): pay the Aconquo(?) invoice')
+    // The agent's own transcript keeps the words as said.
+    const ticked = debug.find((e) => e.type === 'tick-start')
+    expect(ticked && 'transcript' in ticked && ticked.transcript).toEqual({ finalized: ['pay the Aconquo invoice'], partial: '', previous: '' })
   })
 
   it('asks instead of typing when the words for a field look misheard', async () => {
@@ -968,7 +1007,13 @@ describe('Agent turn-taking', () => {
     await new Promise((r) => setTimeout(r, 150))
     expect(agent.turnOpen).toBe(false)
     agent.utteranceStart()
-    spoke(agent, "reply I'm in see you fry(?) day(?)")
+    agent.voice(false)
+    agent.pause({ complete: 0.9 })
+    agent.segment("reply I'm in see you fry day", [
+      ...["reply", "I'm", 'in', 'see', 'you'].map((word) => ({ word, confidence: 0.95 })),
+      { word: 'fry', confidence: 0.3 },
+      { word: 'day', confidence: 0.4 },
+    ])
     await new Promise((r) => setTimeout(r, 300))
     expect(performed).not.toContain('todo:delete')
     expect(said).toContain('I heard: "I\'m in, see you Friday". Should I go ahead?')

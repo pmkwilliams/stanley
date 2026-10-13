@@ -9,6 +9,14 @@ export function normalize(text: string): string[] {
   return text.toLowerCase().replace(/[^\p{L}\p{N}\s']/gu, ' ').split(/\s+/).filter(Boolean)
 }
 
+/**
+ * The words as one run of letters and digits, so the same words read the same however the
+ * transcriber punctuated, cased or spaced them: "Lofi Chillout" and "Lo-Fi, chill out".
+ */
+export function letters(text: string): string {
+  return text.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')
+}
+
 export interface TranscriptSnapshot {
   finalized: string[]
   partial: string
@@ -27,13 +35,14 @@ export function fullText(t: TranscriptSnapshot): string {
   return [...t.finalized, t.partial].filter(Boolean).join(' ')
 }
 
-/** True when the stable prefix grew, or a segment finalized, since `seen`. */
+/**
+ * True when more of the words have settled since `seen` and they aren't just the words `seen`
+ * already had: the same words settling, finalizing or coming back re-punctuated are nothing new.
+ */
 export function hasNewWords(current: TranscriptSnapshot, seen: TranscriptSnapshot | null): boolean {
   if (!seen) return stableWords(current).length > 0 || current.finalized.length > 0
-  if (current.finalized.length > seen.finalized.length) return true
-  const a = stableWords(current)
-  const b = stableWords(seen)
-  return a.length > b.length && a.join(' ') !== b.join(' ')
+  const settled = (t: TranscriptSnapshot) => letters(stableWords(t).join(' ')).length
+  return settled(current) > settled(seen) && letters(fullText(current)) !== letters(fullText(seen))
 }
 
 /** True when `current` only adds words after all of `seen`'s, its last partial word included. */

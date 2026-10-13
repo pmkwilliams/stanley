@@ -150,7 +150,6 @@ export class Conversation {
   readonly entries: Entry[] = []
   private staged: Entry[] = []
   private segments = new Map<number, string[]>()
-  private lastSegment = ''
   /** Per utterance, how many of its words are committed. */
   private printed = new Map<number, number>()
   /** Entries before this index were sent to thinking, and never change. */
@@ -161,10 +160,9 @@ export class Conversation {
 
   constructor(private sink?: (record: HistoryRecord) => void) {}
 
-  /** A finalized segment of what the user said. */
+  /** A finalized segment of what the user said, as the models read it. */
   heard(utteranceId: number, text: string): void {
     this.segments.set(utteranceId, [...(this.segments.get(utteranceId) ?? []), text])
-    this.lastSegment = text
     this.sink?.({ type: 'words', utteranceId, text })
     this.stage({ kind: 'heard', utteranceId })
   }
@@ -325,11 +323,6 @@ export class Conversation {
     if (!this.staged.length && !(live && this.unprinted(live))) return this.entries
     let n = 0
     return [...this.entries, ...place(this.staged, this.segments, this.printed, live, () => `view-${++n}`)]
-  }
-
-  /** The last segment the user said. */
-  lastWords(): string {
-    return this.lastSegment
   }
 
   private unprinted(live: LiveUtterance): boolean {

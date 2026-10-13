@@ -1,7 +1,7 @@
 import { cpSync, existsSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Agent, createThinker, defaultConfig, type AgentDeps, type FileTools, type ThinkEffort, type Thinker, type TickReport, type WebTools, type World } from '@stanley/agent'
+import { Agent, createThinker, defaultConfig, type AgentDeps, type FileTools, type HeardWord, type ThinkEffort, type Thinker, type TickReport, type WebTools, type World } from '@stanley/agent'
 import { parallelWeb } from '@stanley/app-web/parallel'
 import { localFiles } from '@stanley/files'
 import { createJevClient, type DecisionClient } from '@stanley/jev'
@@ -262,6 +262,11 @@ export function report(label: string, result: ScenarioResult) {
   for (const f of result.failures) console.log(`   ! ${f}`)
 }
 
+/** A scenario's words as speech recognition gives them: a word written with `(?)` is one it was unsure of. */
+function heard(text: string): HeardWord[] {
+  return text.split(' ').map((w) => ({ word: w.replace('(?)', ''), confidence: w.includes('(?)') ? 0.3 : 0.95 }))
+}
+
 /**
  * Types an utterance word by word like live transcription. Each `|` is a pause mid-thought
  * (`PAUSE_MS`), which finalizes a segment as the VAD would. Typing has no voice, so pauses carry no
@@ -283,14 +288,15 @@ export async function typeUtterance(agent: Agent, utterance: string, _index = 0,
       }
     }
     agent.voice(true)
-    const words = part.split(' ')
+    const words = heard(part)
+    const text = (n: number) => words.slice(0, n).map((w) => w.word).join(' ')
     for (let w = 1; w <= words.length; w++) {
-      agent.partial(words.slice(0, w).join(' '))
+      agent.partial(text(w), words.slice(0, w))
       await sleep(WORD_MS)
     }
     agent.voice(false)
     lastWordAt = Date.now()
-    agent.segment(part)
+    agent.segment(text(words.length), words)
     agent.pause({ complete: null })
   }
   const backstop = Date.now() + SILENCE_BACKSTOP_MS

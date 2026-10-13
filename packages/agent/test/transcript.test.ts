@@ -27,8 +27,16 @@ describe('hasNewWords', () => {
     expect(hasNewWords({ finalized: [], partial: 'by eggs to my', previous: 'buy eggs to' }, null)).toBe(false)
   })
 
-  it('fires on finalize', () => {
-    expect(hasNewWords({ finalized: ['hi there'], partial: '' }, { finalized: [], partial: 'hi there' })).toBe(true)
+  it('fires when a segment finalizes with words that were not read', () => {
+    expect(hasNewWords({ finalized: ['add buy eggs'], partial: '' }, { finalized: [], partial: 'add buy eg', previous: 'add buy' })).toBe(true)
+  })
+
+  it('does not fire when the same words settle, finalize or come back re-punctuated', () => {
+    // As in a session: the words were read with marks, decoded again, then finalized as other tokens.
+    const read = { finalized: [], partial: 'Play Lofi Chillout and go to my Email.', previous: 'Play Lofi Chillout and' }
+    expect(hasNewWords({ finalized: [], partial: 'Play Lofi Chillout and go to my Email.', previous: 'Play Lofi Chillout and go to my Email.' }, read)).toBe(false)
+    expect(hasNewWords({ finalized: ['Play Lo-Fi, chill out, and go to my email.'], partial: '' }, read)).toBe(false)
+    expect(hasNewWords({ finalized: ['hi there'], partial: '' }, { finalized: [], partial: 'hi there' })).toBe(false)
   })
 
   it('needs some stable words on the first call', () => {
