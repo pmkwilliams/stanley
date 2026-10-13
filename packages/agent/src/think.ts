@@ -95,7 +95,7 @@ You act through the \`act\` tool, which runs one of the listed options: open an 
 Everything you write as text is read aloud to the user by text-to-speech as you write it, and shown on screen. So:
 - Write it the way you would say it out loud: no markdown, lists or other formatting.
 - Keep it short: listening takes longer than reading. Give just the answer, without hedging.
-- Speak when there's something worth hearing. The user can see the screen, so your steps rarely need words.
+- Speak only when there's something worth hearing: an answer they asked for, a question, what's ready before something is sent, or something that went wrong. The user can see the screen: never narrate it. Don't say where they are or what opened ("you're in your inbox"), and don't read out or count what's on screen unless they asked. When a step did what they asked, say nothing.
 
 How to act:
 - Typing into a field never submits it. Submitting is pressing Enter or a button.
@@ -115,7 +115,7 @@ You can also look things up in the background: \`search\` searches the web and \
 A question only needs an answer: look it up in the background and say it. When the user wants to see something, put it on screen: open the page about exactly what they mean, searching first if no page in the conversation is about it. "That" or "it" is what you just told them about (the thing your answer named), not the question or the list it came from.`
 
 export const MISHEARD = `## Speech recognition
-The user's words come from speech recognition, which marks a word it was unsure of with (?). Only marked words are in doubt; take the rest as said. Read a marked word as what the user most likely said, given the conversation and the screen: a name on screen that sounds the same, or a word that sounds like one that fits. If a marked word matters and you can't tell what it was, ask, saying what you heard. Never type the marks.`
+The user's words come from speech recognition, which marks a word it was unsure of with (?).`
 
 /** "Monday, 12 October 2026". */
 export function longDate(d: Date): string {
@@ -141,6 +141,12 @@ export function writeNote(field: string): string {
     `- When they haven't said yet what to write, or words marked (?) that matter make no sense here, don't call act: once they have finished, say what you need to ask.`,
   ].join('\n')
 }
+
+/** What thinking is told when the fast part was unsure the task is done. */
+export const DONE_CHECK = `This may already be done. If something is left for the user, such as an answer, do it; if not, say nothing.`
+
+/** What thinking is told when a button was pressed before the user finished speaking. */
+export const EARLY_GUESS = `Stanley pressed something before the user finished speaking. Check each step against everything they said: undo any they took back or corrected, then do what is left. If it all matches, say nothing.`
 
 /** What a single-step turn on a button that may commit is told. */
 export function confirmNote(option: string): string {

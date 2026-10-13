@@ -7,7 +7,7 @@ import { validate } from '../src/conversation'
 import type { AgentDebugEvent } from '../src/debug'
 import type { Effect } from '../src/effects'
 import type { FileTools } from '../src/files'
-import { scriptedTurn, type ThinkRequest, type Thinker, type ThinkResult } from '../src/think'
+import { DONE_CHECK, scriptedTurn, type ThinkRequest, type Thinker, type ThinkResult } from '../src/think'
 import type { WebTools } from '../src/web'
 import type { World } from '../src/world'
 
@@ -429,6 +429,18 @@ describe('Agent loop', () => {
     expect(debug.some((e) => e.type === 'gate' && e.rule === 'step-confidence')).toBe(true)
     expect(thinker.runs).toHaveLength(1)
     expect(handover(debug)).toEqual(['no step stood out clearly'])
+  })
+
+  it('tells thinking to say nothing when an unsure done-check finds nothing left', async () => {
+    // A change, not just going somewhere: a task that only navigated closes without checking.
+    const { agent, performed, thinker } = setup(plan({ next: 'act', step: 'Sort' }, { next: 'done', nextConfidence: 0.3 }))
+    agent.utteranceStart()
+    agent.segment('sort my list')
+    agent.utteranceEnd()
+    await settle()
+    expect(performed).toContain('todo:sort')
+    expect(thinker.runs).toHaveLength(1)
+    expect(observation(thinker.runs[0]!)).toContain(`<note>${DONE_CHECK}</note>`)
   })
 
   it('stops when it keeps choosing the same step from the same screen', async () => {

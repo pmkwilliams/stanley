@@ -23,7 +23,7 @@ import {
 import { markUnsure, unmarked, type HeardWord } from './heard'
 import { describeStep, named, namedOptions, narrate } from './narrate'
 import { navigates, stepOptions, type OptionSet, type Target } from './options'
-import { confirmNote, instructions, longDate, PartialTurn, writeNote, type ActCall, type PageOutput, type SearchOutput, type Thinker, type ThinkResult } from './think'
+import { confirmNote, DONE_CHECK, EARLY_GUESS, instructions, longDate, PartialTurn, writeNote, type ActCall, type PageOutput, type SearchOutput, type Thinker, type ThinkResult } from './think'
 import { extendsWords, fullText, hasNewWords, normalize, type TranscriptSnapshot } from './transcript'
 import { knownPages, sameUrl, shortUrl, type KnownPage, type WebTools } from './web'
 import type { Screen, StepResult, World } from './world'
@@ -703,7 +703,7 @@ export class Agent {
     if (mode === 'done' && finished && next.confidence < c.done && !this.onlyNavigated()) {
       this.report(id, d, 'think', 'gated')
       this.gate(id, 'done-confidence', `P(done) ${next.confidence.toFixed(2)} < done ${c.done} → think`)
-      return this.think(id, `Jev was unsure it was done (P(done) ${next.confidence.toFixed(2)})`)
+      return this.think(id, `Jev was unsure it was done (P(done) ${next.confidence.toFixed(2)})`, DONE_CHECK)
     }
 
     // A button pressed before the user finished was a guess. Before closing the task, thinking
@@ -712,7 +712,7 @@ export class Agent {
     if (mode === 'done' && this.utteranceEnded && next.confidence < c.earlyGuessDone && this.guessedEarly()) {
       this.report(id, d, 'think', 'gated')
       this.gate(id, 'early-guess', 'a button was pressed before the user finished; thinking checks it against what they said')
-      return this.think(id, 'a button was pressed before the user finished: check it against what they said')
+      return this.think(id, 'a button was pressed before the user finished: check it against what they said', EARLY_GUESS)
     }
 
     if (mode === 'done') {
@@ -1071,12 +1071,12 @@ export class Agent {
   /**
    * Hands the turn to thinking, which continues the history. It acts on the same options, and
    * whatever it writes is said to the user. Then the task ends and the next turn starts with Jev
-   * again. `handover` is why, for the debug window.
+   * again. `handover` is why, for the debug window; `note`, if any, is what thinking is told.
    */
-  private async think(id: number, handover: string): Promise<string> {
+  private async think(id: number, handover: string, note?: string): Promise<string> {
     this.events.status?.('thinking')
     const reply = this.begin()
-    const turn = await this.thinkOn(id, 'run', handover, reply)
+    const turn = await this.thinkOn(id, 'run', handover, reply, undefined, note)
     if (!turn) {
       // Out of date, so it says nothing more. Steps it already took stay done, and in the history.
       return this.stale(id, reply, 'thinking')
@@ -1103,10 +1103,11 @@ export class Agent {
     handover: string,
     reply: Reply,
     single?: { kind: 'write' | 'confirm'; option: string },
+    note?: string,
   ): Promise<{ result: ThinkResult; options: OptionSet; steps: number } | null> {
     const screen = await this.world.screen()
     const options = this.options(screen, this.config.thinkingElements)
-    const next = single && (single.kind === 'write' ? writeNote(single.option) : confirmNote(single.option))
+    const next = single ? (single.kind === 'write' ? writeNote(single.option) : confirmNote(single.option)) : note
     const sent = this.history.send(this.observe(screen, options, next ? [next] : []), this.live())
     this.events.debug?.({ type: 'think-start', tickId: id, mode, handover, option: single?.option, entries: sent.entries, cacheAt: sent.cacheAt })
     const controller = new AbortController()
@@ -1193,7 +1194,7 @@ export class Agent {
     const field = target.kind === 'element' && target.node.kind === 'input'
     if (field) {
       if (text === undefined) return done(`"${option}" is a field: pass the text to type.`)
-      args.text = text.trim()
+      args.text = unmarked(text).replace(/\s+/g, ' ').trim()
     }
     this.events.status?.(args.text !== undefined ? 'writing' : 'acting')
     let step: StepMeta | undefined

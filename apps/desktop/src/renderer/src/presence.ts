@@ -92,11 +92,13 @@ export interface Style {
   pulse: number
   /** Energy flowing in one direction: doing. */
   travel: number
+  /** A slow swell rolling left to right every few seconds: idle, with the mic off. */
+  roll: number
 }
 
 const ARMED: Style = {
   amp: 0.06, blur: 40, speed: 0.25, freq: 1.3, coherence: 0.4, h0: 150, h1: 172, h2: 250, sat: 55, lit: 52, alpha: 0.35,
-  width: 0.8, voice: 1, breathe: 1, shimmer: 0, scan: 0, pulse: 0, travel: 0,
+  width: 0.8, voice: 1, breathe: 1, shimmer: 0, scan: 0, pulse: 0, travel: 0, roll: 0,
 }
 const HEARING: Partial<Style> = {
   amp: 0.09, blur: 24, speed: 0.55, freq: 1.8, coherence: 0.3, h0: 128, h1: 160, h2: 290, sat: 80, lit: 55, alpha: 0.6,
@@ -104,7 +106,7 @@ const HEARING: Partial<Style> = {
 }
 
 export const STYLES: Record<Presence, Style> = {
-  off: { ...ARMED, amp: 0.012, blur: 4, speed: 0.15, sat: 8, lit: 45, alpha: 0.18, width: 0.9, voice: 0, breathe: 0 },
+  off: { ...ARMED, amp: 0.012, blur: 4, speed: 0.15, sat: 8, lit: 45, alpha: 0.18, width: 0.9, voice: 0, breathe: 0, roll: 1 },
   armed: ARMED,
   hearing: { ...ARMED, ...HEARING },
   trailing: { ...ARMED, ...HEARING, amp: 0.075, blur: 30, speed: 0.4, freq: 1.6, sat: 72, lit: 58, alpha: 0.5, width: 0.66, voice: 1.5, breathe: 0.6 },
