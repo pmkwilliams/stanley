@@ -253,9 +253,13 @@ export function scriptedTurn(text: string, ...calls: ActCall[]): ThinkResult {
   return { text, messages: content.length ? [{ role: 'assistant', content }] : [], sent: 0, calls: unrun }
 }
 
+export type ThinkEffort = 'provider-default' | 'low' | 'medium' | 'high'
+
 /** Claude through Vercel AI Gateway, driving the same options as Jev. */
-export function createThinker(opts: { model?: LanguageModel } = {}): Thinker {
+export function createThinker(opts: { model?: LanguageModel; effort?: ThinkEffort } = {}): Thinker {
   const model = opts.model ?? 'anthropic/claude-sonnet-5.5'
+  // One effort for the whole session: changing it between calls would lose the messages cache.
+  const reasoning = opts.effort ?? 'provider-default'
   return {
     async run(req) {
       // The response messages of the steps that finished, as the SDK sent them to the next step.
@@ -268,6 +272,7 @@ export function createThinker(opts: { model?: LanguageModel } = {}): Thinker {
           messages: req.messages,
           tools: tools(req),
           toolChoice: 'auto',
+          reasoning,
           stopWhen: stepCountIs(req.single ? 1 : req.maxSteps),
           providerOptions: { gateway: { order: ['anthropic'] } },
           // Read the cache where the previous call ended, and write it at the end of this step's input.

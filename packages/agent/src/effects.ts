@@ -28,24 +28,24 @@ export interface EffectJudge {
  * their buttons; an app's `destructive` hint, where one exists, counts as `commits`.
  */
 export function createEffectJudge(jev: DecisionClient, commits = 0.3): EffectJudge {
-  const cache = new Map<string, Record<string, number>>()
+  // In flight or done: a press waiting on a judgement already asked for doesn't ask again.
+  const cache = new Map<string, Promise<Record<string, number>>>()
   return {
     async judge({ option, node, screen, appId, signal }) {
       if (node.destructive) return { effect: 'commits', probabilities: { commits: 1 }, cached: true }
       // A kind of button does the same on every item: "› Delete" deletes whichever to-do it's on.
       const key = `${appId}\n${option.split(' › ').at(-1)}`
       const hit = cache.get(key)
-      const probabilities =
+      const asked =
         hit ??
-        (
-          await jev.choose({
-            state: screen,
-            instructions: `What does pressing [${option}] on this screen do?`,
-            options: EFFECTS,
-            signal,
-          })
-        ).probabilities
-      if (!hit) cache.set(key, probabilities)
+        jev
+          .choose({ state: screen, instructions: `What does pressing [${option}] on this screen do?`, options: EFFECTS, signal })
+          .then((r) => r.probabilities)
+      if (!hit) {
+        cache.set(key, asked)
+        asked.catch(() => cache.delete(key))
+      }
+      const probabilities = await asked
       // Unsure between changing and committing counts as committing: the cost of asking is a question.
       const effect: Effect = (probabilities.commits ?? 0) >= commits ? 'commits' : (probabilities.changes ?? 0) >= (probabilities.looks ?? 0) ? 'changes' : 'looks'
       return { effect, probabilities, cached: !!hit }

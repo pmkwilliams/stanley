@@ -660,7 +660,8 @@ describe('Agent buttons that commit', () => {
     spoke(agent, 'sort')
     await settle()
     expect(performed).toContain('todo:sort')
-    expect(jev.effectCalls).toBe(1)
+    // Each kind of button on the screen (Sort, Delete, press Enter), judged in the background.
+    expect(jev.effectCalls).toBe(3)
   })
 
   it('asks thinking before pressing a button that commits, and presses it when the user asked', async () => {
@@ -696,12 +697,12 @@ describe('Agent buttons that commit', () => {
     expect(statuses.at(-1)).toBe('done')
   })
 
-  it('judges what a button does once per app and label', async () => {
+  it('judges what each kind of button does once per app', async () => {
     const { agent, jev } = setup((_, i) => (i < 2 ? { next: 'act', step: 'Sort' } : { next: 'done' }), { world: { screenChanges: true } })
     agent.utteranceStart()
     spoke(agent, 'sort twice')
     await settle()
-    expect(jev.effectCalls).toBe(1)
+    expect(jev.effectCalls).toBe(3)
   })
 })
 

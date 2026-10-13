@@ -1,7 +1,7 @@
 import { cpSync, existsSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Agent, createThinker, defaultConfig, type AgentDeps, type FileTools, type Thinker, type TickReport, type WebTools, type World } from '@stanley/agent'
+import { Agent, createThinker, defaultConfig, type AgentDeps, type FileTools, type ThinkEffort, type Thinker, type TickReport, type WebTools, type World } from '@stanley/agent'
 import { parallelWeb } from '@stanley/app-web/parallel'
 import { localFiles } from '@stanley/files'
 import { createJevClient, type DecisionClient } from '@stanley/jev'
@@ -56,7 +56,7 @@ export function loadEnv() {
  */
 export function select<T>(items: T[], name: (t: T) => string, command: string): T[] | null {
   const args = process.argv.slice(2)
-  const filters = args.filter((a, i) => !a.startsWith('-') && !/^--(runs|concurrency|jev-turns)$/.test(args[i - 1] ?? ''))
+  const filters = args.filter((a, i) => !a.startsWith('-') && !/^--(runs|concurrency|jev-turns|word-ms|effort)$/.test(args[i - 1] ?? ''))
   if (!filters.length && !args.includes('--all')) {
     console.log(`${items.length} available — each makes several paid Jev/Sonnet calls:`)
     for (const t of items) console.log(`  ${name(t)}`)
@@ -208,7 +208,10 @@ function makeAgent(world: World, events: AgentDeps['events'], files?: FileTools)
   const key = process.env.PARALLEL_API_KEY
   // `--jev-turns N`: how many user turns Jev reads, to compare its input and latency.
   const config = process.argv.includes('--jev-turns') ? { ...defaultConfig, jevTurns: flag('jev-turns', defaultConfig.jevTurns) } : defaultConfig
-  return new Agent({ world, jev: countedJev(createJevClient()), thinker: countedThinker(createThinker()), web: key ? countedWeb(parallelWeb(key)) : undefined, files, events, config })
+  // `--effort low|medium|high`: thinking's effort, to compare speed and results.
+  const i = process.argv.indexOf('--effort')
+  const effort = i === -1 ? undefined : (process.argv[i + 1] as ThinkEffort)
+  return new Agent({ world, jev: countedJev(createJevClient()), thinker: countedThinker(createThinker({ effort })), web: key ? countedWeb(parallelWeb(key)) : undefined, files, events, config })
 }
 
 /** Runs `tasks` with at most `limit` in flight. */

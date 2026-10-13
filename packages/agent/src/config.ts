@@ -13,6 +13,8 @@ export interface AgentConfig {
   earlyGuessDone: number
   /** `think` with a field step at least this sure is handled as writing that field (one call, not a tool loop). */
   writeStep: number
+  /** Judge each kind of button on a screen in the background when it first appears. */
+  warmEffects: boolean
   /** P(commits) at or above this makes a button go to thinking: unsure counts as committing. */
   commits: number
   /** A navigation decided from a stale transcript still runs at or above this step confidence. */
@@ -53,6 +55,7 @@ export const defaultConfig: AgentConfig = {
   earlyGuessDone: 0.8,
   stepConfidence: 0.4,
   writeStep: 0.9,
+  warmEffects: true,
   commits: 0.3,
   staleNavConfidence: 0.8,
   maxStepsPerUtterance: 15,

@@ -508,6 +508,7 @@ export class Agent {
       this.events.status?.(!seenEnded && this.steps === 0 ? 'guessing' : 'thinking')
       const screen = await this.world.screen()
       const options = this.options(screen, this.config.maxElements, this.pages(), await this.knownFiles())
+      this.warmEffects(screen, options)
       const name = this.name()
       const prompt = this.files ? `${SYSTEM_PROMPT}\n\n${JEV_FILES}` : SYSTEM_PROMPT
       const state = `${named(prompt, name)}\n\nToday is ${longDate(this.clock())}.\n\n${narrate(this.view(), screen, this.live(), this.config.jevTurns, name)}`
@@ -955,6 +956,24 @@ export class Agent {
     this.gate(id, 'stale', `new words arrived while ${what}; re-deciding with them`)
     this.outcome = { outcome: 'stale-discarded' }
     return 'stale'
+  }
+
+  /**
+   * Judges what each kind of button on the screen does, in the background, so a press waits for
+   * the judgement only when it comes before the screen's first decision is back.
+   */
+  private warmEffects(screen: Screen, options: OptionSet): void {
+    if (!this.config.warmEffects) return
+    const appId = screen.id.split(':')[0] ?? screen.id
+    const text = `## Screen: ${screen.title}\n${screen.markdown}`
+    const kinds = new Set<string>()
+    for (const [option, target] of options.targets) {
+      if (target.kind !== 'element' || target.node.kind !== 'action') continue
+      const kind = option.split(' › ').at(-1)!
+      if (kinds.has(kind)) continue
+      kinds.add(kind)
+      this.effects.judge({ option, node: target.node, appId, screen: text }).catch(() => {})
+    }
   }
 
   private async judge(id: number, option: string, node: AgentNode, screen: Screen): Promise<EffectVerdict> {
