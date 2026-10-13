@@ -14,9 +14,13 @@ export interface WeatherResult {
   /** Local time of the observation, `YYYY-MM-DDTHH:MM` */
   time: string
   temperature: number
+  /** Apparent temperature: wind and humidity included. */
+  feelsLike: number
   windSpeed: number
   code: number
   days: ForecastDay[]
+  /** Found from the user's own location rather than by name. */
+  here?: boolean
 }
 
 export interface WeatherState {
@@ -34,16 +38,21 @@ export interface WeatherState {
 
 /** The search field's placeholder, which is its label. */
 const FIELD_LABEL = 'Search for a city'
+export const HERE_LABEL = 'Current location'
 
-/** The forecast list's section title: `7-day forecast`. */
 /** The empty state, before any city is looked up. */
 export const EMPTY_TITLE = 'No forecast yet'
 export const emptyText = (agentName: string) => `Search for a city, or ask ${agentName} about the weather anywhere.`
 
-export const forecastTitle = (r: WeatherResult) => `${r.days.length}-day forecast`
+/** The forecast list's title. */
+export const FORECAST_TITLE = 'Extended forecast'
 
 const GEOCODE_URL = 'https://geocoding-api.open-meteo.com/v1/search'
 const FORECAST_URL = 'https://api.open-meteo.com/v1/forecast'
+/** IP geolocation: no key, no permission prompt, city-level. */
+const LOCATE_URL = 'https://ipwho.is/'
+/** Opening the app waits for the current location's forecast; give up on it after this. */
+const LOCATE_TIMEOUT_MS = 5000
 
 /** WMO weather interpretation codes, as used by Open-Meteo. */
 const wmo: Record<number, string> = {
@@ -94,8 +103,11 @@ export function dayName(date: string): string {
   return `${weekdays[d.getUTCDay()]} ${months[d.getUTCMonth()]} ${d.getUTCDate()}`
 }
 
-/** `2026-10-14` → `Wed`: the forecast row's label (the first row is `Today`). */
+/** `2026-10-14` → `Wed`: the forecast row's label. */
 export const shortDay = (date: string): string => dayName(date).slice(0, 3)
+
+/** The card's date line. */
+export const TODAY_LABEL = 'Today'
 
 /** `Denver, Colorado, United States` → `{ city: 'Denver', region: 'Colorado, United States' }` */
 export function splitPlace(place: string): { city: string; region: string } {
@@ -111,8 +123,8 @@ const deg = (n: number) => `${Math.round(n)}°C`
 const dayLine = (d: ForecastDay) => `${dayName(d.date)}: ${describeCode(d.code)}, high ${deg(d.high)}, low ${deg(d.low)}`
 
 function resultMarkdown(r: WeatherResult): string {
-  const now = `Now: ${deg(r.temperature)}, ${describeCode(r.code)}, wind ${Math.round(r.windSpeed)} km/h`
-  return `# Weather in ${r.place}\n${now}\n\n## ${forecastTitle(r)}\n${r.days.map((d) => `- ${dayLine(d)}`).join('\n')}`
+  const now = `${r.here ? `${HERE_LABEL}\n` : ''}Now: ${deg(r.temperature)} (feels like ${deg(r.feelsLike)}), ${describeCode(r.code)}, wind ${Math.round(r.windSpeed)} km/h`
+  return `# Weather in ${r.place}\n${now}\n\n## ${FORECAST_TITLE}\n${r.days.map((d) => `- ${dayLine(d)}`).join('\n')}`
 }
 
 interface GeocodeResponse {
@@ -120,35 +132,65 @@ interface GeocodeResponse {
 }
 
 interface ForecastResponse {
-  current: { time: string; temperature_2m: number; weather_code: number; wind_speed_10m: number }
+  current: { time: string; temperature_2m: number; apparent_temperature: number; weather_code: number; wind_speed_10m: number }
   daily: { time: string[]; weather_code: number[]; temperature_2m_max: number[]; temperature_2m_min: number[] }
 }
 
-async function getJson<T>(ctx: AppContext, url: string): Promise<T> {
-  const res = await ctx.fetch(url)
+interface LocateResponse {
+  success: boolean
+  message?: string
+  city?: string
+  region?: string
+  country?: string
+  latitude?: number
+  longitude?: number
+}
+
+interface Place {
+  name: string
+  latitude: number
+  longitude: number
+  admin1?: string
+  country?: string
+}
+
+async function getJson<T>(ctx: AppContext, url: string, signal?: AbortSignal): Promise<T> {
+  const res = await ctx.fetch(url, { signal })
   if (!res.ok) throw new Error(`HTTP ${res.status} from ${new URL(url).host}`)
   return (await res.json()) as T
 }
 
-/** Geocode a place name, then fetch current conditions and a 7-day forecast. `null` = place not found. */
+/** Geocode a place name, then fetch its forecast. `null` = place not found. */
 async function lookup(ctx: AppContext, query: string): Promise<WeatherResult | null> {
   const geo = await getJson<GeocodeResponse>(ctx, `${GEOCODE_URL}?${new URLSearchParams({ name: query, count: '1', language: 'en', format: 'json' })}`)
   const place = geo.results?.[0]
-  if (!place) return null
+  return place ? forecast(ctx, place) : null
+}
 
+/** Locate the user by IP, then fetch the forecast there. `null` = couldn't tell where. */
+async function lookupHere(ctx: AppContext, signal?: AbortSignal): Promise<WeatherResult | null> {
+  const at = await getJson<LocateResponse>(ctx, LOCATE_URL, signal)
+  if (!at.success || !at.city || at.latitude == null || at.longitude == null) return null
+  const place = { name: at.city, latitude: at.latitude, longitude: at.longitude, admin1: at.region, country: at.country }
+  return { ...(await forecast(ctx, place, signal)), here: true }
+}
+
+/** Current conditions and a 7-day forecast for a place. */
+async function forecast(ctx: AppContext, place: Place, signal?: AbortSignal): Promise<WeatherResult> {
   const params = new URLSearchParams({
     latitude: String(place.latitude),
     longitude: String(place.longitude),
-    current: 'temperature_2m,weather_code,wind_speed_10m',
+    current: 'temperature_2m,apparent_temperature,weather_code,wind_speed_10m',
     daily: 'weather_code,temperature_2m_max,temperature_2m_min',
     forecast_days: '7',
     timezone: 'auto',
   })
-  const f = await getJson<ForecastResponse>(ctx, `${FORECAST_URL}?${params}`)
+  const f = await getJson<ForecastResponse>(ctx, `${FORECAST_URL}?${params}`, signal)
   return {
     place: [place.name, place.admin1, place.country].filter((p, i, all) => p && all.indexOf(p) === i).join(', '),
     time: f.current.time,
     temperature: f.current.temperature_2m,
+    feelsLike: f.current.apparent_temperature,
     windSpeed: f.current.wind_speed_10m,
     code: f.current.weather_code,
     days: f.daily.time.map((date, i) => ({
@@ -163,14 +205,18 @@ async function lookup(ctx: AppContext, query: string): Promise<WeatherResult | n
 export const weatherApp = defineApp<WeatherState>({
   id: 'weather',
   title: 'Weather',
-  description: 'Weather: current conditions and 7-day forecast for any city',
+  description: 'Weather: current conditions and 7-day forecast for the current location or any city',
 
-  init: () => ({ route: 'home', query: null, result: null, loading: false, error: null, box: '' }),
+  /** Opens on the current location's forecast; if that can't be found, on the empty state. */
+  async init(ctx) {
+    const result = await lookupHere(ctx, AbortSignal.timeout(LOCATE_TIMEOUT_MS)).catch(() => null)
+    return { route: 'home', query: null, result, loading: false, error: null, box: '' }
+  },
 
   current: (s) => s.route,
 
   nodes(s) {
-    // As on screen: the search field (Enter looks it up), then the hero for now, then the forecast.
+    // As on screen: the card (the search field, Enter looks it up; then now), then the forecast.
     const r = s.result
     const field: AgentNode = {
       id: 'city',
@@ -179,7 +225,8 @@ export const weatherApp = defineApp<WeatherState>({
       value: s.box,
       children: s.box ? [{ id: 'location', kind: 'action', role: 'key', label: 'press Enter' }] : [],
     }
-    if (!r) return [field]
+    const here: AgentNode[] = r?.here ? [] : [{ id: 'here', kind: 'action', role: 'button', label: HERE_LABEL }]
+    if (!r) return [field, ...here]
     const selected = (route: string) => (s.route === route ? ', selected' : '')
     const today = r.days[0]
     const now: AgentNode = {
@@ -188,20 +235,22 @@ export const weatherApp = defineApp<WeatherState>({
       role: 'button',
       label: r.place,
       description: [
+        ...(r.here ? [HERE_LABEL] : []),
+        TODAY_LABEL,
         temp(r.temperature),
         conditionLabel(r.code),
         ...(today ? [`H:${temp(today.high)} L:${temp(today.low)}`] : []),
-        `wind ${Math.round(r.windSpeed)} km/h`,
+        `Feels like ${temp(r.feelsLike)}`,
       ].join(', ') + selected('home'),
     }
     const days: AgentNode[] = r.days.map((d, i) => ({
       id: `day/${i}`,
       kind: 'location',
       role: 'button',
-      label: i === 0 ? 'Today' : shortDay(d.date),
-      description: `${conditionLabel(d.code)}, low ${temp(d.low)}, high ${temp(d.high)}${selected(`day/${i}`)}`,
+      label: shortDay(d.date),
+      description: `${conditionLabel(d.code)}, high ${temp(d.high)}, low ${temp(d.low)}${selected(`day/${i}`)}`,
     }))
-    return [field, now, { id: 'forecast', kind: 'group', label: forecastTitle(r), children: days }]
+    return [field, ...here, now, { id: 'forecast', kind: 'group', label: FORECAST_TITLE, children: days }]
   },
 
   async perform(s, nodeId, args, ctx) {
@@ -210,6 +259,24 @@ export const weatherApp = defineApp<WeatherState>({
     if (nodeId === 'city') {
       const box = args.text?.trim() ?? ''
       return { state: { ...s, box, route: 'home' }, summary: box ? `Typed "${box}" in the city box (not looked up yet)` : 'Cleared the city box' }
+    }
+
+    if (nodeId === 'here') {
+      try {
+        const result = await lookupHere(ctx)
+        if (!result) {
+          const error = "Couldn't find your current location"
+          return { state: { ...s, loading: false, error }, summary: error, observation: error }
+        }
+        return {
+          state: { route: 'home', query: null, result, loading: false, error: null, box: '' },
+          summary: `Weather in ${result.place} (current location): ${deg(result.temperature)}, ${describeCode(result.code)}`,
+          observation: resultMarkdown(result),
+        }
+      } catch (err) {
+        const error = `Weather lookup failed: ${err instanceof Error ? err.message : String(err)}`
+        return { state: { ...s, loading: false, error }, summary: error }
+      }
     }
 
     if (nodeId === 'location') {

@@ -46,6 +46,7 @@ export const fixtures: Record<string, Record<string, unknown>> = {
         place: 'Denver, Colorado, United States',
         time: '2026-10-12T14:00',
         temperature: 18.4,
+        feelsLike: 17.1,
         windSpeed: 12.2,
         code: 2,
         days: [
