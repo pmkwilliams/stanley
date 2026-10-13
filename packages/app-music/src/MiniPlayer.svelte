@@ -14,58 +14,55 @@
 </script>
 
 {#if track}
-  <div class="mini" class:playing={data.playing} style:--tint={tint(track)}>
-    <button class="open" aria-label="Open Music" onclick={onopen}>
-      <span class="art" style:background={cover(track)}></span>
-      <span class="text">
-        <span class="title">{track.title}</span>
-        <span class="artist">{track.artist}</span>
+  <!-- 200×42, rounded-xl. The art sits 8 in, so it's rounded-sm; the toggle 6 in, so rounded-md. -->
+  <div
+    class="group/mini flex h-10.5 w-50 items-center gap-1 rounded-xl bg-player pr-1.5 pl-2 text-foreground"
+    data-playing={data.playing}
+    style:--tint={tint(track)}
+  >
+    <button class="flex h-full min-w-0 flex-1 items-center gap-2 text-left" aria-label="Open Music" onclick={onopen}>
+      <span class="size-6 flex-none rounded-sm ring-1 ring-white/10 ring-inset" style:background={cover(track)}></span>
+      <span class="flex min-w-0 flex-col text-xs leading-tight">
+        <span class="truncate font-semibold">{track.title}</span>
+        <span class="truncate text-muted-foreground">{track.artist}</span>
       </span>
     </button>
-    <button class="toggle" aria-label={data.playing ? 'Pause' : 'Play'} onclick={() => perform('toggle')}>
-      <span class="wave" aria-hidden="true">{#each [0, 1, 2, 3] as i (i)}<i style:animation-delay="{i * -0.27}s"></i>{/each}</span>
-      <span class="icon"><Icon name={data.playing ? 'pause' : 'play'} size={14} /></span>
+    <button
+      class="group/toggle relative flex size-7.5 flex-none items-center justify-center rounded-md transition-colors hover:bg-foreground/10"
+      aria-label={data.playing ? 'Pause' : 'Play'}
+      onclick={() => perform('toggle')}
+    >
+      <!-- The waveform and the play/pause icon share the spot: wave while playing, icon on hover or when paused. -->
+      <span
+        class="absolute inset-0 flex items-center justify-center gap-0.5 transition duration-200 ease-out group-hover/toggle:scale-70 group-hover/toggle:opacity-0 group-data-[playing=false]/mini:scale-70 group-data-[playing=false]/mini:opacity-0"
+        aria-hidden="true"
+      >
+        {#each [0, 1, 2, 3] as i (i)}
+          <!-- Covers' highlights are pale: deepen the bars to read on the light pill. -->
+          <i class="level h-3.5 w-0.5 rounded-full bg-(--tint) in-data-[theme=light]:bg-[color-mix(in_srgb,var(--tint)_65%,black)]" style:animation-delay="{i * -0.27}s"></i>
+        {/each}
+      </span>
+      <span
+        class="absolute inset-0 flex scale-70 items-center justify-center opacity-0 transition duration-200 ease-out group-hover/toggle:scale-100 group-hover/toggle:opacity-100 group-data-[playing=false]/mini:scale-100 group-data-[playing=false]/mini:opacity-100"
+      >
+        <Icon name={data.playing ? 'pause' : 'play'} size={14} />
+      </span>
     </button>
   </div>
 {/if}
 
 <style>
-  /* 200×42, art 24 inset 9, so the art's radius is 14 − 9; the toggle's hover square is concentric too. */
-  .mini {
-    display: flex; align-items: center; width: 200px; height: 42px; padding: 0 6px 0 9px; gap: 4px;
-    background: var(--player); border-radius: 14px; color: var(--text);
-  }
-  button { display: flex; align-items: center; padding: 0; color: inherit; background: none; border: 0; border-radius: 0; cursor: default; }
-  button:hover { background: none; }
-
-  .open { flex: 1; min-width: 0; gap: 9px; height: 100%; text-align: left; }
-  .art { flex: none; width: 24px; height: 24px; border-radius: 5px; box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.12); }
-  .text { min-width: 0; display: flex; flex-direction: column; line-height: 1.15; }
-  .title, .artist { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .title { font-size: 12px; font-weight: 600; }
-  .artist { font-size: 11px; color: var(--muted); }
-
-  .toggle { position: relative; flex: none; justify-content: center; width: 30px; height: 30px; border-radius: 9px; transition: background var(--dur-fast, 120ms); }
-  .toggle:hover { background: color-mix(in srgb, var(--text) 10%, transparent); }
-
-  /* The waveform and the play/pause icon share the spot: wave while playing, icon on hover or when paused. */
-  .wave, .icon { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; transition: opacity 0.18s, transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1); }
-  .wave { gap: 2px; }
-  .wave i { width: 2.5px; height: 14px; border-radius: 2px; background: var(--tint); transform: scaleY(0.3); animation: level 0.9s ease-in-out infinite alternate; animation-play-state: paused; }
-  .playing .wave i { animation-play-state: running; }
-  /* Covers' highlights are pale: deepen the bars to read on the light pill. */
-  :global([data-theme='light']) .wave i { background: color-mix(in srgb, var(--tint) 65%, black); }
-  .icon { opacity: 0; transform: scale(0.7); }
-  .mini:not(.playing) .wave, .toggle:hover .wave { opacity: 0; transform: scale(0.7); }
-  .mini:not(.playing) .icon, .toggle:hover .icon { opacity: 1; transform: none; }
+  /* Bars scale from the middle; paused (frozen) unless the track is playing. */
+  .level { scale: 1 0.3; animation: level 0.9s ease-in-out infinite alternate paused; }
+  [data-playing='true'] .level { animation-play-state: running; }
 
   @keyframes level {
-    0% { transform: scaleY(0.25); }
-    40% { transform: scaleY(0.9); }
-    70% { transform: scaleY(0.45); }
-    100% { transform: scaleY(1); }
+    0% { scale: 1 0.25; }
+    40% { scale: 1 0.9; }
+    70% { scale: 1 0.45; }
+    100% { scale: 1 1; }
   }
   @media (prefers-reduced-motion: reduce) {
-    .wave i { animation: none; transform: scaleY(0.6); }
+    .level { animation: none; scale: 1 0.6; }
   }
 </style>

@@ -100,7 +100,7 @@ uniform float uDpr, uTime, uLight;
 out vec4 o;
 
 const float ANGLE = ${f((GLASS.angle * Math.PI) / 180)};
-// The window background per theme: app.css's --bg.
+// The window background per theme: the theme's --background.
 const vec3 DARK = vec3(${f(10 / 255)}, ${f(10 / 255)}, ${f(11 / 255)});
 const vec3 LIGHT = vec3(${f(242 / 255)}, ${f(242 / 255)}, ${f(244 / 255)});
 

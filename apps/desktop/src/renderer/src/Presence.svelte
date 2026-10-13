@@ -179,18 +179,14 @@
   const captioned = $derived(!!words && (snapshot.utteranceOpen || shown === 'guessing' || shown === 'thinking'))
 </script>
 
-<canvas bind:this={canvas} data-presence={shown}></canvas>
+<canvas bind:this={canvas} data-presence={shown} class="pointer-events-none fixed inset-0 z-0 size-full"></canvas>
 {#if captions}
-  <p class="caption" class:docked class:on={captioned}>{words}</p>
+  <!-- The halo lifts the words off the presence behind them. -->
+  <p
+    class={[
+      'pointer-events-none fixed inset-x-0 z-2 px-[15%] text-center text-foreground opacity-0 transition-[opacity,top,font-size] duration-500 ease-out [text-shadow:0_1px_12px_var(--halo)]',
+      docked ? 'top-[calc(100%-4rem)] text-sm' : 'top-[36%] text-lg',
+      captioned && 'opacity-100',
+    ]}
+  >{words}</p>
 {/if}
-
-<style>
-  canvas { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; }
-  .caption {
-    position: fixed; left: 0; right: 0; top: 36%; z-index: 2; margin: 0; padding: 0 15%;
-    text-align: center; font-size: 17px; color: color-mix(in srgb, var(--text) 85%, transparent); text-shadow: 0 1px 12px var(--halo);
-    pointer-events: none; opacity: 0; transition: opacity 0.4s, top 0.5s cubic-bezier(0.2, 0.8, 0.2, 1), font-size 0.5s;
-  }
-  .caption.on { opacity: 1; }
-  .caption.docked { top: calc(100% - 64px); font-size: 13px; }
-</style>

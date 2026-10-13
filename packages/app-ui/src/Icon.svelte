@@ -8,7 +8,7 @@
 </script>
 
 <svg
-  class="ui-icon"
+  class="block shrink-0"
   viewBox="0 0 24 24"
   width={size}
   height={size}
@@ -20,6 +20,3 @@
   stroke-linejoin="round">{@html icon.svg}</svg
 >
 
-<style>
-  svg { flex: none; display: block; }
-</style>

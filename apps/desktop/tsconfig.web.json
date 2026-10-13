@@ -12,7 +12,8 @@
     "strict": true,
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
-    "noEmit": true
+    "noEmit": true,
+    "paths": { "$ui": ["../../packages/app-ui/src"], "$ui/*": ["../../packages/app-ui/src/*"] }
   },
   "include": [
     "src/renderer/src/**/*",
@@ -21,6 +22,7 @@
     "src/preload/*.d.ts",
     "src/shared",
     "../../packages/app-*/src/**/*.svelte",
-    "../../packages/app-ui/src/**/*.ts"
+    "../../packages/app-ui/src/**/*.ts",
+    "../../packages/app-ui/src/**/*.svelte"
   ]
 }

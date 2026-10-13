@@ -64,41 +64,30 @@
   const Background = backgrounds[id]
 </script>
 
-<div class="stage">
-  <div class="bar">{#if app}<StatusBar {snapshot} onlock={() => {}} />{/if}</div>
-  <main>
+<!-- Mirrors the shell's layout (App.svelte): an 80px status bar, then the window centred under it.
+     The stage's background is a stand-in for Stanley's aurora, so the window's glass has something to show through. -->
+<div
+  class="relative grid h-screen grid-rows-[var(--bar-height)_minmax(0,1fr)]"
+  style="--bar-height: 80px; --window-max-width: calc(100vw - 64px); --window-max-height: calc(100vh - var(--bar-height) - 64px);
+         background: radial-gradient(40% 30% at 30% 100%, rgba(79, 209, 165, 0.35), transparent 70%), radial-gradient(40% 30% at 70% 100%, rgba(138, 124, 240, 0.35), transparent 70%), var(--wallpaper)"
+>
+  <div>{#if app}<StatusBar {snapshot} onlock={() => {}} />{/if}</div>
+  <main class="grid min-h-0 place-items-center overflow-hidden">
     {#if app && data}
-      <div class="window ui-window"><Surface {data} {perform} /></div>
+      <div class="flex max-h-(--window-max-height) max-w-(--window-max-width) flex-col overflow-hidden rounded-3xl border bg-card/80 shadow-window backdrop-blur-2xl backdrop-saturate-150"><Surface {data} {perform} /></div>
       {#if Background}<Background {data} {perform} />{/if}
     {:else if !app}
-      <nav>
+      <nav class="grid grid-cols-[repeat(2,auto)] gap-x-6 gap-y-2">
         {#each Object.keys(apps) as a (a)}
-          <a href="?app={a}&theme=dark">{a} · dark</a><a href="?app={a}&theme=light">{a} · light</a>
+          <a class="text-foreground underline" href="?app={a}&theme=dark">{a} · dark</a><a class="text-foreground underline" href="?app={a}&theme=light">{a} · light</a>
         {/each}
       </nav>
     {/if}
   </main>
-  {#if params.has('log')}<pre class="log">{log.join('\n')}</pre>{/if}
+  {#if params.has('log')}<pre class="fixed bottom-3 left-3 text-xs text-muted-foreground">{log.join('\n')}</pre>{/if}
 </div>
 
 <style>
-  /* Mirrors the shell's layout (App.svelte): an 80px status bar, then the window centred under it. */
-  .stage {
-    display: grid; grid-template-rows: var(--bar-height) minmax(0, 1fr); height: 100vh; position: relative;
-    --bar-height: 80px;
-    --window-max-width: calc(100vw - 64px);
-    --window-max-height: calc(100vh - var(--bar-height) - 64px);
-    /* Stand-in for Stanley's aurora, so the window's glass has something to show through. */
-    background:
-      radial-gradient(40% 30% at 30% 100%, rgba(79, 209, 165, 0.35), transparent 70%),
-      radial-gradient(40% 30% at 70% 100%, rgba(138, 124, 240, 0.35), transparent 70%),
-      var(--wallpaper);
-  }
-  main { display: grid; place-items: center; min-height: 0; overflow: hidden; }
-  .window { display: flex; flex-direction: column; max-width: var(--window-max-width); max-height: var(--window-max-height); overflow: hidden; }
-  nav { display: grid; grid-template-columns: repeat(2, auto); gap: 8px 24px; }
-  nav a { color: var(--text); }
-  .log { position: fixed; left: 12px; bottom: 12px; margin: 0; font-size: 11px; color: var(--muted); }
   /* Electron's <webview> doesn't exist in a browser: show where the page would be. */
-  :global(webview) { display: block; background: repeating-linear-gradient(45deg, var(--panel) 0 12px, transparent 12px 24px); }
+  :global(webview) { display: block; background: repeating-linear-gradient(45deg, var(--muted) 0 12px, transparent 12px 24px); }
 </style>

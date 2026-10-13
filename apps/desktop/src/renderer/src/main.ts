@@ -3,7 +3,6 @@ import App from './App.svelte'
 import Debug from './Debug.svelte'
 import '@fontsource-variable/inter'
 import './app.css'
-import '@stanley/app-ui/kit.css'
 import { setTheme } from './theme.svelte'
 
 const debug = location.hash === '#debug'

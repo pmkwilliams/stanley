@@ -57,17 +57,30 @@
   const locked = $derived(snapshot?.locked ?? true)
 </script>
 
-<!-- Inert while locked, so nothing under the lock screen can be focused or clicked. -->
-<div class="shell" class:locked inert={locked}>
+<!--
+  Inert while locked, so nothing under the lock screen can be focused or clicked.
+  `--window-max-*`: the largest a window may grow; surfaces with no natural size (e.g. a web page) fill it.
+  Locked, only the aura stays: the bar and windows fade with the lock screen's own fade.
+-->
+<div
+  class={['grid h-screen grid-cols-1 grid-rows-[var(--bar-height)_minmax(0,1fr)] [background:var(--wallpaper)] [&>header]:transition-opacity [&>header]:duration-250', locked && '[&>header]:opacity-0']}
+  style="--bar-height: 80px; --window-max-width: calc(100vw - 64px); --window-max-height: calc(100vh - var(--bar-height) - 64px)"
+  inert={locked}
+>
   {#if snapshot}<Presence {snapshot} docked={!!visible && !locked} captions={!locked} />{/if}
   <StatusBar {snapshot} onlock={() => window.stanley.lock()} />
 
-  <main>
+  <main class={['relative overflow-auto transition-opacity duration-250 has-[>div]:grid has-[>div]:place-items-center has-[>div]:overflow-hidden', locked && 'opacity-0']}>
     {#if snapshot}
       <!-- Keyed on the app, so switching plays the old window's outro while the new one pops in over it. -->
+      <!-- Windows share one cell, so an outgoing one sinks behind the incoming one instead of pushing it aside; Svelte marks it inert. -->
       {#each visible && surfaces[visible] ? [visible] : [] as id (id)}
         {@const Surface = surfaces[id]}
-        <div class="window ui-window" in:scale={{ start: 0.96, duration: 180, easing: cubicOut }} out:scale={{ start: 0.94, duration: 140, easing: cubicIn }}>
+        <div
+          class="z-1 col-start-1 row-start-1 flex max-h-(--window-max-height) max-w-(--window-max-width) flex-col overflow-hidden rounded-3xl border bg-card/80 shadow-window backdrop-blur-2xl backdrop-saturate-150 inert:z-0"
+          in:scale={{ start: 0.96, duration: 180, easing: cubicOut }}
+          out:scale={{ start: 0.94, duration: 140, easing: cubicIn }}
+        >
           <Surface data={snapshot.surfaces[id]} perform={(nodeId: string, args?: { text?: string }) => window.stanley.perform(id, nodeId, args)} agentName={snapshot.name} />
         </div>
       {/each}
@@ -86,29 +99,3 @@
     {/if}
   {/each}
 {/if}
-
-<style>
-  .shell {
-    display: grid; grid-template-columns: 1fr; grid-template-rows: var(--bar-height) minmax(0, 1fr); height: 100vh;
-    background: var(--wallpaper);
-    --bar-height: 80px;
-    /* Largest a window may grow; surfaces that have no natural size (e.g. a web page) fill it. */
-    --window-max-width: calc(100vw - 64px);
-    --window-max-height: calc(100vh - var(--bar-height) - 64px);
-  }
-
-  /* Locked, only the aura stays: the bar and windows fade with the lock screen's own fade. */
-  .shell > :global(header), main { transition: opacity 0.25s; }
-  .shell.locked > :global(header), .shell.locked > main { opacity: 0; }
-
-  main { overflow: auto; position: relative; }
-  main:has(> .window) { display: grid; place-items: center; overflow: hidden; }
-  .window {
-    /* Share one cell so an outgoing window sinks behind the incoming one instead of pushing it aside. */
-    grid-area: 1 / 1; z-index: 1;
-    /* The glass itself is `.ui-window` (app-ui kit); apps size themselves (`.ui-app`) and scroll inside. */
-    display: flex; flex-direction: column; max-width: var(--window-max-width); max-height: var(--window-max-height); overflow: hidden;
-  }
-  /* Svelte marks an outroing element inert; keep it underneath the incoming window. */
-  .window:global([inert]) { z-index: 0; }
-</style>

@@ -1,6 +1,14 @@
 <script lang="ts">
   import { DEFAULT_AGENT_NAME, type AppUiProps } from '@stanley/app-sdk'
   import Icon from '@stanley/app-ui/Icon.svelte'
+  import * as Alert from '@stanley/app-ui/components/alert'
+  import * as App from '@stanley/app-ui/components/app'
+  import { Button } from '@stanley/app-ui/components/button'
+  import * as Empty from '@stanley/app-ui/components/empty'
+  import * as InputGroup from '@stanley/app-ui/components/input-group'
+  import * as Item from '@stanley/app-ui/components/item'
+  import { Progress } from '@stanley/app-ui/components/progress'
+  import { Spinner } from '@stanley/app-ui/components/spinner'
   import { cover } from './art'
   import { CREDIT, FIELD_LABEL, NO_RESULTS_TEXT, listTitle, noResultsTitle, nowPlaying, time, type MusicState } from './core'
   import { playback } from './Player.svelte'
@@ -17,6 +25,8 @@
 
   let track = $derived(nowPlaying(data))
   let elapsed = $derived(track ? Math.min(playback.elapsed, track.durationSec) : 0)
+  /** With a catalogue to browse, the hero gives the list more room. */
+  let compact = $derived(data.search)
 
   /** The field's text lives in app state, shared with the agent. */
   function search(e: SubmitEvent) {
@@ -29,14 +39,14 @@
   }
 </script>
 
-<section class="ui-app">
-  <header class="ui-bar">
-    <h1 class="ui-title">Music</h1>
+<App.Root>
+  <App.Bar>
+    <App.Title>Music</App.Title>
     {#if data.search}
-      <form class="find" onsubmit={search}>
-        <label class="ui-field search">
-          <Icon name="search" size={16} />
-          <input
+      <form class="w-56 flex-none" onsubmit={search}>
+        <InputGroup.Root>
+          <InputGroup.Addon><Icon name="search" size={16} /></InputGroup.Addon>
+          <InputGroup.Input
             name="q"
             placeholder={FIELD_LABEL}
             aria-label={FIELD_LABEL}
@@ -45,162 +55,136 @@
             value={data.box}
             onchange={(e) => perform('search', { text: e.currentTarget.value })}
           />
-        </label>
+        </InputGroup.Root>
       </form>
     {/if}
-  </header>
+  </App.Bar>
 
-  <div class="ui-body">
-    <div class="hero" class:compact={data.search}>
-      <div class="art" class:placeholder={!track} class:resting={!data.playing} style:background={track ? cover(track) : null}>
+  <App.Body>
+    <div class={['flex flex-none', compact ? 'gap-6 pt-1 pb-1' : 'gap-7 pt-2 pb-1']}>
+      <!-- Paused art settles back a little, as on iOS. -->
+      <div
+        class={[
+          'grid flex-none place-items-center transition-[scale,box-shadow] duration-200 motion-reduce:transition-none',
+          compact ? 'size-42 rounded-lg' : 'size-60 rounded-xl',
+          !track ? 'bg-accent text-muted-foreground/60' : data.playing ? 'shadow-xl' : 'scale-95 shadow-md',
+        ]}
+        style:background={track ? cover(track) : null}
+      >
         {#if !track}<Icon name="music" size={64} weight={1.5} />{/if}
       </div>
 
-      <div class="info">
-        <div class="meta">
+      <div class={['flex min-w-0 flex-1 flex-col justify-between', compact ? 'pt-1.5' : 'pt-3 pb-1.5']}>
+        <div class="min-w-0">
           {#if track}
-            <h2 class="title">{track.title}</h2>
-            <p class="artist">{track.artist}</p>
+            <h2 class="truncate text-base font-semibold">{track.title}</h2>
+            <p class="mt-0.5 truncate text-muted-foreground">{track.artist}</p>
           {:else}
-            <h2 class="title idle">Not playing</h2>
-            <p class="artist">Choose a song, or ask {agentName} to play one.</p>
+            <h2 class="truncate text-base font-semibold text-muted-foreground">Not playing</h2>
+            <p class="mt-0.5 truncate text-muted-foreground">Choose a song, or ask {agentName} to play one.</p>
           {/if}
         </div>
 
-        <div class="scrubber">
-          <progress class="ui-progress" aria-label="Playback position" max={track?.durationSec ?? 1} value={elapsed}></progress>
-          <div class="times ui-num">
+        <div>
+          <Progress class="bg-accent" aria-label="Playback position" max={track?.durationSec ?? 1} value={elapsed} />
+          <div class="mt-1.5 flex justify-between text-xs text-muted-foreground tabular-nums">
             <span>{time(elapsed)}</span>
             <span>{track ? `−${time(track.durationSec - elapsed)}` : '0:00'}</span>
           </div>
         </div>
 
-        <div class="transport">
-          <button class="ui-btn plain icon skip" aria-label="Previous" onclick={() => perform('previous')}>
+        <div class="flex items-center justify-center gap-5">
+          <Button variant="ghost" size="icon-lg" class="size-10 rounded-full" aria-label="Previous" onclick={() => perform('previous')}>
             <Icon name="backward" size={24} />
-          </button>
-          <button class="ui-btn large icon play" aria-label={data.playing ? 'Pause' : 'Play'} onclick={() => perform('toggle')}>
+          </Button>
+          <Button variant="secondary" size="icon-lg" class="size-11 rounded-full" aria-label={data.playing ? 'Pause' : 'Play'} onclick={() => perform('toggle')}>
             <Icon name={data.playing ? 'pause' : 'play'} size={22} />
-          </button>
-          <button class="ui-btn plain icon skip" aria-label="Next" onclick={() => perform('next')}>
+          </Button>
+          <Button variant="ghost" size="icon-lg" class="size-10 rounded-full" aria-label="Next" onclick={() => perform('next')}>
             <Icon name="forward" size={24} />
-          </button>
+          </Button>
         </div>
 
-        <div class="volume">
-          <button class="ui-btn plain small icon" aria-label="Volume down" onclick={() => perform('volume-down')}>
+        <!-- The negative margin lines the speaker glyphs up with the scrubber's ends. -->
+        <div class="-mx-1.5 flex items-center gap-1.5 text-muted-foreground">
+          <Button variant="ghost" size="icon-sm" class="rounded-full" aria-label="Volume down" onclick={() => perform('volume-down')}>
             <Icon name="speaker-low" size={16} />
-          </button>
-          <progress class="ui-progress level" aria-label="Volume" max="1" value={data.volume}></progress>
-          <button class="ui-btn plain small icon" aria-label="Volume up" onclick={() => perform('volume-up')}>
+          </Button>
+          <Progress class="flex-1 bg-accent" aria-label="Volume" max={1} value={data.volume} />
+          <Button variant="ghost" size="icon-sm" class="rounded-full" aria-label="Volume up" onclick={() => perform('volume-up')}>
             <Icon name="speaker-high" size={16} />
-          </button>
+          </Button>
         </div>
       </div>
     </div>
 
     {#if data.error}
-      <p class="ui-notice" role="alert"><Icon name="exclamation" size={16} /><span>{data.error}</span></p>
+      <Alert.Root variant="destructive" class="mt-5 flex-none">
+        <Icon name="exclamation" size={16} />
+        <Alert.Title>{data.error}</Alert.Title>
+      </Alert.Root>
     {/if}
 
     {#if busy}
-      <p class="busy" role="status"><span class="ui-spinner"></span>Searching for “{data.box || data.query}”…</p>
+      <!-- Fills the space under the hero, where the songs will appear. -->
+      <p class="flex min-h-40 flex-1 items-center justify-center gap-2.5 text-muted-foreground" role="status">
+        <Spinner aria-hidden="true" />Searching for “{data.box || data.query}”…
+      </p>
     {:else if !data.tracks.length}
-      <div class="ui-empty">
-        <Icon name="search" size={40} />
-        <p class="ui-empty-title">{noResultsTitle(data.query)}</p>
-        <p class="ui-empty-text">{NO_RESULTS_TEXT}</p>
-      </div>
+      <Empty.Root class="min-h-40">
+        <Empty.Header>
+          <Empty.Media class="text-muted-foreground/60"><Icon name="search" size={40} /></Empty.Media>
+          <Empty.Title>{noResultsTitle(data.query)}</Empty.Title>
+          <Empty.Description>{NO_RESULTS_TEXT}</Empty.Description>
+        </Empty.Header>
+      </Empty.Root>
     {:else}
-      <section class="ui-section songs">
-        <h3 class="ui-section-title">{listTitle(data)}</h3>
-        <ul class="ui-group">
+      <App.Section
+        class={['flex-none', data.error ? 'mt-4' : compact ? 'mt-6' : 'mt-8']}
+        title={listTitle(data)}
+        footer={data.listing !== 'songs' ? CREDIT : undefined}
+      >
+        <App.Group>
           {#each data.tracks as t (t.id)}
             {@const current = t.id === data.currentId}
             <li>
-              <button class="ui-row" class:selected={current} aria-current={current} onclick={() => perform(`track/${t.id}`)}>
-                <span class="ui-row-lead thumb" style:background={cover(t)}>
-                  {#if current}
-                    <span class="bars" class:live={data.playing} aria-hidden="true"><i></i><i></i><i></i></span>
-                  {/if}
-                </span>
-                <span class="ui-row-main">
-                  <span class="ui-row-title">{t.title}</span>
-                  <span class="ui-row-sub">{t.artist}</span>
-                </span>
-                <span class="ui-row-trail">{time(t.durationSec)}</span>
-              </button>
+              <Item.Root size="row" class="hover:bg-accent" data-selected={current}>
+                {#snippet child({ props })}
+                  <button {...props} aria-current={current} onclick={() => perform(`track/${t.id}`)}>
+                    <Item.Media class="relative size-9 self-center overflow-hidden rounded-md group-has-data-[slot=item-description]/item:translate-y-0 group-has-data-[slot=item-description]/item:self-center" style="background: {cover(t)}">
+                      {#if current}
+                        <!-- The playing track's art dims behind three bars: moving while it plays, still while paused. -->
+                        <span class="absolute inset-0 flex items-center justify-center gap-0.5 bg-black/40" aria-hidden="true">
+                          <i class={['bar h-3.5 w-0.75 origin-bottom scale-y-40 rounded-full bg-white', data.playing && 'live']}></i>
+                          <i class={['bar h-3.5 w-0.75 origin-bottom scale-y-75 rounded-full bg-white', data.playing && 'live']}></i>
+                          <i class={['bar h-3.5 w-0.75 origin-bottom scale-y-55 rounded-full bg-white', data.playing && 'live']}></i>
+                        </span>
+                      {/if}
+                    </Item.Media>
+                    <Item.Content class="min-w-0 gap-0">
+                      <Item.Title class="w-full">{t.title}</Item.Title>
+                      <Item.Description class="line-clamp-1 text-xs">{t.artist}</Item.Description>
+                    </Item.Content>
+                    <Item.Actions class="text-xs text-muted-foreground tabular-nums">{time(t.durationSec)}</Item.Actions>
+                  </button>
+                {/snippet}
+              </Item.Root>
             </li>
           {/each}
-        </ul>
-        {#if data.listing !== 'songs'}<p class="ui-section-footer">{CREDIT}</p>{/if}
-      </section>
+        </App.Group>
+      </App.Section>
     {/if}
-  </div>
-</section>
+  </App.Body>
+</App.Root>
 
 <style>
-  /* A column, so the spinner and the no-results state fill the space under the hero. */
-  .ui-body { display: flex; flex-direction: column; }
-
-  /* ── Search ── */
-  .find { flex: none; width: 220px; margin-left: auto; }
-
-  /* ── Now playing ── */
-  .hero { flex: none; display: flex; gap: 28px; padding: 8px 0 4px; }
-
-  .art {
-    flex: none; display: grid; place-items: center; width: 240px; height: 240px; border-radius: 12px;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 12px 32px -8px rgba(0, 0, 0, 0.45);
-    transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
-  }
-  /* Paused art settles back a little, as on iOS. */
-  .art.resting { transform: scale(0.95); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.16), 0 6px 18px -8px rgba(0, 0, 0, 0.35); }
-  /* With a catalogue to browse, the hero gives the list more room. */
-  .hero.compact { gap: 24px; padding-top: 4px; }
-  .hero.compact .art { width: 168px; height: 168px; border-radius: 10px; }
-  .hero.compact .info { padding: 6px 0 0; }
-  .art.placeholder { background: var(--fill); color: var(--tertiary); box-shadow: none; transform: none; }
-
-  .info { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: space-between; padding: 12px 0 6px; }
-  .meta { min-width: 0; }
-  .title {
-    margin: 0; font-size: var(--fs-headline); font-weight: 600; line-height: 1.3;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .title.idle { color: var(--muted); }
-  .artist { margin: 2px 0 0; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-  .times { display: flex; justify-content: space-between; margin-top: 6px; font-size: var(--fs-footnote); color: var(--muted); }
-
-  .transport { display: flex; align-items: center; justify-content: center; gap: 20px; }
-  /* Skip glyphs read as primary controls, so full-strength text rather than plain's muted. */
-  .skip { --control-h: 40px; color: var(--text); }
-
-  /* The negative margin lines the speaker glyphs up with the scrubber's ends. */
-  .volume { display: flex; align-items: center; gap: 6px; margin: 0 -5px; color: var(--muted); }
-  .level { flex: 1; }
-
-  /* ── Songs ── */
-  .songs { flex: none; margin-top: 32px; }
-  .compact ~ .songs { margin-top: 24px; }
-  .ui-notice { flex: none; margin: 20px 0 0; }
-  .ui-notice + .songs { margin-top: 16px; }
-  .busy { display: flex; align-items: center; justify-content: center; gap: 10px; flex: 1; min-height: 160px; margin: 0; color: var(--muted); font-size: 13px; }
-  .thumb { position: relative; width: 36px; height: 36px; border-radius: 6px; overflow: hidden; }
-
-  /* The playing track's art dims behind three bars: moving while it plays, still while paused. */
-  .bars { position: absolute; inset: 0; display: flex; align-items: flex-end; justify-content: center; gap: 2px; padding-bottom: 11px; background: rgba(0, 0, 0, 0.38); }
-  .bars i { width: 3px; height: 14px; border-radius: 1.5px; background: #fff; transform-origin: bottom; transform: scaleY(0.4); }
-  .bars i:nth-child(2) { transform: scaleY(0.75); }
-  .bars i:nth-child(3) { transform: scaleY(0.55); }
-  .bars.live i { animation: bar 0.9s var(--ease) infinite alternate; }
-  .bars.live i:nth-child(2) { animation-duration: 0.7s; animation-delay: -0.3s; }
-  .bars.live i:nth-child(3) { animation-duration: 1.1s; animation-delay: -0.6s; }
-  @keyframes bar { from { transform: scaleY(0.3); } to { transform: scaleY(0.95); } }
+  /* The equalizer's motion: each bar on its own period, so they never line up. */
+  .bar.live { animation: bar 0.9s ease-in-out infinite alternate; }
+  .bar.live:nth-child(2) { animation-duration: 0.7s; animation-delay: -0.3s; }
+  .bar.live:nth-child(3) { animation-duration: 1.1s; animation-delay: -0.6s; }
+  @keyframes bar { from { scale: 1 0.3; } to { scale: 1 0.95; } }
 
   @media (prefers-reduced-motion: reduce) {
-    .art { transition: none; }
-    .bars.live i { animation: none; }
+    .bar.live { animation: none; }
   }
 </style>

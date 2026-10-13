@@ -1,5 +1,7 @@
 <script lang="ts">
   import { decided, inputText, messageParts, modelInput, ms, offset, rankedOptions, tickLabel, type DebugModel, type TickView } from './model'
+  import { Badge } from '@stanley/app-ui/components/badge'
+  import { Button } from '@stanley/app-ui/components/button'
   import Replay from './Replay.svelte'
 
   let { tick, model, oncopy }: { tick: TickView; model: DebugModel; oncopy: (text: string, what: string) => void } = $props()
@@ -17,117 +19,132 @@
     end: 'the utterance ended',
     pause: 'the user paused',
   }
+
+  /** The outcome pill: green when it went through, amber when held back, red when it failed. */
+  function tone(outcome: string | undefined) {
+    if (outcome === undefined) return 'text-muted-foreground'
+    if (outcome === 'gated' || outcome === 'stale-discarded') return 'border-warning/50 text-warning'
+    if (outcome === 'forced-stop' || outcome === 'error') return 'border-destructive text-destructive'
+    return 'border-success/50 text-success'
+  }
+
+  const h2 = 'mt-5 mb-2 text-xs font-semibold tracking-wider text-muted-foreground uppercase'
+  const para = 'my-2'
+  const list = 'list-disc pl-4.5'
+  const code = 'rounded-sm bg-muted px-1 py-px font-mono text-xs'
+  const pre = 'max-h-105 overflow-auto rounded-md border bg-muted p-2 font-mono text-xs whitespace-pre-wrap'
+  const details = 'my-1'
+  const summary = 'cursor-pointer text-muted-foreground'
 </script>
 
-<article>
-  <header>
-    <h1>Tick #{tick.id}</h1>
-    <span class="outcome {tick.end?.outcome ?? 'pending'}">{tick.end?.outcome ?? 'in flight'}</span>
-    <span class="muted">{offset(tick.at, model.startAt)}{tick.task ? ` · task ${tick.task}` : ''}</span>
-    <span class="spacer"></span>
-    <button onclick={() => oncopy(JSON.stringify(tick, null, 2), `tick #${tick.id} as JSON`)}>Copy tick JSON</button>
+<article class="px-4 pt-3 pb-8 text-sm">
+  <header class="flex items-center gap-2">
+    <h1 class="text-base font-semibold">Tick #{tick.id}</h1>
+    <Badge variant="outline" class={tone(tick.end?.outcome)}>{tick.end?.outcome ?? 'in flight'}</Badge>
+    <span class="text-muted-foreground">{offset(tick.at, model.startAt)}{tick.task ? ` · task ${tick.task}` : ''}</span>
+    <Button variant="outline" size="xs" class="ml-auto" onclick={() => oncopy(JSON.stringify(tick, null, 2), `tick #${tick.id} as JSON`)}>Copy tick JSON</Button>
   </header>
 
-  <dl>
-    <dt>Triggered by</dt>
+  <dl class="mt-3.5 grid grid-cols-[6rem_1fr] gap-x-3 gap-y-1.5">
+    <dt class="text-muted-foreground">Triggered by</dt>
     <dd>{reasons[tick.start.reason]}</dd>
-    <dt>Heard</dt>
+    <dt class="text-muted-foreground">Heard</dt>
     <dd>
-      {heard.finalized.join(' ')} <span class="muted">{heard.partial}</span>
-      {#if !heard.finalized.length && !heard.partial}<span class="muted">—</span>{/if}
-      <span class="muted">({tick.start.utteranceEnded ? 'finished' : 'still speaking'})</span>
+      {heard.finalized.join(' ')} <span class="text-muted-foreground">{heard.partial}</span>
+      {#if !heard.finalized.length && !heard.partial}<span class="text-muted-foreground">—</span>{/if}
+      <span class="text-muted-foreground">({tick.start.utteranceEnded ? 'finished' : 'still speaking'})</span>
     </dd>
-    <dt>Screen</dt>
-    <dd><code>{tick.start.screenId}</code></dd>
-    <dt>Jev decided</dt>
+    <dt class="text-muted-foreground">Screen</dt>
+    <dd><code class={code}>{tick.start.screenId}</code></dd>
+    <dt class="text-muted-foreground">Jev decided</dt>
     <dd>
       {#if answers}
         <strong>{decided(tick)}</strong>
         · next {answers.next?.confidence.toFixed(2)} · step {answers.step?.confidence.toFixed(2)} · {ms(result?.latencyMs)}
-        {#if usage}<span class="muted"> · {usage.inputTokens ?? '?'} in / {usage.outputTokens ?? '?'} out tokens</span>{/if}
-        {#if tick.decision?.stale}<span class="warn"> · transcript changed during the call</span>{/if}
-        {#if tick.decision?.endedDuringCall}<span class="muted"> · utterance ended during the call</span>{/if}
+        {#if usage}<span class="text-muted-foreground"> · {usage.inputTokens ?? '?'} in / {usage.outputTokens ?? '?'} out tokens</span>{/if}
+        {#if tick.decision?.stale}<span class="text-warning"> · transcript changed during the call</span>{/if}
+        {#if tick.decision?.endedDuringCall}<span class="text-muted-foreground"> · utterance ended during the call</span>{/if}
       {:else if tick.end?.outcome === 'error'}
-        <span class="bad">call failed</span>
+        <span class="text-destructive">call failed</span>
       {:else}
-        <span class="muted">waiting for Jev…</span>
+        <span class="text-muted-foreground">waiting for Jev…</span>
       {/if}
     </dd>
-    <dt>Took effect</dt>
-    <dd><strong>{tickLabel(tick)}</strong>{#if tick.end?.detail}<span class="muted"> · {tick.end.detail}</span>{/if}</dd>
+    <dt class="text-muted-foreground">Took effect</dt>
+    <dd><strong>{tickLabel(tick)}</strong>{#if tick.end?.detail}<span class="text-muted-foreground"> · {tick.end.detail}</span>{/if}</dd>
   </dl>
 
-  <h2>Guardrails</h2>
+  <h2 class={h2}>Guardrails</h2>
   {#if tick.gates.length}
-    <ul class="gates">
+    <ul class={list}>
       {#each tick.gates as g, i (i)}<li><strong>{g.rule}</strong> — {g.detail}</li>{/each}
     </ul>
   {:else if tick.end && tick.end.outcome !== 'error'}
-    <p class="muted">Passed all guardrails.</p>
+    <p class="{para} text-muted-foreground">Passed all guardrails.</p>
   {/if}
 
   {#if tick.effects.length}
-    <h2>What the button does</h2>
-    <ul class="gates">
+    <h2 class={h2}>What the button does</h2>
+    <ul class={list}>
       {#each tick.effects as e, i (i)}
         <li>
-          <strong>{e.option}</strong> → <span class={e.effect === 'commits' ? 'warn' : ''}>{e.effect}</span>{e.cached ? ' (cached)' : ''}
-          <span class="muted">· {ms(e.latencyMs)} · {Object.entries(e.probabilities).map(([k, p]) => `${k} ${(p * 100).toFixed(0)}%`).join(', ')}</span>
+          <strong>{e.option}</strong> → <span class={e.effect === 'commits' ? 'text-warning' : ''}>{e.effect}</span>{e.cached ? ' (cached)' : ''}
+          <span class="text-muted-foreground">· {ms(e.latencyMs)} · {Object.entries(e.probabilities).map(([k, p]) => `${k} ${(p * 100).toFixed(0)}%`).join(', ')}</span>
         </li>
       {/each}
     </ul>
   {/if}
 
   {#if tick.acts.length}
-    <h2>Steps</h2>
+    <h2 class={h2}>Steps</h2>
     {#each tick.acts as act, i (i)}
-      <p>
-        <strong>{act.option}</strong>{#if act.args?.text !== undefined} <code>{act.args.text}</code>{/if}
+      <p class={para}>
+        <strong>{act.option}</strong>{#if act.args?.text !== undefined} <code class={code}>{act.args.text}</code>{/if}
         {#if act.summary}→ {act.summary}{/if}
-        <span class="muted">· {ms(act.latencyMs)}</span>
+        <span class="text-muted-foreground">· {ms(act.latencyMs)}</span>
       </p>
-      {#if act.observation}<details><summary>Observation</summary><pre>{act.observation}</pre></details>{/if}
+      {#if act.observation}<details class={details}><summary class={summary}>Observation</summary><pre class={pre}>{act.observation}</pre></details>{/if}
     {/each}
   {/if}
 
   {#each tick.thinking as t, ti (ti)}
     {@const input = modelInput(model, t)}
     {@const u = t.end?.usage}
-    <h2>Thinking{t.start.mode === 'run' ? '' : `: one step, ${t.start.mode === 'write' ? 'typing into' : 'pressing'} [${t.start.option}]`}</h2>
-    <p class="muted">Why: {t.start.handover}</p>
-    <ol class="gates">
+    <h2 class={h2}>Thinking{t.start.mode === 'run' ? '' : `: one step, ${t.start.mode === 'write' ? 'typing into' : 'pressing'} [${t.start.option}]`}</h2>
+    <p class="{para} text-muted-foreground">Why: {t.start.handover}</p>
+    <ol class="list-decimal pl-4.5">
       {#each t.steps as step, i (i)}
         <li>
-          <strong>{step.option}</strong>{#if step.text} <code>{step.text}</code>{/if}
-          <details><summary>result</summary><pre>{step.result}</pre></details>
+          <strong>{step.option}</strong>{#if step.text} <code class={code}>{step.text}</code>{/if}
+          <details class={details}><summary class={summary}>result</summary><pre class={pre}>{step.result}</pre></details>
         </li>
       {/each}
     </ol>
     {#if t.end}
-      <p>
-        {#if t.end.aborted}<span class="warn">Dropped: the user said more.</span>
+      <p class={para}>
+        {#if t.end.aborted}<span class="text-warning">Dropped: the user said more.</span>
         {:else if t.end.text}Said <strong>"{t.end.text}"</strong>
-        {:else}<span class="muted">Said nothing.</span>{/if}
+        {:else}<span class="text-muted-foreground">Said nothing.</span>{/if}
         {#if t.end.calls?.length}· chose {t.end.calls.map((c) => `${c.tool} ${JSON.stringify(c.input)}`).join(', ')}{/if}
-        <span class="muted">· {t.end.steps} steps · {ms(t.end.latencyMs)}</span>
-        {#if u}<span class="muted"> · {u.inputTokens ?? "?"} in ({u.cacheReadTokens ?? 0} cached, {u.cacheWriteTokens ?? 0} written; last step {u.lastInputTokens ?? "?"}) / {u.outputTokens ?? '?'} out tokens</span>{/if}
+        <span class="text-muted-foreground">· {t.end.steps} steps · {ms(t.end.latencyMs)}</span>
+        {#if u}<span class="text-muted-foreground"> · {u.inputTokens ?? "?"} in ({u.cacheReadTokens ?? 0} cached, {u.cacheWriteTokens ?? 0} written; last step {u.lastInputTokens ?? "?"}) / {u.outputTokens ?? '?'} out tokens</span>{/if}
       </p>
     {:else}
-      <p class="muted">working…</p>
+      <p class="{para} text-muted-foreground">working…</p>
     {/if}
-    <details>
-      <summary>Model input ({input.length} messages{t.start.cacheAt !== undefined ? `, cache read at #${t.start.cacheAt}` : ''})</summary>
-      <button class="copy" onclick={() => oncopy(inputText(model, t), 'the model input')}>Copy model input</button>
-      <details><summary>Instructions</summary><pre>{model.session?.instructions ?? '(not recorded in this session)'}</pre></details>
-      <ol class="messages">
+    <details class={details}>
+      <summary class={summary}>Model input ({input.length} messages{t.start.cacheAt !== undefined ? `, cache read at #${t.start.cacheAt}` : ''})</summary>
+      <Button variant="outline" size="xs" class="my-1" onclick={() => oncopy(inputText(model, t), 'the model input')}>Copy model input</Button>
+      <details class={details}><summary class={summary}>Instructions</summary><pre class={pre}>{model.session?.instructions ?? '(not recorded in this session)'}</pre></details>
+      <ol class="my-1.5">
         {#each input as m, i (i)}
-          <li class={m.role}>
-            <span class="role">#{i} {m.role}</span>
-            {#each messageParts(m) as p, j (j)}
-              {#if p.kind === 'reasoning'}<details><summary>reasoning</summary><pre>{p.text}</pre></details>
-              {:else if p.kind === 'call'}<div><strong>→ {p.text}</strong></div>
-              {:else if p.kind === 'result'}<details><summary>result</summary><pre>{p.text}</pre></details>
-              {:else}<pre>{p.text}</pre>{/if}
+          <li class={['border-t py-1', m.role === 'assistant' && 'bg-muted']}>
+            <span class="text-xs text-muted-foreground">#{i} {m.role}</span>
+            {#each messageParts(m) as part, j (j)}
+              {#if part.kind === 'reasoning'}<details class={details}><summary class={summary}>reasoning</summary><pre class={pre}>{part.text}</pre></details>
+              {:else if part.kind === 'call'}<div><strong>→ {part.text}</strong></div>
+              {:else if part.kind === 'result'}<details class={details}><summary class={summary}>result</summary><pre class={pre}>{part.text}</pre></details>
+              {:else}<pre class={pre}>{part.text}</pre>{/if}
             {/each}
           </li>
         {/each}
@@ -137,18 +154,18 @@
 
   {#each [{ title: 'What now', options: nextOptions, question: 'next' }, { title: 'Which step', options: stepOptions, question: 'step' }] as q (q.question)}
     {@const chosen = answers?.[q.question]?.choice}
-    <h2>{q.title} <span class="muted">({q.options.length}, ranked by probability)</span></h2>
-    <table>
+    <h2 class={h2}>{q.title} <span class="text-muted-foreground">({q.options.length}, ranked by probability)</span></h2>
+    <table class="w-full border-collapse">
       <tbody>
         {#each q.options as o (o.option)}
-          <tr class:raw={o.option === chosen}>
-            <td class="p">
-              <div class="bar"><span style:width="{(o.p ?? 0) * 100}%"></span></div>
+          <tr class={[o.option === chosen && 'bg-accent']}>
+            <td class="w-28 border-t px-1.5 py-1 align-top text-xs tabular-nums">
+              <div class="mb-0.5 h-1 rounded-full bg-muted"><span class="block h-full rounded-full bg-primary" style:width="{(o.p ?? 0) * 100}%"></span></div>
               {o.p === null ? '—' : `${(o.p * 100).toFixed(1)}%`}
             </td>
-            <td>
-              <div class="name">{o.option}{#if o.option === chosen} <em>chosen</em>{/if}</div>
-              {#if o.description}<div class="desc">{o.description}</div>{/if}
+            <td class="border-t px-1.5 py-1 align-top">
+              <div>{o.option}{#if o.option === chosen} <em class="ml-1 text-xs text-primary not-italic">chosen</em>{/if}</div>
+              {#if o.description}<div class="text-xs text-muted-foreground">{o.description}</div>{/if}
             </td>
           </tr>
         {/each}
@@ -156,52 +173,15 @@
     </table>
   {/each}
 
-  <h2>Jev input</h2>
+  <h2 class={h2}>Jev input</h2>
   {#each Object.entries(tick.start.questions) as [id, q] (id)}
-    <p class="muted">{id}: {q.instructions}</p>
+    <p class="{para} text-muted-foreground">{id}: {q.instructions}</p>
   {/each}
-  <details>
-    <summary>State ({tick.start.state.length.toLocaleString()} chars)</summary>
-    <pre>{tick.start.state}</pre>
+  <details class={details}>
+    <summary class={summary}>State ({tick.start.state.length.toLocaleString()} chars)</summary>
+    <pre class={pre}>{tick.start.state}</pre>
   </details>
 
-  <h2>Replay</h2>
+  <h2 class={h2}>Replay</h2>
   <Replay {tick} />
 </article>
-
-<style>
-  article { padding: 12px 16px 32px; font-size: 13px; }
-  header { display: flex; align-items: center; gap: 8px; }
-  h1 { font-size: 16px; margin: 0; }
-  h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 20px 0 8px; }
-  .spacer { flex: 1; }
-  header button { font-size: 11px; background: none; border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; cursor: pointer; }
-  .outcome { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid #22c55e88; color: #22c55e; }
-  .outcome.gated, .outcome.stale-discarded { color: #f59e0b; border-color: #f59e0b88; }
-  .outcome.forced-stop, .outcome.error { color: var(--danger); border-color: var(--danger); }
-  .outcome.pending { color: var(--muted); border-color: var(--border); }
-  dl { display: grid; grid-template-columns: 100px 1fr; gap: 6px 12px; margin: 14px 0 0; }
-  dt { color: var(--muted); }
-  dd { margin: 0; }
-  .muted { color: var(--muted); }
-  .warn { color: #f59e0b; }
-  .bad { color: var(--danger); }
-  .gates { margin: 0; padding-left: 18px; }
-  code { font-family: ui-monospace, monospace; font-size: 12px; background: var(--panel); padding: 1px 4px; border-radius: 4px; }
-  pre { font-family: ui-monospace, monospace; font-size: 11px; white-space: pre-wrap; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 8px; max-height: 420px; overflow: auto; }
-  details { margin: 4px 0; }
-  summary { cursor: pointer; color: var(--muted); }
-  .messages { list-style: none; margin: 6px 0; padding: 0; }
-  .messages li { border-top: 1px solid var(--border); padding: 4px 0; }
-  .messages .role { font-size: 11px; color: var(--muted); }
-  .messages li.assistant { background: var(--panel); }
-  .copy { font-size: 11px; background: none; border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; cursor: pointer; margin: 4px 0; }
-  table { width: 100%; border-collapse: collapse; }
-  td { padding: 4px 6px; border-top: 1px solid var(--border); vertical-align: top; }
-  td.p { width: 110px; font-variant-numeric: tabular-nums; font-size: 12px; }
-  .bar { height: 4px; background: var(--panel); border-radius: 2px; margin-bottom: 3px; }
-  .bar span { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
-  tr.raw { background: var(--focus); }
-  .name em { font-style: normal; font-size: 10px; color: var(--accent); margin-left: 4px; }
-  .desc { color: var(--muted); font-size: 11px; }
-</style>
