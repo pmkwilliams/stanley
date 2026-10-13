@@ -63,17 +63,18 @@ their radius is in proportion to the window's instead.
 </App.Root>
 ```
 
-- The shell draws the glass (`appWindow`: `rounded-3xl border bg-card/80 shadow-window backdrop-blur-2xl`).
+- The shell draws the glass (`appWindow`: `rounded-3xl border bg-card/70 shadow-window backdrop-blur-sm`).
   Apps never draw their own window background, border, or shadow.
 - Sidebar views (Email): `<App.Sidebar>` (the view switcher on top, a list that scrolls) beside
-  `<App.Main>`, with no `App.Bar`. The window then frosts lightly (`backdrop-blur-sm`, no tint) and the
-  panes tint it: the sidebar `bg-card/50`, the main pane `bg-card/70`. The blur stays on the window, not
-  the panes, because a pane can't blur through the window while it fades in.
+  `<App.Main>`, with no `App.Bar`. The window then drops its tint and the panes tint it: the sidebar
+  `bg-card/50`, the main pane `bg-card/70` (the same tint as every window). The blur stays on the
+  window, not the panes, because a pane can't blur through the window while it fades in.
 - Apps have a **fixed size**, so the window never jumps when content changes. Web fills (`size="fill"`).
+  Weather is the exception in height: at least `h-150`, growing to fit its forecast (`h-auto min-h-150`).
 
 ## Lists
 
-- The standard is the **inset grouped list**: `<App.Group>` (`bg-muted rounded-xl p-1`, a `<ul>`)
+- The standard is the **inset grouped list**: `<App.Group>` (`bg-muted/30 backdrop-blur-sm rounded-xl p-1`, a `<ul>`)
   holding `<li>`s with an `<Item.Root size="row">` each. Hairlines between rows are automatic, inset to
   the text, and hide next to a hovered or selected row.
 - A row: `Item.Media` (icon, check or artwork), `Item.Content` with `Item.Title` and optional

@@ -18,7 +18,7 @@
 
   --background: oklch(0.147 0.004 49.3);
   --foreground: oklch(0.986 0.002 67.8);
-  /* Window glass: used as bg-card/80 with a backdrop blur. */
+  /* Window glass: used as bg-card/70 with a backdrop blur. */
   --card: oklch(0.214 0.009 43.1);
   --card-foreground: oklch(0.986 0.002 67.8);
   --popover: oklch(0.214 0.009 43.1);

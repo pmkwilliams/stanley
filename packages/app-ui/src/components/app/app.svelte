@@ -17,12 +17,14 @@
 	});
 
 	/**
-	 * The window the shell draws around an app: glass, heavily frosted. A window made of panes
-	 * (`AppSidebar` + `AppMain`) is frosted lightly instead and tinted by its panes. The blur stays
-	 * here rather than on each pane, since a pane can't blur through the window as it fades in.
+	 * The window the shell draws around an app: glass, lightly frosted. A window made of panes
+	 * (`AppSidebar` + `AppMain`) is tinted by its panes instead. The blur stays here rather than on
+	 * each pane, since a pane can't blur through the window as it fades in. It's on a layer behind the
+	 * content rather than the window itself: Chromium won't run a backdrop blur inside an element that
+	 * has one, so this way the app's own frosted surfaces (a sticky title) still blur what's under them.
 	 */
 	export const appWindow =
-		"flex max-h-(--window-max-height) max-w-(--window-max-width) flex-col overflow-hidden rounded-3xl border bg-card/80 shadow-window backdrop-blur-2xl backdrop-saturate-150 has-data-[slot=app-sidebar]:bg-transparent has-data-[slot=app-sidebar]:backdrop-blur-sm";
+		"relative isolate flex max-h-(--window-max-height) max-w-(--window-max-width) flex-col overflow-hidden rounded-3xl border bg-card/70 shadow-window before:absolute before:inset-0 before:-z-10 before:backdrop-blur-sm before:backdrop-saturate-150 has-data-[slot=app-sidebar]:bg-transparent";
 
 	export type AppSize = VariantProps<typeof appVariants>["size"];
 </script>

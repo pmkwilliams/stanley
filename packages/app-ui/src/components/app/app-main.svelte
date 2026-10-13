@@ -2,7 +2,7 @@
 	import { cn, type WithElementRef } from "$ui/utils.js";
 	import type { HTMLAttributes } from "svelte/elements";
 
-	/** The content pane beside an `AppSidebar`: `bg-card/70` over the window's light blur. */
+	/** The content pane beside an `AppSidebar`: `bg-card/70`, the same tint as every window, over the window's light blur. */
 	let {
 		ref = $bindable(null),
 		class: className,

@@ -60,7 +60,7 @@
     </App.Section>
 
     <App.Section title="Appearance" titleId="settings-appearance" footer="Changes the desktop, every window and the lock screen.">
-      <div class="grid grid-cols-2 gap-4 rounded-xl bg-muted p-4 pb-3.5" role="radiogroup" aria-labelledby="settings-appearance">
+      <div class="grid grid-cols-2 gap-4 rounded-xl bg-muted/30 p-4 pb-3.5 backdrop-blur-sm" role="radiogroup" aria-labelledby="settings-appearance">
         {#each THEMES as t (t.id)}
           {@const on = data.theme === t.id}
           {@const l = look[t.id]}
