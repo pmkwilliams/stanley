@@ -108,9 +108,10 @@ of certainty:
 
 | Step | Waits for |
 | --- | --- |
-| Open, navigate, scroll, list or read files | Nothing: runs mid-word |
+| Open, navigate, scroll, list or read files, press a button that only looks | Nothing: runs mid-word |
+| Press a button that changes something undoable (tick, add, move, save) | Jev to be sure (`speakingChange`) and to have heard what it needs (`heard` ≥ 0.6): runs mid-word |
 | Type the user's own words into a field | A pause (a field can be retyped) |
-| Press a button, type words Stanley composed, hand over to thinking | The thought to finish |
+| Type words Stanley composed, hand over to thinking | The thought to finish |
 | Press something that commits (send, delete, archive) | The turn to end, then thinking confirms |
 | Say anything | The turn to end; words the user adds first drop it |
 
@@ -139,7 +140,12 @@ as the user finishes, without another Jev call; new words drop it. A held change
 the inbox, retype). The conversation splits a turn at any change made before the user finished
 ("User: …", the step, "User (went on): …"), so "no wait, the other one" reads as a correction.
 Before closing a task where a button was pressed early, thinking checks those guesses against
-everything the user said.
+everything the user said, unless Jev's P(done) reaches `earlyGuessDone` (0.8): its `done` already
+means nothing Stanley did goes against what the user now wants.
+
+**What a button does** (looks, changes or commits) is judged before any of the gates, once per app
+and kind of button ("› Delete" on any to-do), and in the background for each kind on a screen as
+it first appears, so a press rarely waits for it.
 
 ### Misheard words
 
@@ -177,13 +183,15 @@ returned. Three ways in, all with the same tools and `toolChoice: 'auto'`:
   when written from a gist or a tone). Text without a call asks the user; neither means nothing to
   type yet. Calls come back unrun, and typing appends the call's result. Words Stanley wrote itself
   are always read back word for word (the agent adds the quote if thinking paraphrased), which hands
-  the turn to the user. Otherwise Jev continues (Enter, Send, done). Any other call hands over to a
-  whole turn.
+  the turn to the user. Otherwise Jev continues (Enter, Send, done). Other `act` calls (tick this,
+  then type that) run in order as thinking's own steps, stopping at one no longer on screen, typing
+  that isn't the user's own words, or a press that commits before the turn ends or with unsure
+  words; then Jev continues. A lookup, or a first call that can't run, hands over to a whole turn.
 - **confirm** (one step): Jev chose a button that commits. Thinking presses it (calls `act` on it)
   only if the user asked for that and has heard any words Stanley wrote itself; otherwise it says
   what is ready and asks. Asking to reply or post with given words is asking to send; asking to
   draft is not. When the user already asked for exactly this, it presses: asking again only slows
-  them down. Anything else hands over to a whole turn. A single step's text waits for the step to
+  them down. Other `act` calls run as for write; anything else hands over to a whole turn. A single step's text waits for the step to
   end, so a question isn't spoken just before a press.
 - **run** (a short tool loop over `act`, the same options as Jev): for `think` turns. It answers,
   asks, or works the screen itself. Its text is speech: streamed, shown and spoken as it is written
@@ -232,8 +240,9 @@ Tick when:
 After `listen` or `done`, only (1) or (3) trigger a tick.
 
 **Stale results**: if new words arrived while a call was in flight, the result is discarded and we
-re-tick with the fresh transcript, unless it is a navigation with step confidence ≥ 0.8 (then run
-it, then re-tick). Only new words make a result stale: the utterance ending mid-call does not.
+re-tick with the fresh transcript, unless it is a navigation with step confidence ≥ 0.8, or a
+button that doesn't commit at that confidence when the new words only add to the ones it decided
+on (then run it, then re-tick). Only new words make a result stale: the utterance ending mid-call does not.
 
 **Deferred ticks**: a tick requested while a call is in flight is remembered by reason and replayed
 when the call settles. A step-driven tick wins, so the agent keeps going mid-utterance.
@@ -247,13 +256,15 @@ count grew, or a segment finalized.
 | Guard | Default |
 | --- | --- |
 | `act` needs at least this P(act) while the user is speaking, else listen | 0.6 |
+| …for a button that changes something undoable (`speakingChange`) | 0.6 |
 | …and after they finish, else thinking | 0.4 |
 | `done` after they finish needs at least this, else thinking checks | 0.5 |
+| …and after an early press, at least this, else thinking checks the guesses (`earlyGuessDone`) | 0.8 |
 | The chosen step needs at least this confidence, else listen / thinking | 0.4 |
 | P(commits) at or above this sends a button to thinking | 0.3 |
 | Max steps per utterance → stop ("got stuck") | 15 |
 | Oscillation: same step from the same screen N times in the last M steps → stop | 3 in 6 |
-| Stale navigation still runs at step confidence ≥ | 0.8 |
+| Stale navigation, or a stale button that doesn't commit when the words only grew, still runs at step confidence ≥ | 0.8 |
 | `think` with a field step at least this sure is handled as writing | 0.9 |
 | Elements and known pages offered per tick / to thinking | 150 / 300 |
 | Thinking tool steps | 10 |
