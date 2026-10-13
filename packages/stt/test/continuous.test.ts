@@ -87,4 +87,36 @@ describe.skipIf(process.platform !== 'darwin' || !existsSync(join(MODELS, 'siler
     expect(biased).toContain('Okonkwo')
     expect(biased).toMatch(/^Reply to Siobhan/)
   }, 60_000)
+
+  it("doesn't hear common words on screen in the background noise before speech", async () => {
+    const wav = join(mkdtempSync(join(tmpdir(), 'stanley-stt-')), 'play.wav')
+    execFileSync('say', ['-v', 'Samantha', '-o', wav, '--file-format=WAVE', '--data-format=LEI16@16000', 'Play music.'])
+    const speech = readWav(wav).samples
+    // The Music app's screen.
+    const onScreen = 'Email Weather Music Lights Settings Previous Play Next Volume Playlist Wish Here What Love Melanie Ungar Come Back Again Chaz Robinson First Dear Dreams Energy Pokki Boys Girls Toys Words Modern Pitch Storm Human Light John Dada'.split(' ')
+    for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
+      // Room noise at -45 dB: 1.5 s before the words, under them, and 2 s after.
+      const noise = noiseOf(seed, 10 ** (-45 / 20))
+      const audio = new Float32Array(SAMPLE_RATE * 3.5 + speech.length).map(noise)
+      speech.forEach((s, i) => (audio[SAMPLE_RATE * 1.5 + i]! += s))
+      const segments: string[] = []
+      const t = await Transcriber.create({ modelsDir: MODELS, turn: false }, { partial: () => {}, segment: (s) => segments.push(s), silence: () => {} })
+      t.reset()
+      t.setHotwords(onScreen)
+      for (let i = 0; i < audio.length; i += 1600) t.accept(audio.subarray(i, i + 1600))
+      await t.flush()
+      expect(segments.join(' '), `seed ${seed}`).toMatch(/^Play music\.?$/i)
+    }
+  }, 120_000)
 })
+
+/** Seeded white noise of amplitude `amp` (mulberry32), so the test hears the same room each run. */
+function noiseOf(seed: number, amp: number): () => number {
+  let a = seed
+  return () => {
+    a = (a + 0x6d2b79f5) | 0
+    let t = Math.imul(a ^ (a >>> 15), 1 | a)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((((t ^ (t >>> 14)) >>> 0) / 4294967296) * 2 - 1) * amp
+  }
+}

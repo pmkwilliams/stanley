@@ -155,15 +155,18 @@ export class Transcriber {
   }
 
   /**
-   * Words to favour, usually names and labels on screen. Only words the model finds rare (more
-   * than one of its pieces) are kept: common ones need no help, and favouring them distorts.
+   * Words to favour, usually names and labels on screen. Only rare words are kept: not one of the
+   * model's pieces and not in the dictionary. Common ones need no help, and favouring them
+   * distorts: with "Music" on screen, a little background noise before "play music" was heard as
+   * "Music Music Music Music Music Previous Play Music".
    */
   setHotwords(candidates: Iterable<string>): void {
     const vocab = this.vocab()
+    const common = dictionary()
     const kept = new Set<string>()
     for (const raw of candidates) {
       const word = raw.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '')
-      if (word.length < 3 || vocab.has(`▁${word}`) || vocab.has(`▁${word.toLowerCase()}`)) continue
+      if (word.length < 3 || vocab.has(`▁${word}`) || vocab.has(`▁${word.toLowerCase()}`) || common.has(word.toLowerCase())) continue
       kept.add(word)
       if (kept.size >= MAX_HOTWORDS) break
     }
@@ -425,6 +428,20 @@ export async function transcribe(modelsDir: string, samples: Float32Array): Prom
   const stream = recognizer.createStream()
   stream.acceptWaveform({ samples, sampleRate: SAMPLE_RATE })
   return (await recognizer.decodeAsync(stream)).text.trim()
+}
+
+let dictionaryCache: Set<string> | undefined
+
+/** English words, lowercased, from the list macOS ships; empty where there is none. */
+function dictionary(): Set<string> {
+  if (!dictionaryCache) {
+    try {
+      dictionaryCache = new Set(readFileSync('/usr/share/dict/words', 'utf8').toLowerCase().split('\n'))
+    } catch {
+      dictionaryCache = new Set()
+    }
+  }
+  return dictionaryCache
 }
 
 /** The model's pieces, as in tokens.txt (`▁` starts a word). */
