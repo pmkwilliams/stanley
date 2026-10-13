@@ -27,7 +27,7 @@ without the shell, use the gallery (`apps/desktop/gallery/README.md`).
    screen in dark and light anyway. Don't use opacity to dim text.
 3. **shadcn first.** If shadcn has it, use it: `Button`, `Item`, `Empty`, `Tabs`, `ToggleGroup`,
    `Switch`, `Checkbox`, `Slider`, `Progress`, `Spinner`, `Badge`, `Alert`, `Input`, `InputGroup`,
-   `Textarea`, `Kbd`, `Separator`. Adjust with `class` when needed.
+   `Textarea`, `Kbd`, `Separator`, `Avatar`. Adjust with `class` when needed.
 4. **Stanley drives it too.** Every screen is also read by the agent as an accessibility tree
    (`nodes()` in each app's core). What the UI shows and what `nodes()` describes must match: the same
    elements, the same labels, the same selected state. Icon-only buttons need an `aria-label` that
@@ -63,9 +63,12 @@ their radius is in proportion to the window's instead.
 </App.Root>
 ```
 
-- The shell draws the glass (`rounded-3xl border bg-card/80 shadow-window backdrop-blur-2xl`). Apps
-  never draw their own window background, border, or shadow.
-- Split views: `<App.Split>` holding two `<App.Body>`s, each scrolling on its own.
+- The shell draws the glass (`appWindow`: `rounded-3xl border bg-card/80 shadow-window backdrop-blur-2xl`).
+  Apps never draw their own window background, border, or shadow.
+- Sidebar views (Email): `<App.Sidebar>` (the view switcher on top, a list that scrolls) beside
+  `<App.Main>`, with no `App.Bar`. The window then frosts lightly (`backdrop-blur-sm`, no tint) and the
+  panes tint it: the sidebar `bg-card/50`, the main pane `bg-card/70`. The blur stays on the window, not
+  the panes, because a pane can't blur through the window while it fades in.
 - Apps have a **fixed size**, so the window never jumps when content changes. Web fills (`size="fill"`).
 
 ## Lists
@@ -80,7 +83,7 @@ their radius is in proportion to the window's instead.
   fills it. Secondary actions (delete) are `Button variant="ghost" size="icon-sm"`, shown on
   `group-hover/item:opacity-100`. They're always in `nodes()`.
 - `<App.Section title="…" footer="…">` names a group and explains it.
-- Unread state (Email) is a small `bg-primary` dot in the media plus a `font-semibold` title.
+- Unread state (Email) is an `Avatar.Badge` (a small `bg-primary` dot) on the row's avatar plus a `font-semibold` title.
 
 ## Type
 

@@ -205,7 +205,7 @@ export const scenarios: Scenario[] = [
   {
     name: 'reply-and-send',
     utterances: ['open the email from Sam', "reply saying I'm in and send it"],
-    checks: [sentCount(1), visible('email'), route('email', /^sent$/)],
+    checks: [sentCount(1), visible('email'), route('email', /^email\/m1$/)],
   },
   {
     name: 'draft-then-send',

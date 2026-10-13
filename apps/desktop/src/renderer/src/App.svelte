@@ -2,6 +2,7 @@
   import type { Snapshot } from '../../shared/ipc'
   import { cubicIn, cubicOut } from 'svelte/easing'
   import { fade, scale } from 'svelte/transition'
+  import { appWindow } from '@stanley/app-ui/components/app'
   import LockScreen from './LockScreen.svelte'
   import { startMic } from './mic'
   import Presence from './Presence.svelte'
@@ -77,7 +78,7 @@
       {#each visible && surfaces[visible] ? [visible] : [] as id (id)}
         {@const Surface = surfaces[id]}
         <div
-          class="z-1 col-start-1 row-start-1 flex max-h-(--window-max-height) max-w-(--window-max-width) flex-col overflow-hidden rounded-3xl border bg-card/80 shadow-window backdrop-blur-2xl backdrop-saturate-150 inert:z-0"
+          class={[appWindow, 'z-1 col-start-1 row-start-1 inert:z-0']}
           in:scale={{ start: 0.96, duration: 180, easing: cubicOut }}
           out:scale={{ start: 0.94, duration: 140, easing: cubicIn }}
         >
