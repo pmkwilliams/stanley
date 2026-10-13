@@ -5,6 +5,7 @@ import { Agent, type AgentDeps, type AgentStatus, type TickReport } from '../src
 import { defaultConfig } from '../src/config'
 import type { AgentDebugEvent } from '../src/debug'
 import type { Effect } from '../src/effects'
+import type { FileTools } from '../src/files'
 import { scriptedTurn, type ThinkRequest, type Thinker, type ThinkResult } from '../src/think'
 import type { WebTools } from '../src/web'
 import type { World } from '../src/world'
@@ -1041,6 +1042,101 @@ describe('Agent web lookups', () => {
   })
 })
 
+describe('Agent files', () => {
+  function fakeFiles(outputs: Record<string, string>): FileTools & { ran: string[] } {
+    const ran: string[] = []
+    return {
+      ran,
+      root: '~/Stanley',
+      paths: async () => ['Trips/', 'Trips/packing.md', 'budget.csv', 'deep/', 'deep/notes.md'],
+      async bash(command) {
+        ran.push(command)
+        return command in outputs ? { output: outputs[command]!, exitCode: 0 } : { output: `bash: ${command}: not found\n`, exitCode: 127 }
+      },
+    }
+  }
+  const files = () => fakeFiles({ 'ls -p': 'Trips/\nbudget.csv\n', "ls -p -- 'Trips'": 'packing.md\n', "cat -- 'Trips/packing.md'": '- Passport\n- Charger\n' })
+
+  it('lists and reads while the user is still speaking, and thinking reads it as its own commands', async () => {
+    const options: string[][] = []
+    let state = ''
+    const f = files()
+    const { agent, thinker } = setup(
+      (req, i) => {
+        state = req.state
+        options.push(Object.keys(req.questions.step!.options))
+        return [{ next: 'act', step: 'list files' }, { next: 'act', step: 'list folder: Trips' }, { next: 'act', step: 'read file: Trips/packing.md' }][i] ?? { next: 'think' }
+      },
+      { deps: { files: f } },
+    )
+    agent.utteranceStart()
+    say(agent, "what's on my packing list for the")
+    await settle()
+    expect(f.ran).toEqual(['ls -p', "ls -p -- 'Trips'", "cat -- 'Trips/packing.md'"])
+    expect(options[0]).toEqual(expect.arrayContaining(['list files', 'list folder: deep', 'read file: deep/notes.md']))
+    expect(options[1]).toEqual(expect.arrayContaining(['list folder: Trips', 'read file: budget.csv']))
+    expect(options[2]).toContain('read file: Trips/packing.md')
+    const context = await agent.context()
+    expect(context).toContain("Stanley listed the user's files: Trips/, budget.csv.")
+    expect(context).toContain('Stanley listed the folder "Trips": packing.md.')
+    expect(context).toContain('Stanley read the file "Trips/packing.md": - Passport - Charger')
+    expect(state).toContain('"list files" lists it')
+
+    agent.utteranceEnd()
+    await settle()
+    const req = thinker.runs[0]!
+    expect(req.bash).toBeDefined()
+    const calls = req.messages.flatMap((m) => (m.role === 'assistant' && Array.isArray(m.content) ? m.content.flatMap((p) => (p.type === 'tool-call' ? [p.toolName, JSON.stringify(p.input)] : [])) : []))
+    expect(calls).toContain('bash')
+    expect(calls).toContain(JSON.stringify({ command: "cat -- 'Trips/packing.md'" }))
+    const results = req.messages.flatMap((m) => (m.role === 'tool' ? m.content.flatMap((p) => (p.type === 'tool-result' && p.output.type === 'text' ? [p.output.value] : [])) : []))
+    expect(results).toContain('- Passport\n- Charger')
+  })
+
+  it("gives thinking bash, and Jev a line for each command thinking ran", async () => {
+    const f = files()
+    const { agent } = setup(() => ({ next: 'think' }), {
+      thinker: {
+        run: async (req) => {
+          expect(await req.bash!('ls -p', 'b1')).toBe('Trips/\nbudget.csv')
+          expect(await req.bash!('rm nothing', 'b2')).toBe('bash: rm nothing: not found\n(exit code 127)')
+          return { text: 'You have a Trips folder and a budget.' }
+        },
+      },
+      deps: { files: f },
+    })
+    agent.utteranceStart()
+    agent.segment('what do I have in there')
+    agent.utteranceEnd()
+    await settle()
+    const context = await agent.context()
+    expect(context).toContain("Stanley ran `ls -p` on the user's files.")
+    expect(context).toContain("Stanley ran `rm nothing` on the user's files: failed (exit code 127).")
+    expect(agent.instructions).toContain('~/Stanley')
+  })
+
+  it("reports a file that couldn't be read", async () => {
+    const f = fakeFiles({ 'ls -p': 'gone.md\n' })
+    const { agent } = setup(plan({ next: 'act', step: 'list files' }, { next: 'act', step: 'read file: gone.md' }), { deps: { files: f } })
+    agent.utteranceStart()
+    spoke(agent, 'read me the gone one')
+    await settle()
+    expect(await agent.context()).toContain('Stanley read the file "gone.md": failed (bash: cat -- \'gone.md\': not found).')
+  })
+
+  it('offers no files and no bash without them', async () => {
+    let options: string[] = []
+    const { agent, thinker } = setup((req) => ((options = Object.keys(req.questions.step!.options)), { next: 'think' }))
+    agent.utteranceStart()
+    agent.segment('what files do I have')
+    agent.utteranceEnd()
+    await settle()
+    expect(options).not.toContain('list files')
+    expect(thinker.runs[0]?.bash).toBeUndefined()
+    expect(agent.instructions).not.toContain('## Files')
+  })
+})
+
 describe('Agent history', () => {
   const text = (req: ThinkRequest) => req.messages.map((m) => (typeof m.content === 'string' ? m.content : m.content.map((p) => (p.type === 'tool-call' ? `call ${p.toolCallId}` : p.type === 'tool-result' ? `result ${p.toolCallId}` : p.type === 'text' ? p.text : p.type)).join(' + ')))
 
@@ -1067,6 +1163,39 @@ describe('Agent history', () => {
     expect(second!.slice(first!.length)).toEqual(['call call_1', 'result call_1', 'Sorted.', 'thanks', '<screen unchanged/>'])
     // This stand-in reports no steps of its own, so the cache is read at the first call's observation.
     expect(thinker.runs[1]!.cacheAt).toBe(first!.length - 1)
+  })
+
+  it('calls the assistant by the name the user gave it, in every prompt, and follows a rename', async () => {
+    let name = 'Jarvis'
+    const states: string[] = []
+    const { agent, thinker } = setup((req) => (states.push(req.state, JSON.stringify(req.questions)), { next: 'think' }), {
+      deps: { name: () => name },
+      thinker: { run: async () => ({ text: 'Hi.' }) },
+    })
+    expect(agent.instructions).toContain('You are Jarvis,')
+    agent.utteranceStart()
+    agent.segment('tell Stanley Kubrick hi')
+    agent.utteranceEnd()
+    await settle()
+    expect(states.join('\n')).not.toMatch(/Stanley(?! Kubrick)/)
+    expect(states[0]).toContain('User: tell Stanley Kubrick hi')
+    expect(thinker.runs[0]!.instructions).not.toContain('Stanley')
+    expect(agent.conversation()).toContain('Jarvis said: "Hi."')
+    name = 'Ada'
+    expect(agent.instructions).toContain('You are Ada,')
+    expect(agent.conversation()).toContain('Ada said: "Hi."')
+  })
+
+  it('locks when the world can, once the user has finished', async () => {
+    const { world, performed } = fakeWorld()
+    world.lock = async () => void performed.push('lock')
+    const { agent } = setup(plan({ next: 'act', step: 'lock' }, { next: 'done' }), { deps: { world } })
+    agent.utteranceStart()
+    agent.segment('lock the screen')
+    agent.utteranceEnd()
+    await settle()
+    expect(performed[0]).toBe('lock')
+    expect(await agent.context()).toContain('Stanley locked the computer.')
   })
 
   it("ends the instructions with today's date, gives Jev the date each tick, and tells thinking when the day changes", async () => {

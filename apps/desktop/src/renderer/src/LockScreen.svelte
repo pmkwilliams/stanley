@@ -1,7 +1,9 @@
 <script lang="ts">
+  import { DEFAULT_AGENT_NAME } from '@stanley/app-sdk'
   import { clock, date, time } from './clock.svelte'
 
-  let { onunlock }: { onunlock: () => void } = $props()
+  /** `name`: what the user calls the assistant; unlocking greets it. */
+  let { name = DEFAULT_AGENT_NAME, onunlock }: { name?: string; onunlock: () => void } = $props()
 </script>
 
 <div class="lockscreen">
@@ -9,29 +11,27 @@
     <p class="date">{date(clock.now)}</p>
     <p class="time">{time(clock.now)}</p>
   </div>
-  <button class="unlock" onclick={onunlock}>Press to unlock</button>
+  <button class="unlock" onclick={onunlock}>Hello, {name}</button>
 </div>
 
 <style>
-  /* See-through: the shell's wallpaper and Stanley's aura show behind it. */
+  /* See-through: the shell's wallpaper and the assistant's aura show behind it. */
   .lockscreen {
-    /* The accent, lightened to read on the dark wallpaper. */
-    --ink: color-mix(in srgb, var(--accent), white 80%);
     position: fixed; inset: 0; z-index: 10;
     display: flex; flex-direction: column; align-items: center; justify-content: space-between;
     padding: 14vh 0 56px;
     /* The window has no title bar: the lock screen is what you drag it by. */
     -webkit-app-region: drag; user-select: none;
   }
-  .when { display: flex; flex-direction: column; align-items: center; color: color-mix(in srgb, var(--ink) 75%, transparent); }
+  .when { display: flex; flex-direction: column; align-items: center; color: color-mix(in srgb, var(--ink) 92%, transparent); }
   p { margin: 0; line-height: 1; font-weight: 600; }
   .date { font-size: 30px; }
-  .time { margin-top: 6px; font-size: 96px; font-weight: 700; letter-spacing: -0.01em; }
+  .time { margin-top: 6px; font-size: 104px; font-weight: 700; letter-spacing: -0.01em; }
 
   /* See-through text with a highlight that sweeps across it now and then. */
   .unlock {
-    --dim: color-mix(in srgb, var(--ink) 50%, transparent);
-    --glint: color-mix(in srgb, var(--ink) 75%, transparent);
+    --dim: color-mix(in srgb, var(--ink) 65%, transparent);
+    --glint: color-mix(in srgb, var(--ink) 95%, transparent);
     -webkit-app-region: no-drag;
     padding: 8px 16px; font-size: 18px; font-weight: 700; border: 0; border-radius: 10px;
     color: transparent; animation: shimmer 3.3s ease-in-out infinite;

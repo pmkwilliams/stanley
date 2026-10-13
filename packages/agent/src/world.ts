@@ -40,4 +40,6 @@ export interface World {
   /** Opens a web page by its address, as typing it into a browser would. Without it, pages Stanley found can't be opened. */
   openUrl?(url: string): Promise<StepResult>
   global(option: 'show' | 'home' | 'back'): Promise<void>
+  /** Goes to the lock screen, ending the session. Without it, the agent can't lock. */
+  lock?(): Promise<void>
 }

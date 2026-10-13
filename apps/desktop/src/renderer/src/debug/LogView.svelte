@@ -10,6 +10,12 @@
     const m = e.meta
     const steps = (m.results ?? []).map((r) => {
       if (r.lookup) return r.lookup.kind === 'search' ? `searched "${r.lookup.query}" → ${r.lookup.error ? `failed: ${r.lookup.error}` : r.lookup.results.map((x) => x.title).join(' · ') || 'nothing found'}` : `read ${r.lookup.url}${r.lookup.error ? ` → failed: ${r.lookup.error}` : ` → "${r.lookup.title}"`}`
+      if (r.file) {
+        const f = r.file
+        if (f.kind === 'bash') return `ran \`${f.command}\`${f.exitCode ? ` → exit code ${f.exitCode}` : ''}`
+        if (f.kind === 'list') return `listed ${f.path || 'the files'} → ${f.error ? `failed: ${f.error}` : f.entries.join(' · ') || 'empty'}`
+        return `read ${f.path}${f.error ? ` → failed: ${f.error}` : ''}`
+      }
       if (!r.step) return ''
       const s = r.step
       const text = s.text !== undefined ? ` ("${s.text}")` : ''

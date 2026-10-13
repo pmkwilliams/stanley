@@ -1,4 +1,7 @@
 import { jsonSchema, stepCountIs, streamText, tool, type LanguageModel, type LanguageModelUsage, type ModelMessage, type Tool, type ToolSet } from 'ai'
+import { DEFAULT_AGENT_NAME } from '@stanley/app-sdk'
+import { filesPrompt } from './files'
+import { named } from './narrate'
 import type { WebResult } from './web'
 
 /** One `act` call: an option, and for fields the text and whose words it is. */
@@ -36,6 +39,8 @@ export interface ThinkRequest {
   fetch?(url: string, toolCallId: string): Promise<PageOutput>
   /** Puts a web page on screen by its address, and returns what is on screen then. Absent when pages can't be opened. */
   openPage?(url: string, toolCallId: string): Promise<string>
+  /** Runs a command on the user's files, in the background, and returns what it printed. Absent without them. */
+  bash?(command: string, toolCallId: string): Promise<string>
   maxSteps: number
   signal: AbortSignal
   /** Each piece of text as it is written, so it can be spoken before the turn is over. Not for single-step turns. */
@@ -85,7 +90,7 @@ You are Stanley, a voice assistant that operates apps and websites on the user's
 
 The user's words are their messages. Notes from the computer are in <note> tags: what the user did in the app themselves, being cut off, the user still speaking, what comes next. Each time you are needed, the screen you're working on and its options come in <screen> and <options>; <screen unchanged/> means it's the same as the last one you saw. Whichever screen you finish on comes to the front by itself.
 
-You act through the \`act\` tool, which runs one of the listed options: open an app, open a link, press a button, type into a field, go back or go home. Each result tells you what is on screen now and which options come next.
+You act through the \`act\` tool, which runs one of the listed options: open an app, open a link, press a button, type into a field, go back, go home or lock the computer. Each result tells you what is on screen now and which options come next.
 
 Everything you write as text is read aloud to the user by text-to-speech as you write it, and shown on screen. So:
 - Write it the way you would say it out loud: no markdown, lists or other formatting.
@@ -118,9 +123,13 @@ export function longDate(d: Date): string {
   return `${part({ weekday: 'long' })}, ${part({ day: 'numeric' })} ${part({ month: 'long' })} ${part({ year: 'numeric' })}`
 }
 
-/** Thinking's instructions for a session. Fixed from its start: a new day arrives as a note. */
-export function instructions(opts: { web: boolean; today: Date }): string {
-  return [THINKING_PROMPT, MISHEARD, ...(opts.web ? [WEB] : []), `Today is ${longDate(opts.today)}.`].join('\n\n')
+/**
+ * Thinking's instructions for a session. Fixed from its start (a new day arrives as a note), unless
+ * the user renames the assistant. `files` is where the user's files are, when the session has them.
+ */
+export function instructions(opts: { web: boolean; files?: string; today: Date; name?: string }): string {
+  const text = [THINKING_PROMPT, MISHEARD, ...(opts.web ? [WEB] : []), ...(opts.files ? [filesPrompt(opts.files)] : []), `Today is ${longDate(opts.today)}.`].join('\n\n')
+  return named(text, opts.name ?? DEFAULT_AGENT_NAME)
 }
 
 /** What a single-step turn on a field is told, as a note ending its observation. */
@@ -153,8 +162,8 @@ const urlInput = jsonSchema<{ url: string }>({
 })
 
 /**
- * The same tools on every call, so the cached prefix holds: `act`, and the web tools the session
- * has. A single-step turn's tools don't run.
+ * The same tools on every call, so the cached prefix holds: `act`, and the web and file tools the
+ * session has. A single-step turn's tools don't run.
  */
 function tools(req: ThinkRequest): ToolSet {
   const set: ToolSet = {
@@ -207,6 +216,18 @@ function tools(req: ThinkRequest): ToolSet {
         execute: ({ url }: { url: string }, { toolCallId }: { toolCallId: string }) => req.openPage!(url, toolCallId),
       }),
     }),
+    ...(req.bash && {
+      bash: tool({
+        description: "Run a bash command in the user's files folder, in the background. Returns what it printed. The screen doesn't change.",
+        inputSchema: jsonSchema<{ command: string }>({
+          type: 'object',
+          properties: { command: { type: 'string', description: 'The command, run with bash in the folder.' } },
+          required: ['command'],
+          additionalProperties: false,
+        }),
+        execute: ({ command }: { command: string }, { toolCallId }: { toolCallId: string }) => req.bash!(command, toolCallId),
+      }),
+    }),
   }
   if (!req.single) return set
   // Without `execute`, a call comes back unrun. What the model is sent stays the same.
@@ -234,7 +255,7 @@ export function scriptedTurn(text: string, call?: ActCall): ThinkResult {
 
 /** Claude through Vercel AI Gateway, driving the same options as Jev. */
 export function createThinker(opts: { model?: LanguageModel } = {}): Thinker {
-  const model = opts.model ?? 'anthropic/claude-haiku-5.5'
+  const model = opts.model ?? 'anthropic/claude-sonnet-5.5'
   return {
     async run(req) {
       // The response messages of the steps that finished, as the SDK sent them to the next step.

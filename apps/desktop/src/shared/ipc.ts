@@ -1,5 +1,6 @@
 import type { AgentConfig, AgentDebugEvent, AgentStatus, HistoryRecord } from '@stanley/agent'
 import type { ActionArgs, Layout } from '@stanley/app-sdk'
+import type { Theme } from '@stanley/app-settings/core'
 import type { DecideRequest, MultiChoiceResult } from '@stanley/jev'
 import type { SttDebugEvent } from '@stanley/stt'
 import type { Piece, TtsDebugEvent } from '@stanley/tts'
@@ -32,6 +33,10 @@ export interface Snapshot {
   mock: boolean
   /** Registered push-to-talk accelerator, or null if none could be registered. */
   ptt: string | null
+  /** Set in the Settings app. */
+  theme: Theme
+  /** What the user calls the assistant, set in the Settings app. */
+  name: string
 }
 
 export type AppDebugEvent =
@@ -106,5 +111,7 @@ export interface StanleyApi {
   open(appId: string | null): void
   /** Dev fallback: send a typed utterance as if spoken. */
   say(text: string): void
+  /** The theme as the window opened, so its first frame has it; after that, the snapshot's. */
+  initialTheme: Theme
   debug: DebugApi
 }

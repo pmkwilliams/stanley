@@ -1,7 +1,9 @@
-import { existsSync } from 'node:fs'
+import { cpSync, existsSync, mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Agent, createThinker, defaultConfig, type AgentDeps, type Thinker, type TickReport, type WebTools, type World } from '@stanley/agent'
+import { Agent, createThinker, defaultConfig, type AgentDeps, type FileTools, type Thinker, type TickReport, type WebTools, type World } from '@stanley/agent'
 import { parallelWeb } from '@stanley/app-web/parallel'
+import { localFiles } from '@stanley/files'
 import { createJevClient, type DecisionClient } from '@stanley/jev'
 import { Shell } from '../apps/desktop/src/main/shell'
 import { apps } from '../apps/desktop/src/main/apps'
@@ -49,7 +51,7 @@ export function select<T>(items: T[], name: (t: T) => string, command: string): 
   const args = process.argv.slice(2)
   const filters = args.filter((a, i) => !a.startsWith('-') && !/^--(runs|concurrency|jev-turns)$/.test(args[i - 1] ?? ''))
   if (!filters.length && !args.includes('--all')) {
-    console.log(`${items.length} available — each makes several paid Jev/Haiku calls:`)
+    console.log(`${items.length} available — each makes several paid Jev/Sonnet calls:`)
     for (const t of items) console.log(`  ${name(t)}`)
     console.log(`\nRun some:  ${command} <filter...>\nRun all:   ${command} --all`)
     return null
@@ -59,7 +61,7 @@ export function select<T>(items: T[], name: (t: T) => string, command: string): 
 
 export function printUsage() {
   const ratio = usage.thinkingInputTokens ? `${Math.round((usage.thinkingCachedTokens / usage.thinkingInputTokens) * 100)}%` : '—'
-  console.log(`Paid calls: ${usage.jev} Jev (${usage.jevInputTokens.toLocaleString()} input tokens, p50 ${median(usage.jevMs)}s), ${usage.thinking} thinking turns, ${usage.writing} writes, ${usage.confirming} confirms (${usage.singleFallbacks} handed over to a whole turn) (Haiku: ${usage.thinkingInputTokens.toLocaleString()} input tokens, ${ratio} read from cache, largest call ${usage.largestThinkingInput.toLocaleString()}), ${usage.searches} searches, ${usage.reads} page reads (Parallel)`)
+  console.log(`Paid calls: ${usage.jev} Jev (${usage.jevInputTokens.toLocaleString()} input tokens, p50 ${median(usage.jevMs)}s), ${usage.thinking} thinking turns, ${usage.writing} writes, ${usage.confirming} confirms (${usage.singleFallbacks} handed over to a whole turn) (Sonnet: ${usage.thinkingInputTokens.toLocaleString()} input tokens, ${ratio} read from cache, largest call ${usage.largestThinkingInput.toLocaleString()}), ${usage.searches} searches, ${usage.reads} page reads (Parallel)`)
   for (const f of usage.fallbacks) console.log(`  handed over: ${f}`)
 }
 
@@ -86,12 +88,23 @@ export interface ScenarioResult {
  */
 export async function runScenario(scenario: Scenario, speak: Speak): Promise<ScenarioResult> {
   const shell = new Shell(apps, { env: process.env, fetch }, () => {})
-  const run = await drive(shell, scenario.utterances, speak)
-  const failures = [...run.turnFailures, ...scenario.checks.map((c: Check) => c(shell, run.agent)).filter((r): r is string => typeof r === 'string')]
+  const { files, root } = fixtureFiles()
+  const run = await drive(shell, scenario.utterances, speak, files)
+  const failures = [...run.turnFailures, ...scenario.checks.map((c: Check) => c(shell, run.agent, root)).filter((r): r is string => typeof r === 'string')]
   const t = run.result.thinking
   if (scenario.cache && t.inputTokens && t.cachedTokens / t.inputTokens < scenario.cache.minReadRatio) failures.push(`expected ≥ ${scenario.cache.minReadRatio * 100}% of thinking's input read from the cache, got ${Math.round((t.cachedTokens / t.inputTokens) * 100)}%`)
   if (scenario.cache && t.largestInput > scenario.cache.maxInputTokens) failures.push(`expected thinking calls under ${scenario.cache.maxInputTokens} input tokens, the largest was ${t.largestInput}`)
   return { ok: failures.length === 0, failures, ...run.result }
+}
+
+/** A fresh copy of `evals/files` for one run, as the user's files (macOS only: the sandbox needs it). */
+function fixtureFiles(): { files?: FileTools; root: string } {
+  const dir = mkdtempSync(join(tmpdir(), 'stanley-eval-'))
+  const root = join(dir, 'Stanley')
+  cpSync(join(import.meta.dirname, 'files'), root, { recursive: true })
+  // `--no-files`: without them, to compare.
+  const on = process.platform === 'darwin' && !process.argv.includes('--no-files')
+  return { files: on ? localFiles({ root, history: join(dir, 'history.git') }) : undefined, root }
 }
 
 /**
@@ -117,7 +130,7 @@ export interface TurnWatch {
  * Turn-taking is checked on every scenario: Stanley must never say anything before the user's last
  * word. Ending the turn early (a cut-in) is counted, not failed: the next words start a new turn.
  */
-export async function drive(world: World, utterances: string[], speak: Speak) {
+export async function drive(world: World, utterances: string[], speak: Speak, files?: FileTools) {
   const ticks: TickReport[] = []
   const said: string[] = []
   const saidAt: number[] = []
@@ -146,7 +159,7 @@ export async function drive(world: World, utterances: string[], speak: Speak) {
       changedAt = Date.now()
     },
     turnEnd: () => (turn.endedAt = Date.now()),
-  })
+  }, files)
   const settleMs: number[] = []
   const endMs: number[] = []
   const turnFailures: string[] = []
@@ -167,11 +180,11 @@ export async function drive(world: World, utterances: string[], speak: Speak) {
   return { agent, turnFailures, result: { ticks, said, settleMs, endMs, cutIns, trace: await agent.context(), thinking } }
 }
 
-function makeAgent(world: World, events: AgentDeps['events']): Agent {
+function makeAgent(world: World, events: AgentDeps['events'], files?: FileTools): Agent {
   const key = process.env.PARALLEL_API_KEY
   // `--jev-turns N`: how many user turns Jev reads, to compare its input and latency.
   const config = process.argv.includes('--jev-turns') ? { ...defaultConfig, jevTurns: flag('jev-turns', defaultConfig.jevTurns) } : defaultConfig
-  return new Agent({ world, jev: countedJev(createJevClient()), thinker: countedThinker(createThinker()), web: key ? countedWeb(parallelWeb(key)) : undefined, events, config })
+  return new Agent({ world, jev: countedJev(createJevClient()), thinker: countedThinker(createThinker()), web: key ? countedWeb(parallelWeb(key)) : undefined, files, events, config })
 }
 
 /** Runs `tasks` with at most `limit` in flight. */

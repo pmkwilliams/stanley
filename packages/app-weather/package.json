@@ -8,6 +8,6 @@
     "./ui": "./src/Weather.svelte"
   },
   "scripts": { "typecheck": "tsc -p ." },
-  "dependencies": { "@stanley/app-sdk": "workspace:*" },
+  "dependencies": { "@stanley/app-sdk": "workspace:*", "@stanley/app-ui": "workspace:*" },
   "peerDependencies": { "svelte": "^5.0.0" }
 }

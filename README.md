@@ -3,7 +3,7 @@
 # Stanley
 
 Voice-controlled desktop assistant. A fast decision model (TypeSafe Jev) takes each step from what is
-on screen; a language model (Claude Haiku) takes whatever needs words or judgement. It works from the
+on screen; a language model (Claude Sonnet) takes whatever needs words or judgement. It works from the
 screen's elements as an accessibility tree describes them, so it carries over to any app or website.
 See [docs/DESIGN.md](docs/DESIGN.md).
 
@@ -23,7 +23,7 @@ Without `AI_GATEWAY_API_KEY` the app runs with a mock decision model.
 
 ```sh
 pnpm test            # unit tests (agent loop, conversation, options, shell, page extraction)
-pnpm eval [filter]   # demo-app scenario evals against real Jev/Haiku (needs .env, costs money)
+pnpm eval [filter]   # demo-app scenario evals against real Jev/Sonnet (needs .env, costs money)
 pnpm eval:web        # the same agent on websites in headless Chromium (--live for real sites)
 pnpm eval:stt        # transcription accuracy on your recorded clips (local, free)
 pnpm eval:voice      # scenario evals driven by recorded clips (costs money)

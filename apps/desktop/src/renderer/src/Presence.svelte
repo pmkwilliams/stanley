@@ -3,6 +3,7 @@
   import type { Snapshot } from '../../shared/ipc'
   import { glass } from './glass'
   import { hsl, mic, presence, Settler, STYLES, voiceOut, type Presence, type Style } from './presence'
+  import { theme } from './theme.svelte'
 
   /**
    * `docked` moves the wave from the centre of the screen to its bottom edge, under an open window.
@@ -28,6 +29,8 @@
     let exhale = 0, wobble = 0
     /** Stanley's voice, smoothed. */
     let talk = 0
+    /** The theme, eased so switching fades the glass from one to the other. */
+    let light = theme.current === 'light' ? 1 : 0
 
     // The aurora is drawn per pixel into a coarse buffer, then softened and seen through glass on the GPU:
     // soft by construction, and cheap.
@@ -67,6 +70,8 @@
 
     /** Color by height up the curtain, as a fraction of its ray length: index `t * LUT_PER_UNIT`. */
     const LUT_PER_UNIT = 48, LUT_SIZE = LUT_PER_UNIT * 2
+    /** Lightness taken off the aurora's colors on the light theme. */
+    const LIGHT_DEEPEN = 14
     const lut = new Uint8ClampedArray(LUT_SIZE * 3), stops = new Uint8ClampedArray(9)
 
     const draw = (now: number) => {
@@ -86,6 +91,7 @@
       const target = STYLES[next]
       for (const k in target) cur[k as keyof Style] += (target[k as keyof Style] - cur[k as keyof Style]) * ease(3.2)
       dock += ((docked ? 1 : 0) - dock) * ease(3.5)
+      light += ((theme.current === 'light' ? 1 : 0) - light) * ease(6)
       // Without a level (e.g. injected audio), the VAD alone still shows the wave hearing.
       const level = Math.max(mic.level, snapshot.speaking ? 0.35 : 0)
       voice += (level - voice) * ease(14)
@@ -103,9 +109,11 @@
       const mirror = 1 - dock
       // Bottom edge → middle → crown, like the green fringe under a red aurora.
       // Colors mix rather than hues sweeping, so green into red passes through a dim warm blend, not blue.
-      hsl(p.h0, p.sat, Math.min(90, p.lit + 18), stops, 0)
-      hsl(p.h1, p.sat, p.lit, stops, 3)
-      hsl(p.h2, p.sat, p.lit + 8, stops, 6)
+      // On the light theme they're deeper, so they read as color on the pale glass rather than washing out.
+      const lit = p.lit - LIGHT_DEEPEN * light
+      hsl(p.h0, p.sat, Math.min(90, lit + 18), stops, 0)
+      hsl(p.h1, p.sat, lit, stops, 3)
+      hsl(p.h2, p.sat, lit + 8, stops, 6)
       for (let j = 0; j < LUT_SIZE; j++) {
         // The bottom color holds only a short fringe; the crown color fills most of the curtain.
         const t = Math.min(1, j / LUT_PER_UNIT)
@@ -152,7 +160,7 @@
           data[o + 3] = 255 * v * bright
         }
       }
-      pane.draw({ image, cell, time, dock, style: p })
+      pane.draw({ image, cell, time, dock, light, style: p, colors: stops })
       frame = requestAnimationFrame(draw)
     }
     frame = requestAnimationFrame(draw)
@@ -165,25 +173,10 @@
 
   const words = $derived([...snapshot.transcript.finalized, snapshot.transcript.partial].join(' ').trim())
   const captioned = $derived(!!words && (snapshot.utteranceOpen || shown === 'guessing' || shown === 'thinking'))
-
-  /**
-   * What Stanley said. A question stays until the user answers it (main clears it); a statement
-   * fades once there has been time to read it.
-   */
-  let saidExpired = $state(false)
-  $effect(() => {
-    const said = snapshot.said
-    saidExpired = false
-    if (!said || said.text.trim().endsWith('?')) return
-    const timer = setTimeout(() => (saidExpired = true), Math.max(6000, said.text.split(' ').length * 450))
-    return () => clearTimeout(timer)
-  })
-  const saying = $derived(!!snapshot.said && !saidExpired)
 </script>
 
 <canvas bind:this={canvas} data-presence={shown}></canvas>
 {#if captions}
-  <p class="said" class:docked class:on={saying} aria-live="polite">{snapshot.said?.text ?? ''}</p>
   <p class="caption" class:docked class:on={captioned}>{words}</p>
 {/if}
 
@@ -191,18 +184,9 @@
   canvas { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; }
   .caption {
     position: fixed; left: 0; right: 0; top: 36%; z-index: 2; margin: 0; padding: 0 15%;
-    text-align: center; font-size: 17px; color: rgba(255, 255, 255, 0.85); text-shadow: 0 1px 12px rgba(0, 0, 0, 0.6);
+    text-align: center; font-size: 17px; color: color-mix(in srgb, var(--text) 85%, transparent); text-shadow: 0 1px 12px var(--halo);
     pointer-events: none; opacity: 0; transition: opacity 0.4s, top 0.5s cubic-bezier(0.2, 0.8, 0.2, 1), font-size 0.5s;
   }
   .caption.on { opacity: 1; }
-  .said {
-    position: fixed; left: 0; right: 0; top: 26%; z-index: 2; margin: 0; padding: 0 18%;
-    text-align: center; font-size: 22px; font-weight: 500; line-height: 1.35; color: #fff; text-shadow: 0 1px 16px rgba(0, 0, 0, 0.7);
-    pointer-events: none; opacity: 0; transform: translateY(6px);
-    transition: opacity 0.4s, transform 0.4s, top 0.5s cubic-bezier(0.2, 0.8, 0.2, 1), font-size 0.5s;
-  }
-  .said.on { opacity: 1; transform: none; }
-  .said.docked { top: auto; bottom: 92px; font-size: 15px; padding: 10px 16px; margin: 0 auto; width: fit-content; max-width: 70%;
-    background: rgba(20, 20, 24, 0.72); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; backdrop-filter: blur(20px); }
   .caption.docked { top: calc(100% - 64px); font-size: 13px; }
 </style>

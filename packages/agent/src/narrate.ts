@@ -1,18 +1,33 @@
+import { DEFAULT_AGENT_NAME } from '@stanley/app-sdk'
 import type { Entry, LiveUtterance, LookupMeta, StepMeta, StepTarget } from './conversation'
+import type { FileMeta } from './files'
 import { shortUrl } from './web'
 import type { Screen } from './world'
 
 export type { LiveUtterance } from './conversation'
 
 /**
+ * Our own prompt text with the assistant called `name`. The prompts are written calling it
+ * Stanley; only text we wrote goes through here, never the user's words or what is on screen.
+ */
+export function named(text: string, name: string): string {
+  return name === DEFAULT_AGENT_NAME ? text : text.replace(/\bStanley\b/g, () => name)
+}
+
+/** `named` for each of a question's options. */
+export function namedOptions<K extends string>(options: Record<K, string>, name: string): Record<K, string> {
+  return Object.fromEntries(Object.entries<string>(options).map(([k, v]) => [k, named(v, name)])) as Record<K, string>
+}
+
+/**
  * What Jev reads of the history: what the user said, as turns; what Stanley did, as outcomes;
- * what it found on the web; what Stanley said, as far as the user heard it; then the screen once
+ * what it found on the web and in the user's files; what Stanley said, as far as the user heard it; then the screen once
  * (unless `screen` is null). Observations, reasoning and notes are left out, and so is which model
  * took a step. `entries` is `Conversation.view(live)`, already in order (see `place`): a turn is
  * split where a step changed something before the user finished ("User: …", the step, "User (went
- * on): …"), so a correction later in the sentence reads as one.
+ * on): …"), so a correction later in the sentence reads as one. `name` is what the assistant is called.
  */
-export function narrate(entries: Entry[], screen: Screen | null, live?: LiveUtterance, maxTurns = 50): string {
+export function narrate(entries: Entry[], screen: Screen | null, live?: LiveUtterance, maxTurns = 50, name = DEFAULT_AGENT_NAME): string {
   const liveWords = live ? live.text.trim().split(/\s+/).filter(Boolean).length : 0
   const lines: string[] = []
   /** Where each of the user's turns starts in `lines`. */
@@ -28,15 +43,16 @@ export function narrate(entries: Entry[], screen: Screen | null, live?: LiveUtte
     } else if (m.kind === 'said' && m.said) {
       // What the user heard is what was said: the rest of the reply never reached them.
       const heard = m.said.heard?.trim()
-      if (heard === undefined) lines.push(`Stanley said: "${m.said.text}"`)
-      else if (heard) lines.push(`Stanley started to say: "${heard}" but the user cut in.`)
-      else lines.push(`Stanley was going to say: "${m.said.text}" but the user cut in before any of it.`)
+      if (heard === undefined) lines.push(`${name} said: "${m.said.text}"`)
+      else if (heard) lines.push(`${name} started to say: "${heard}" but the user cut in.`)
+      else lines.push(`${name} was going to say: "${m.said.text}" but the user cut in before any of it.`)
     } else if (m.kind === 'event' && m.event === 'stuck') {
-      lines.push(`Stanley stopped: ${m.detail ?? 'it got stuck'}.`)
+      lines.push(`${name} stopped: ${m.detail ?? 'it got stuck'}.`)
     } else {
       for (const r of m.results ?? []) {
-        if (r.step) lines.push(describeStep(r.step))
-        else if (r.lookup) lines.push(...describeLookup(r.lookup))
+        if (r.step) lines.push(describeStep(r.step, name))
+        else if (r.lookup) lines.push(...describeLookup(r.lookup, name))
+        else if (r.file) lines.push(describeFile(r.file, name))
       }
     }
   }
@@ -52,9 +68,9 @@ export function narrate(entries: Entry[], screen: Screen | null, live?: LiveUtte
 const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max).trimEnd()}…` : text)
 
 /** A search lists what it found, so a page can be opened later; a read names the page. */
-function describeLookup(l: LookupMeta): string[] {
-  if (l.kind === 'read') return [`Stanley read "${l.title}" (${shortUrl(l.url)})${l.error ? `: failed (${l.error})` : ''}.`]
-  const head = `Stanley searched the web for "${l.query}"`
+function describeLookup(l: LookupMeta, name: string): string[] {
+  if (l.kind === 'read') return [`${name} read "${l.title}" (${shortUrl(l.url)})${l.error ? `: failed (${l.error})` : ''}.`]
+  const head = `${name} searched the web for "${l.query}"`
   if (l.error) return [`${head}: failed (${l.error}).`]
   if (!l.results.length) return [`${head}: nothing found.`]
   return [
@@ -66,8 +82,24 @@ function describeLookup(l: LookupMeta): string[] {
   ]
 }
 
-export function describeStep(e: StepMeta): string {
-  const who = e.by === 'user' ? 'User' : 'Stanley'
+/** A listing names what is in the folder, so it can be opened next; a read gives how the file starts. */
+function describeFile(f: FileMeta, name: string): string {
+  if (f.kind === 'bash') return `${name} ran \`${clip(f.command.replace(/\s+/g, ' ').trim(), 200)}\` on the user's files${f.exitCode ? `: failed (exit code ${f.exitCode})` : ''}.`
+  if (f.kind === 'read') {
+    const head = `${name} read the file "${f.path}"`
+    if (f.error) return `${head}: failed (${f.error}).`
+    const excerpt = clip(f.excerpt.replace(/\s+/g, ' ').trim(), 200)
+    return excerpt ? `${head}: ${excerpt}` : `${head}: it's empty.`
+  }
+  const head = f.path ? `${name} listed the folder "${f.path}"` : `${name} listed the user's files`
+  if (f.error) return `${head}: failed (${f.error}).`
+  if (!f.entries.length) return `${head}: it's empty.`
+  const shown = f.entries.slice(0, 40).join(', ')
+  return `${head}: ${shown}${f.entries.length > 40 ? `, and ${f.entries.length - 40} more` : ''}.`
+}
+
+export function describeStep(e: StepMeta, name = DEFAULT_AGENT_NAME): string {
+  const who = e.by === 'user' ? 'User' : name
   const t = e.target
   const outcome = e.error ? `: failed (${e.summary})` : ''
   switch (t.kind) {
@@ -77,6 +109,8 @@ export function describeStep(e: StepMeta): string {
       return `${who} went back${outcome}.`
     case 'home':
       return `${who} went home${outcome}.`
+    case 'lock':
+      return `${who} locked the computer${outcome}.`
     case 'page':
       return `${who} opened the page "${t.title}" (${shortUrl(t.url)})${outcome}.`
   }

@@ -10,9 +10,13 @@ const bundled = [
   '@stanley/tts',
   '@stanley/app-todo',
   '@stanley/app-email',
+  '@stanley/app-lights',
   '@stanley/app-weather',
   '@stanley/app-music',
   '@stanley/app-web',
+  '@stanley/app-settings',
+  '@stanley/app-ui',
+  '@stanley/files',
 ]
 
 export default defineConfig({

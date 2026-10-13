@@ -1,7 +1,7 @@
 /**
  * Launches the built desktop app (run `pnpm build` first), types two utterances, and saves
  * screenshots of the main and debug windows. Fails on any page error or error log. Paid: a
- * handful of Jev and Haiku calls (free in mock mode, without AI_GATEWAY_API_KEY).
+ * handful of Jev and Sonnet calls (free in mock mode, without AI_GATEWAY_API_KEY).
  *
  *   pnpm smoke:desktop [out-dir]
  */

@@ -115,11 +115,28 @@ const seed: Email[] = [
 
 const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
+/** `2026-10-09T11:42` → `Oct 9` (no locale or timezone dependence). */
+export function formatDay(iso: string): string {
+  const [, m = '1', d = '1'] = (iso.split('T')[0] ?? '').split('-')
+  return `${months[Number(m) - 1]} ${Number(d)}`
+}
+
 /** `2026-10-09T11:42` → `Oct 9, 11:42` (no locale or timezone dependence). */
 export function formatDate(iso: string): string {
-  const [date = '', time = ''] = iso.split('T')
-  const [, m = '1', d = '1'] = date.split('-')
-  return `${months[Number(m) - 1]} ${Number(d)}, ${time.slice(0, 5)}`
+  return `${formatDay(iso)}, ${(iso.split('T')[1] ?? '').slice(0, 5)}`
+}
+
+/** The visible names and counts of the view switcher, shared by the UI and `nodes()`. */
+export function tabs(s: EmailState): { id: 'inbox' | 'sent' | 'archived'; label: string; count: string | undefined; selected: boolean }[] {
+  const unread = s.emails.filter((e) => !e.archived && !e.read).length
+  const archived = s.emails.filter((e) => e.archived).length
+  const view = s.route === 'sent' || s.route === 'archived' ? s.route : 'inbox'
+  const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`
+  return [
+    { id: 'inbox', label: 'Inbox', count: unread ? `${unread} unread` : undefined, selected: view === 'inbox' },
+    { id: 'sent', label: 'Sent', count: s.sent.length ? plural(s.sent.length, 'message') : undefined, selected: view === 'sent' },
+    { id: 'archived', label: 'Archived', count: archived ? plural(archived, 'message') : undefined, selected: view === 'archived' },
+  ]
 }
 
 function emailMarkdown(e: Email): string {
@@ -142,20 +159,21 @@ export const emailApp = defineApp<EmailState>({
   current: (s) => s.route,
 
   nodes(s) {
-    // As on screen: Inbox / Sent tabs, the inbox list (also beside an open email), and the open
-    // email with its buttons and reply box.
+    // As on screen: the Inbox / Sent / Archived switcher (each with its count), the inbox list
+    // (also beside an open email), and the open email with its buttons and reply box.
     const inbox = s.emails.filter((e) => !e.archived)
     const archived = s.emails.filter((e) => e.archived)
-    const unread = inbox.filter((e) => !e.read).length
-    const tabs: AgentNode[] = [
-      { id: 'inbox', kind: 'location', role: 'tab', label: `Inbox (${unread})`, description: s.route === 'sent' || s.route === 'archived' ? undefined : 'selected' },
-      { id: 'sent', kind: 'location', role: 'tab', label: `Sent (${s.sent.length})`, description: s.route === 'sent' ? 'selected' : undefined },
-      { id: 'archived', kind: 'location', role: 'tab', label: `Archived (${archived.length})`, description: s.route === 'archived' ? 'selected' : undefined },
-    ]
-    if (s.route === 'sent') return tabs
+    const switcher = tabs(s).map((t): AgentNode => ({
+      id: t.id,
+      kind: 'location',
+      role: 'tab',
+      label: t.label,
+      description: [t.count, t.selected ? 'selected' : undefined].filter(Boolean).join(', ') || undefined,
+    }))
+    if (s.route === 'sent') return switcher
     if (s.route === 'archived') {
       return [
-        ...tabs,
+        ...switcher,
         ...archived.map((e): AgentNode => ({
           id: `email/${e.id}/row`,
           kind: 'group',
@@ -169,10 +187,10 @@ export const emailApp = defineApp<EmailState>({
       id: `email/${e.id}`,
       kind: 'location',
       label: `${e.from}: ${e.subject}`,
-      description: [e.read ? undefined : 'unread', formatDate(e.date), s.route === `email/${e.id}` ? 'open' : undefined].filter(Boolean).join(', '),
+      description: [e.read ? undefined : 'unread', formatDay(e.date), s.route === `email/${e.id}` ? 'open' : undefined].filter(Boolean).join(', '),
     }))
     const open = s.route.startsWith('email/') ? inbox.find((e) => `email/${e.id}` === s.route) : undefined
-    if (!open) return [...tabs, ...rows]
+    if (!open) return [...switcher, ...rows]
     const article: AgentNode = {
       id: `email/${open.id}/article`,
       kind: 'group',
@@ -186,7 +204,7 @@ export const emailApp = defineApp<EmailState>({
         { id: `email/${open.id}/send`, kind: 'action', label: 'Send reply' },
       ],
     }
-    return [...tabs, ...rows, article]
+    return [...switcher, ...rows, article]
   },
 
   async perform(s, nodeId, args) {
@@ -257,7 +275,7 @@ export const emailApp = defineApp<EmailState>({
       .filter((e) => !e.archived)
       .map((e) => `- ${e.read ? '' : '**[unread]** '}"${e.subject}" from ${e.from}, ${formatDate(e.date)}`)
       .join('\n')
-    return `# Email › Inbox\n${list || '_Inbox zero_'}`
+    return `# Email › Inbox\n${list || '_No messages_'}`
   },
 })
 

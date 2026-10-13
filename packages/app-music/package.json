@@ -6,9 +6,11 @@
   "exports": {
     "./core": "./src/core.ts",
     "./ui": "./src/Music.svelte",
-    "./player": "./src/Player.svelte"
+    "./player": "./src/Player.svelte",
+    "./mini": "./src/MiniPlayer.svelte",
+    "./art": "./src/art.ts"
   },
   "scripts": { "typecheck": "tsc -p ." },
-  "dependencies": { "@stanley/app-sdk": "workspace:*" },
+  "dependencies": { "@stanley/app-sdk": "workspace:*", "@stanley/app-ui": "workspace:*" },
   "peerDependencies": { "svelte": "^5.0.0" }
 }

@@ -1,5 +1,5 @@
 /**
- * Headless scenario evals: real apps, real Jev + Haiku through the gateway, no Electron.
+ * Headless scenario evals: real apps, real Jev + Sonnet through the gateway, no Electron.
  * Each utterance is typed word by word like live transcription, then ended.
  *
  *   pnpm eval                      # list scenarios (runs nothing)

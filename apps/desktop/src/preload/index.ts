@@ -22,6 +22,7 @@ const api: StanleyApi = {
   perform: (appId, nodeId, args) => ipcRenderer.send('perform', appId, nodeId, args),
   open: (appId) => ipcRenderer.send('open', appId),
   say: (text) => ipcRenderer.send('say', text),
+  initialTheme: ipcRenderer.sendSync('theme'),
   debug: {
     onEvent: (cb) => on('debug:event', cb),
     history: () => ipcRenderer.invoke('debug:history'),

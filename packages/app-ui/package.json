@@ -1,0 +1,13 @@
+{
+  "name": "@stanley/app-ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./kit.css": "./src/kit.css",
+    "./Icon.svelte": "./src/Icon.svelte",
+    "./icons": "./src/icons.ts"
+  },
+  "scripts": { "typecheck": "tsc -p ." },
+  "peerDependencies": { "svelte": "^5.0.0" }
+}

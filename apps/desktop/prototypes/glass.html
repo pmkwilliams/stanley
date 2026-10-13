@@ -1,0 +1,613 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Stanley — presence behind glass</title>
+<style>
+  :root {
+    color-scheme: dark; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', ui-sans-serif, system-ui, sans-serif;
+    font-size: 12px; color: #ececee; -webkit-font-smoothing: antialiased;
+  }
+  body { margin: 0; background: #0a0a0b; overflow: hidden; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+
+  /* A stand-in for an open app window, to see the glass through it when docked. */
+  .window {
+    position: fixed; left: 50%; top: 76px; translate: -50% 0; width: min(720px, calc(100vw - 420px)); height: calc(100vh - 260px);
+    background: rgba(26, 26, 28, 0.82); backdrop-filter: blur(40px) saturate(1.6); border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 8px; padding: 22px; opacity: 0; scale: 0.96; pointer-events: none; transition: opacity 0.18s, scale 0.18s;
+  }
+  .window.on { opacity: 1; scale: 1; }
+  .window h1 { font-size: 20px; margin: 0 0 16px; font-weight: 600; }
+  .window .row { height: 34px; border-radius: 6px; background: rgba(255, 255, 255, 0.05); margin-bottom: 8px; }
+
+  #panel {
+    position: fixed; top: 12px; right: 12px; bottom: 12px; width: 300px; overflow: auto; padding: 14px 14px 18px;
+    background: rgba(18, 18, 21, 0.86); backdrop-filter: blur(24px); border: 1px solid rgba(255, 255, 255, 0.09); border-radius: 10px;
+  }
+  #panel.hidden { display: none; }
+  #panel h2 { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #8e8e93; margin: 16px 0 8px; }
+  #panel h2:first-child { margin-top: 0; }
+  .states { display: flex; flex-wrap: wrap; gap: 4px; }
+  button {
+    font: inherit; color: inherit; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 6px; padding: 4px 8px; cursor: pointer;
+  }
+  button:hover { background: rgba(255, 255, 255, 0.09); }
+  button.on { background: rgba(255, 255, 255, 0.18); border-color: rgba(255, 255, 255, 0.3); }
+  button.shown { box-shadow: inset 0 -2px 0 #9fd; }
+  .ctl { display: grid; grid-template-columns: 1fr 52px; align-items: center; gap: 2px 8px; margin: 6px 0; }
+  .ctl label { color: #c8c8cc; }
+  .ctl output { text-align: right; color: #8e8e93; font-variant-numeric: tabular-nums; }
+  .ctl input[type='range'] { grid-column: 1 / -1; width: 100%; margin: 0; accent-color: #9fd; }
+  .check { display: flex; align-items: center; gap: 8px; margin: 6px 0; color: #c8c8cc; }
+  .check input { accent-color: #9fd; margin: 0; }
+  .actions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 10px; }
+  #stats { position: fixed; left: 12px; bottom: 10px; color: #8e8e93; font-variant-numeric: tabular-nums; pointer-events: none; }
+  .hint { color: #6e6e73; line-height: 1.5; margin-top: 12px; }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div class="window" id="window"><h1>Todo</h1><div class="row"></div><div class="row"></div><div class="row"></div><div class="row"></div></div>
+<div id="panel"></div>
+<div id="stats"></div>
+
+<script type="module">
+// ─── Presence: copied from apps/desktop/src/renderer/src/presence.ts ──────────────────────────────
+
+const ARMED = {
+  amp: 0.06, blur: 40, speed: 0.25, freq: 1.3, coherence: 0.4, h0: 150, h1: 172, h2: 250, sat: 55, lit: 52, alpha: 0.35,
+  width: 0.8, voice: 1, breathe: 1, shimmer: 0, scan: 0, pulse: 0, travel: 0,
+}
+const HEARING = {
+  amp: 0.09, blur: 24, speed: 0.55, freq: 1.8, coherence: 0.3, h0: 128, h1: 160, h2: 290, sat: 80, lit: 55, alpha: 0.6,
+  width: 0.62, voice: 1.7, breathe: 0,
+}
+const STYLES = {
+  off: { ...ARMED, amp: 0.012, blur: 4, speed: 0.15, sat: 8, lit: 45, alpha: 0.18, width: 0.9, voice: 0, breathe: 0 },
+  armed: ARMED,
+  hearing: { ...ARMED, ...HEARING },
+  trailing: { ...ARMED, ...HEARING, amp: 0.075, blur: 30, speed: 0.4, freq: 1.6, sat: 72, lit: 58, alpha: 0.5, width: 0.66, voice: 1.5, breathe: 0.6 },
+  guessing: { ...ARMED, ...HEARING, speed: 0.6, freq: 1.9, coherence: 0.45, h1: 185, h2: 310, sat: 82, lit: 58, alpha: 0.62, width: 0.6, voice: 1.6, shimmer: 1 },
+  thinking: {
+    ...ARMED, amp: 0.07, blur: 16, speed: 0.9, freq: 2.6, coherence: 0.9, h0: 200, h1: 275, h2: 320, sat: 85, lit: 60, alpha: 0.72,
+    width: 0.42, voice: 0.7, breathe: 0, scan: 1,
+  },
+  writing: {
+    ...ARMED, amp: 0.07, blur: 16, speed: 0.9, freq: 2.6, coherence: 0.9, h0: 175, h1: 300, h2: 340, sat: 88, lit: 60, alpha: 0.72,
+    width: 0.42, voice: 0.7, breathe: 0, scan: 1,
+  },
+  speaking: {
+    ...ARMED, amp: 0.08, blur: 14, speed: 0.8, freq: 3.2, coherence: 0.85, h0: 190, h1: 262, h2: 325, sat: 88, lit: 62, alpha: 0.75,
+    width: 0.58, voice: 0.6, breathe: 0, pulse: 1,
+  },
+  acting: {
+    ...ARMED, amp: 0.11, blur: 16, speed: 1.2, freq: 2.2, coherence: 0.85, h0: 100, h1: 130, h2: 345, sat: 90, lit: 55, alpha: 0.8,
+    width: 0.85, voice: 0.8, breathe: 0, travel: 1,
+  },
+  done: ARMED,
+  'didnt-get-that': { ...ARMED, h0: 210, h1: 220, h2: 235, sat: 22, alpha: 0.42, width: 0.7, voice: 1.4, breathe: 0.5, blur: 30, speed: 0.3 },
+  stuck: { ...ARMED, amp: 0.05, blur: 30, speed: 0.07, freq: 1.2, coherence: 0.9, h0: 22, h1: 34, h2: 44, sat: 90, alpha: 0.55, width: 0.7, voice: 0.8, breathe: 0.3 },
+  error: { ...ARMED, amp: 0.045, blur: 26, speed: 0.06, freq: 1.2, coherence: 0.9, h0: 0, h1: 14, h2: 30, sat: 85, lit: 52, alpha: 0.55, width: 0.7, voice: 0.8, breathe: 0.2 },
+}
+
+const HOLD = { guessing: 1500 }
+const FADE = { done: 1400, 'didnt-get-that': 2500, stuck: 5000, error: 5000 }
+
+class Settler {
+  raw = 'off'; rawSince = 0; shown = 'off'; shownSeen = 0
+  update(raw, now) {
+    if (raw !== this.raw) { this.raw = raw; this.rawSince = now }
+    let next = raw
+    const fade = FADE[raw]
+    if (fade && now - this.rawSince >= fade) next = 'armed'
+    const hold = HOLD[this.shown]
+    if (hold && now - this.shownSeen < hold && (raw === 'hearing' || raw === 'trailing')) next = this.shown
+    this.shown = next
+    if (next === raw) this.shownSeen = now
+    return next
+  }
+}
+
+function loudness(chunk) {
+  let sum = 0
+  for (const x of chunk) sum += x * x
+  const db = 10 * Math.log10(sum / Math.max(1, chunk.length) + 1e-12)
+  return Math.min(1, Math.max(0, (db + 50) / 35))
+}
+
+// ─── Glass settings ──────────────────────────────────────────────────────────────────────────────
+
+const DEFAULTS = {
+  glass: true, angle: 52, width: 110, widthVar: 1.3, refract: 0.5, slice: 0.3, sliceAlong: 0.35, smear: 26,
+  highlight: 0.9, lines: 0.01, shade: 0.25, chroma: 0, grain: 0.06,
+  sceneBlur: 2, ambient: 0.22, ambientSize: 0.5, renderScale: 1,
+}
+const SPEC = [
+  ['Glass'],
+  ['glass', 'Glass on (G)', 'bool'],
+  ['angle', 'Strip angle °', 0, 180, 1],
+  ['width', 'Strip width (px)', 16, 400, 1],
+  ['widthVar', 'Width variation', 0, 1.8, 0.01],
+  ['refract', 'Lens bend inside a strip', -1.5, 1.5, 0.01],
+  ['slice', 'Slice shift across', 0, 2, 0.01],
+  ['sliceAlong', 'Slice shift along', 0, 3, 0.01],
+  ['smear', 'Smear along strip (px)', 0, 300, 1],
+  ['highlight', 'Edge glint', 0, 3, 0.01],
+  ['lines', 'Edge glint on dark', 0, 0.08, 0.001],
+  ['shade', 'Lens shading', 0, 1, 0.01],
+  ['chroma', 'Colour fringe', 0, 0.6, 0.01],
+  ['grain', 'Grain', 0, 0.3, 0.005],
+  ['Behind the glass'],
+  ['sceneBlur', 'Softness (cells)', 0, 8, 0.1],
+  ['ambient', 'Idle glow', 0, 1, 0.01],
+  ['ambientSize', 'Idle glow size', 0.1, 1.2, 0.01],
+  ['Performance'],
+  ['renderScale', 'Render scale (× DPR)', 0.25, 1, 0.05],
+]
+const STORE = 'stanley-glass-v2'
+const P = { ...DEFAULTS, ...JSON.parse(localStorage.getItem(STORE) || '{}') }
+const save = () => localStorage.setItem(STORE, JSON.stringify(P))
+
+// ─── WebGL ───────────────────────────────────────────────────────────────────────────────────────
+
+const canvas = document.getElementById('gl')
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, depth: false, stencil: false, powerPreference: 'high-performance' })
+if (!gl) document.body.textContent = 'WebGL2 is not available.'
+const halfFloat = !!gl.getExtension('EXT_color_buffer_float')
+
+const VERT = `#version 300 es
+void main() { vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2); gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0); }`
+
+// Blurs the coarse aurora, one axis per pass. The second pass also lays in the idle glow,
+// so the glass always has some light behind it to bend.
+const BLUR = `#version 300 es
+precision highp float;
+uniform sampler2D uTex;
+uniform vec2 uSize, uStep;
+uniform float uAddAmbient, uTime, uDock, uAmbient, uAmbientSize, uAspect;
+uniform vec3 uC0, uC1, uC2;
+out vec4 o;
+
+vec3 ambient(vec2 uv) {
+  vec2 a = vec2(uAspect, 1.0), q = uv * a;
+  float base = mix(0.55, 0.95, uDock);
+  vec3 c = vec3(0.0);
+  for (int k = 0; k < 3; k++) {
+    float f = float(k);
+    vec2 at = vec2((0.5 + 0.34 * sin(uTime * 0.07 + f * 2.1)) * a.x, base + 0.16 * cos(uTime * 0.05 + f * 1.7) - 0.08 * f);
+    float r = uAmbientSize * (0.75 + 0.3 * f);
+    c += exp(-dot(q - at, q - at) / (r * r)) * (k == 0 ? uC1 : k == 1 ? uC2 : uC0);
+  }
+  return c * uAmbient * 0.45;
+}
+
+void main() {
+  vec2 uv = gl_FragCoord.xy / uSize;
+  vec4 c = vec4(0.0); float ws = 0.0;
+  for (int k = -6; k <= 6; k++) {
+    float t = float(k) / 6.0, w = exp(-t * t * 3.0);
+    c += texture(uTex, uv + uStep * t) * w; ws += w;
+  }
+  c /= ws;
+  if (uAddAmbient > 0.5) c.rgb += ambient(uv);
+  o = c;
+}`
+
+// The glass. Space is turned so x runs across the strips and y along them; each strip bends what's
+// behind it like a lens and shows its own slice of the scene, so seams are sharp while light is soft.
+const GLASS = `#version 300 es
+precision highp float;
+uniform sampler2D uScene;
+uniform vec2 uRes, uSpan;
+uniform float uDpr, uTime, uGlass, uAngle, uWidth, uWidthVar, uRefract, uSlice, uSliceAlong, uSmear;
+uniform float uHighlight, uLines, uShade, uChroma, uGrain;
+uniform vec3 uBg;
+out vec4 o;
+
+float hash11(float n) { return fract(sin(n * 127.1 + 3.7) * 43758.5453); }
+float hash21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+
+void main() {
+  vec2 pix = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y);
+  vec2 along = vec2(cos(uAngle), sin(uAngle)), across = vec2(-along.y, along.x);
+  vec2 d = pix - uRes * 0.5;
+  float W = uWidth * uDpr;
+  vec2 ofs = vec2(0.0), ofsR = vec2(0.0), ofsB = vec2(0.0);
+  float s = 0.0;
+  if (uGlass > 0.5) {
+    float px = dot(d, across);
+    // Uneven widths: warp the across axis smoothly (it stays monotonic, so strips never fold).
+    float x = px + uWidthVar * W * (0.35 * sin(px / (W * 2.3)) + 0.2 * sin(px / (W * 0.97) + 1.3));
+    float i = floor(x / W);
+    s = fract(x / W) - 0.5;
+    float bend = -uRefract * W * 2.0 * s;
+    float shift = (hash11(i) - 0.5) * uSlice * W * 2.0;
+    float slide = (hash11(i + 31.7) - 0.5) * uSliceAlong * W * 2.0;
+    ofs = across * (bend + shift) + along * slide;
+    ofsR = across * (bend * (1.0 + uChroma) + shift) + along * slide;
+    ofsB = across * (bend * (1.0 - uChroma) + shift) + along * slide;
+  }
+
+  vec3 col = vec3(0.0); float a = 0.0, ws = 0.0;
+  for (int k = 0; k < 9; k++) {
+    float t = (float(k) - 4.0) / 4.0, w = exp(-t * t * 2.0);
+    vec2 sm = along * t * uSmear * uDpr;
+    vec4 c = texture(uScene, (pix + ofs + sm) / uSpan);
+    if (uChroma > 0.0) {
+      c.r = texture(uScene, (pix + ofsR + sm) / uSpan).r;
+      c.b = texture(uScene, (pix + ofsB + sm) / uSpan).b;
+    }
+    col += c.rgb * w; a += c.a * w; ws += w;
+  }
+  col /= ws; a /= ws;
+
+  if (uGlass > 0.5) {
+    float W2 = W;
+    float dR = (0.5 - s) * W2, dL = (s + 0.5) * W2;
+    // Light gathers toward one side of each strip; a thin glint on that edge, a soft groove on the other.
+    col *= clamp(1.0 + uShade * 1.2 * s, 0.0, 2.0);
+    col *= 1.0 - uShade * 0.8 * exp(-dL / (2.5 * uDpr));
+    col += uHighlight * exp(-dR / (1.2 * uDpr)) * (col * 1.6 + vec3(uLines));
+  }
+
+  // The scene is premultiplied light over the window background.
+  vec3 c = uBg * (1.0 - a) + col;
+  float lum = dot(col, vec3(0.3, 0.59, 0.11));
+  float n = hash21(gl_FragCoord.xy + floor(uTime * 24.0) * vec2(17.13, 41.7)) - 0.5;
+  c += n * uGrain * (0.12 + sqrt(max(lum, 0.0)));
+  c += (hash21(gl_FragCoord.xy * 1.37 + 9.1) - 0.5) / 255.0;
+  o = vec4(c, 1.0);
+}`
+
+function program(vs, fs) {
+  const p = gl.createProgram()
+  for (const [type, src] of [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]]) {
+    const sh = gl.createShader(type)
+    gl.shaderSource(sh, src)
+    gl.compileShader(sh)
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(sh))
+    gl.attachShader(p, sh)
+  }
+  gl.linkProgram(p)
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p))
+  const u = new Proxy({}, { get: (cache, name) => (cache[name] ??= gl.getUniformLocation(p, name)) })
+  return { p, u }
+}
+const blurProg = program(VERT, BLUR)
+const glassProg = program(VERT, GLASS)
+gl.bindVertexArray(gl.createVertexArray())
+
+function texture() {
+  const t = gl.createTexture()
+  gl.bindTexture(gl.TEXTURE_2D, t)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+  return t
+}
+const sceneTex = texture()
+const targets = [0, 1].map(() => ({ tex: texture(), fbo: gl.createFramebuffer() }))
+gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true)
+
+// ─── Aurora: the drawing loop from Presence.svelte, unchanged except for where its pixels go ────
+
+let W = 0, H = 0, dpr = 1, cell = 4, bw = 1, bh = 1, image = new ImageData(1, 1)
+function resize() {
+  W = innerWidth
+  H = innerHeight
+  dpr = devicePixelRatio * P.renderScale
+  canvas.width = Math.round(W * dpr)
+  canvas.height = Math.round(H * dpr)
+  cell = Math.max(3, Math.ceil(Math.sqrt((W * H) / 70000)))
+  bw = Math.max(1, Math.ceil(W / cell))
+  bh = Math.max(1, Math.ceil(H / cell))
+  image = new ImageData(bw, bh)
+  for (const t of targets) {
+    gl.bindTexture(gl.TEXTURE_2D, t.tex)
+    if (halfFloat) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, bw, bh, 0, gl.RGBA, gl.HALF_FLOAT, null)
+    else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, bw, bh, 0, gl.RGBA, gl.UNSIGNED_BYTE, null)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, t.fbo)
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t.tex, 0)
+  }
+}
+addEventListener('resize', resize)
+resize()
+
+let raw = 'armed', shown = 'off', docked = false, simVoice = true
+const settler = new Settler()
+const cur = { ...STYLES.off }
+let time = 0, last = performance.now()
+let dock = 0, voice = 0, flow = 0, drift = 0, exhale = 0, wobble = 0, talk = 0
+
+/** A made-up voice: syllables in phrases, with pauses. */
+const speech = (t, seed) =>
+  Math.max(0, Math.sin(t * 2 * Math.PI * 3.6 + Math.sin(t * 1.9 + seed) * 2.5)) ** 1.5 *
+  (Math.sin(t * 0.9 + seed) > -0.2 ? 1 : 0) * (0.65 + 0.35 * Math.sin(t * 0.37 + seed))
+let realMic = null
+const micLevel = () => {
+  if (realMic) return realMic.level
+  return simVoice && (raw === 'hearing' || raw === 'guessing') ? speech(time, 0) : 0
+}
+const talkLevel = () => (simVoice && raw === 'speaking' ? speech(time, 4) : 0)
+
+const envelope = (u, p) => Math.exp(-(((u - 0.5) / (p.width * 0.5)) ** 2) * 2.2)
+const scanAt = () => 0.5 + 0.36 * Math.sin(time * 1.7)
+const height = (i, u, p) => {
+  const phase = i * 1.9 * (1 - p.coherence)
+  const t = drift
+  const wave =
+    0.55 * Math.sin(u * p.freq * 6.28 + t * (1 + i * 0.25) + phase - flow) +
+    0.3 * Math.sin(u * p.freq * 1.7 * 6.28 - t * 0.7 + phase * 2) +
+    0.15 * Math.sin(u * p.freq * 3.1 * 6.28 + t * 1.3 + i)
+  let a = p.amp * (1 + 0.3 * p.breathe * Math.sin(time * 1.1))
+  a += voice * p.voice * 0.09 * (0.65 + 0.35 * Math.sin(u * 13 + time * 9 + i * 1.3))
+  a += p.scan * 0.07 * Math.exp(-(((u - scanAt()) / 0.07) ** 2))
+  a += p.travel * 0.05 * (0.5 + 0.5 * Math.sin((u * 2.5 - time * 0.8) * 6.28)) ** 6
+  a *= 1 + p.pulse * 0.9 * talk
+  a += wobble * 0.07 * Math.sin(u * 10 - time * 16) * (u < 0.5 ? 1 : 0.35)
+  a += exhale * 0.09
+  return envelope(u, p) * a * (0.6 + 0.4 * wave)
+}
+
+const LUT_PER_UNIT = 48, LUT_SIZE = LUT_PER_UNIT * 2
+const lut = new Uint8ClampedArray(LUT_SIZE * 3), stops = new Uint8ClampedArray(9)
+const hsl = (h, s, l, out, o) => {
+  h = ((h % 360) + 360) % 360
+  s /= 100
+  l /= 100
+  const c = s * Math.min(l, 1 - l)
+  const f = (n) => {
+    const k = (n + h / 30) % 12
+    return 255 * (l - c * Math.max(-1, Math.min(k - 3, 9 - k, 1)))
+  }
+  out[o] = f(0)
+  out[o + 1] = f(8)
+  out[o + 2] = f(4)
+}
+
+function aurora(dt, now) {
+  time += dt
+  const ease = (rate) => 1 - Math.exp(-dt * rate)
+  const next = settler.update(raw, now)
+  if (next !== shown) {
+    if (next === 'done') exhale = 1
+    if (next === 'didnt-get-that') wobble = 1
+    shown = next
+    markStates()
+  }
+  const target = STYLES[next]
+  for (const k in target) cur[k] += (target[k] - cur[k]) * ease(3.2)
+  dock += ((docked ? 1 : 0) - dock) * ease(3.5)
+  const level = Math.max(micLevel(), raw === 'hearing' ? 0.35 : 0)
+  voice += (level - voice) * ease(14)
+  flow += dt * cur.travel * 3
+  drift += dt * cur.speed
+  exhale *= Math.exp(-dt * 2)
+  wobble *= Math.exp(-dt * 1.6)
+  const out = talkLevel()
+  talk += (out - talk) * ease(out > talk ? 30 : 10)
+
+  const p = cur
+  const base = H * (0.5 + 0.5 * dock)
+  const scale = H * (1 + dock * 0.9)
+  const mirror = 1 - dock
+  hsl(p.h0, p.sat, Math.min(90, p.lit + 18), stops, 0)
+  hsl(p.h1, p.sat, p.lit, stops, 3)
+  hsl(p.h2, p.sat, p.lit + 8, stops, 6)
+  for (let j = 0; j < LUT_SIZE; j++) {
+    const t = Math.min(1, j / LUT_PER_UNIT)
+    const k = t < 0.25 ? 0 : 3, m = t < 0.25 ? t / 0.25 : (t - 0.25) / 0.75
+    for (let n = 0; n < 3; n++) lut[j * 3 + n] = stops[k + n] + (stops[k + 3 + n] - stops[k + n]) * m
+  }
+
+  const data = image.data
+  data.fill(0)
+  const drawn = Math.min(1, p.alpha * 1.9 * (1 + exhale * 0.8) * (1 + p.pulse * 0.5 * talk))
+  for (let cx = 0; cx < bw; cx++) {
+    const u = (cx + 0.5) / bw
+    const env = envelope(u, p)
+    if (env < 0.01) continue
+    const sway = 1.8 * (1 - p.coherence * 0.5) * Math.sin(u * 6 + drift * 0.25)
+    const fine = (0.5 + 0.25 * Math.sin(u * 97 + drift * 0.5 + sway * 3 - flow * 2) + 0.15 * Math.sin(u * 151 - drift * 0.35 + sway * 2) + 0.1 * Math.sin(u * 233 + time * 0.6)) ** 2
+    const coarse = (0.5 + 0.5 * Math.sin(u * 29 - drift * 0.3 + 1.2 * Math.sin(u * 3 + time * 0.2) - flow)) ** 2
+    const folds = 0.5 + 0.3 * Math.sin(u * 11 + drift * 0.2 + sway) + 0.2 * Math.sin(u * 23 - drift * 0.15)
+    let rays = 0.35 + 0.65 * (0.6 * fine + 0.4 * coarse)
+    rays *= 1 + p.shimmer * 1.4 * Math.max(0, Math.sin(u * 91 + time * 6 + 4 * Math.sin(u * 13 - time))) ** 10
+    rays += p.scan * 0.8 * Math.exp(-(((u - scanAt()) / 0.05) ** 2))
+    const bright = drawn * env * rays * (1 + voice * p.voice * 0.35)
+    const length = Math.max(cell * 2, (height(0, u, p) / env) * scale * 4.2 * (1 - dock * 0.45) * (0.45 + 0.55 * env) * (0.55 + 0.6 * folds + 0.25 * coarse))
+    const edge = base - height(2, u, p) * scale * 0.3 * (1 - dock * 0.7)
+    const below = cell * 1.5 + mirror * 0.35 * length
+    const y0 = Math.max(0, Math.floor((edge - length * 1.7) / cell))
+    const y1 = Math.min(bh - 1, Math.ceil((edge + below * 3) / cell))
+    for (let cy = y0; cy <= y1; cy++) {
+      const d = edge - (cy + 0.5) * cell
+      let v, j = 0
+      if (d >= 0) {
+        const t = d / length
+        v = 0.9 * Math.exp(-t * 8) + Math.exp(-(((t - 0.5) / 0.42) ** 2)) * (0.3 + 0.7 * rays)
+        j = Math.min(LUT_SIZE - 1, (t * LUT_PER_UNIT) | 0)
+      } else v = Math.exp(d / (cell * 1.5)) * 0.8 + mirror * 0.12 * Math.exp(d / below)
+      const o = (cy * bw + cx) * 4
+      data[o] = lut[j * 3]
+      data[o + 1] = lut[j * 3 + 1]
+      data[o + 2] = lut[j * 3 + 2]
+      data[o + 3] = 255 * v * bright
+    }
+  }
+}
+
+// ─── Frame ───────────────────────────────────────────────────────────────────────────────────────
+
+const rgb = (h, s, l) => { const o = new Uint8ClampedArray(3); hsl(h, s, l, o, 0); return [o[0] / 255, o[1] / 255, o[2] / 255] }
+const pass = (target, w, h) => { gl.bindFramebuffer(gl.FRAMEBUFFER, target ? target.fbo : null); gl.viewport(0, 0, w, h); gl.drawArrays(gl.TRIANGLES, 0, 3) }
+
+let fps = 60, cpu = 0, statsAt = 0
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000)
+  last = now
+  const t0 = performance.now()
+  aurora(dt, now)
+  const t1 = performance.now()
+
+  gl.bindTexture(gl.TEXTURE_2D, sceneTex)
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image)
+
+  // The app softened the aurora with a canvas blur; here the softness is a blur at the coarse size.
+  const r = P.sceneBlur + cur.blur * 0.02
+  const { p: bp, u: bu } = blurProg
+  gl.useProgram(bp)
+  gl.uniform2f(bu.uSize, bw, bh)
+  gl.uniform1f(bu.uTime, time)
+  gl.uniform1f(bu.uDock, dock)
+  gl.uniform1f(bu.uAmbient, P.ambient * (0.55 + 0.45 * Math.min(1, cur.alpha * 1.6)))
+  gl.uniform1f(bu.uAmbientSize, P.ambientSize)
+  gl.uniform1f(bu.uAspect, (bw * cell) / (bh * cell))
+  gl.uniform3fv(bu.uC0, rgb(cur.h0, cur.sat, Math.min(90, cur.lit + 18)))
+  gl.uniform3fv(bu.uC1, rgb(cur.h1, cur.sat, cur.lit))
+  gl.uniform3fv(bu.uC2, rgb(cur.h2, cur.sat, cur.lit + 8))
+  gl.uniform1i(bu.uTex, 0)
+  gl.activeTexture(gl.TEXTURE0)
+  gl.bindTexture(gl.TEXTURE_2D, sceneTex)
+  gl.uniform2f(bu.uStep, r / bw, 0)
+  gl.uniform1f(bu.uAddAmbient, 0)
+  pass(targets[0], bw, bh)
+  gl.bindTexture(gl.TEXTURE_2D, targets[0].tex)
+  gl.uniform2f(bu.uStep, 0, r / bh)
+  gl.uniform1f(bu.uAddAmbient, 1)
+  pass(targets[1], bw, bh)
+
+  const { p: gp, u: gu } = glassProg
+  gl.useProgram(gp)
+  gl.bindTexture(gl.TEXTURE_2D, targets[1].tex)
+  gl.uniform1i(gu.uScene, 0)
+  gl.uniform2f(gu.uRes, canvas.width, canvas.height)
+  gl.uniform2f(gu.uSpan, bw * cell * dpr, bh * cell * dpr)
+  gl.uniform1f(gu.uDpr, dpr)
+  gl.uniform1f(gu.uTime, time)
+  gl.uniform1f(gu.uGlass, P.glass ? 1 : 0)
+  gl.uniform1f(gu.uAngle, (P.angle * Math.PI) / 180)
+  gl.uniform1f(gu.uWidth, P.width)
+  gl.uniform1f(gu.uWidthVar, P.widthVar)
+  gl.uniform1f(gu.uRefract, P.refract)
+  gl.uniform1f(gu.uSlice, P.slice)
+  gl.uniform1f(gu.uSliceAlong, P.sliceAlong)
+  gl.uniform1f(gu.uSmear, P.glass ? P.smear : 0)
+  gl.uniform1f(gu.uHighlight, P.highlight)
+  gl.uniform1f(gu.uLines, P.lines)
+  gl.uniform1f(gu.uShade, P.shade)
+  gl.uniform1f(gu.uChroma, P.glass ? P.chroma : 0)
+  gl.uniform1f(gu.uGrain, P.grain)
+  gl.uniform3f(gu.uBg, 10 / 255, 10 / 255, 11 / 255)
+  pass(null, canvas.width, canvas.height)
+
+  fps += (1 / Math.max(dt, 1e-3) - fps) * 0.05
+  cpu += (t1 - t0 - cpu) * 0.05
+  if (now - statsAt > 250) {
+    statsAt = now
+    stats.textContent = `${fps.toFixed(0)} fps · aurora ${cpu.toFixed(2)} ms CPU · ${bw}×${bh} scene · ${canvas.width}×${canvas.height} glass${halfFloat ? '' : ' · 8-bit'}`
+  }
+  requestAnimationFrame(frame)
+}
+
+// ─── Panel ───────────────────────────────────────────────────────────────────────────────────────
+
+const panel = document.getElementById('panel')
+const stats = document.getElementById('stats')
+const win = document.getElementById('window')
+const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids); return e }
+
+const stateButtons = {}
+panel.append(el('h2', { textContent: 'State' }))
+const states = el('div', { className: 'states' })
+for (const name of Object.keys(STYLES)) {
+  const b = el('button', { textContent: name, onclick: () => { stopDemo(); setRaw(name) } })
+  stateButtons[name] = b
+  states.append(b)
+}
+panel.append(states)
+function setRaw(name) { raw = name; markStates() }
+function markStates() {
+  for (const [name, b] of Object.entries(stateButtons)) { b.classList.toggle('on', name === raw); b.classList.toggle('shown', name === shown) }
+}
+
+const check = (label, get, set) => {
+  const input = el('input', { type: 'checkbox', checked: get(), onchange: () => set(input.checked) })
+  const row = el('label', { className: 'check' }, input, label)
+  row.sync = () => (input.checked = get())
+  return row
+}
+const dockRow = check('Docked under a window (D)', () => docked, (v) => { docked = v; win.classList.toggle('on', v) })
+const voiceRow = check('Simulate voices (hearing, speaking)', () => simVoice, (v) => (simVoice = v))
+panel.append(dockRow, voiceRow)
+
+let demoTimer = 0
+const DEMO = [
+  ['armed', 2200], ['hearing', 2600], ['guessing', 1200], ['trailing', 900], ['thinking', 2600], ['acting', 2600],
+  ['writing', 1600], ['speaking', 4200], ['done', 2600], ['hearing', 1800], ['didnt-get-that', 3200], ['off', 2500],
+]
+const demoBtn = el('button', { textContent: 'Play demo (space)', onclick: () => (demoTimer ? stopDemo() : startDemo()) })
+function startDemo() {
+  let i = 0
+  const step = () => { const [s, ms] = DEMO[i++ % DEMO.length]; setRaw(s); demoTimer = setTimeout(step, ms) }
+  demoBtn.classList.add('on')
+  step()
+}
+function stopDemo() { clearTimeout(demoTimer); demoTimer = 0; demoBtn.classList.remove('on') }
+const micBtn = el('button', { textContent: 'Use real mic', onclick: async () => {
+  if (realMic) { realMic.stop(); realMic = null; micBtn.classList.remove('on'); return }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    const ctx = new AudioContext(), analyser = ctx.createAnalyser()
+    analyser.fftSize = 1024
+    ctx.createMediaStreamSource(stream).connect(analyser)
+    const buf = new Float32Array(analyser.fftSize)
+    realMic = { level: 0, stop: () => { stream.getTracks().forEach((t) => t.stop()); ctx.close() } }
+    const poll = () => { if (!realMic) return; analyser.getFloatTimeDomainData(buf); realMic.level = loudness(buf); requestAnimationFrame(poll) }
+    poll()
+    micBtn.classList.add('on')
+  } catch (e) { micBtn.textContent = 'Mic unavailable' }
+} })
+panel.append(el('div', { className: 'actions' }, demoBtn, micBtn))
+
+const syncs = []
+for (const spec of SPEC) {
+  if (spec.length === 1) { panel.append(el('h2', { textContent: spec[0] })); continue }
+  const [key, label, a, b, step] = spec
+  if (a === 'bool') {
+    const row = check(label, () => P[key], (v) => { P[key] = v; save() })
+    syncs.push(row.sync)
+    panel.append(row)
+    continue
+  }
+  const out = el('output')
+  const input = el('input', { type: 'range', min: a, max: b, step, value: P[key] })
+  const show = () => (out.textContent = (+P[key]).toFixed(step < 0.01 ? 3 : step < 1 ? 2 : 0))
+  input.oninput = () => { P[key] = +input.value; show(); save(); if (key === 'renderScale') resize() }
+  syncs.push(() => { input.value = P[key]; show() })
+  show()
+  panel.append(el('div', { className: 'ctl' }, el('label', { textContent: label }), out, input))
+}
+const sync = () => syncs.forEach((f) => f())
+panel.append(el('div', { className: 'actions' },
+  el('button', { textContent: 'Reset', onclick: () => { Object.assign(P, DEFAULTS); save(); sync(); resize() } }),
+  el('button', { textContent: 'Copy settings', onclick: (e) => { navigator.clipboard.writeText(JSON.stringify(P, null, 2)); e.target.textContent = 'Copied' } }),
+))
+panel.append(el('div', { className: 'hint', innerHTML: 'H hide panel · G glass on/off · D dock · space demo<br>Settings are saved in this browser.' }))
+
+addEventListener('keydown', (e) => {
+  if (e.target instanceof HTMLInputElement && e.target.type !== 'checkbox' && e.target.type !== 'range') return
+  if (e.key === 'h') panel.classList.toggle('hidden')
+  else if (e.key === 'g') { P.glass = !P.glass; save(); sync() }
+  else if (e.key === 'd') { docked = !docked; win.classList.toggle('on', docked); dockRow.sync() }
+  else if (e.key === ' ') { e.preventDefault(); demoTimer ? stopDemo() : startDemo() }
+})
+
+markStates()
+requestAnimationFrame(frame)
+</script>
+</body>
+</html>

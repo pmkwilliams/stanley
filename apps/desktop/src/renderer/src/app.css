@@ -2,9 +2,13 @@
   --bg: #0a0a0b;
   /* Window surface: translucent so the backdrop glows through, macOS/Raycast style. */
   --window: rgba(26, 26, 28, 0.82);
+  --window-border: rgba(255, 255, 255, 0.1);
+  --window-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 0 0 0.5px rgba(0, 0, 0, 0.8), 0 24px 80px rgba(0, 0, 0, 0.55);
   --panel: rgba(255, 255, 255, 0.05);
   --hover: rgba(255, 255, 255, 0.06);
   --border: rgba(255, 255, 255, 0.09);
+  /** A focused input's border. */
+  --border-strong: rgba(255, 255, 255, 0.28);
   --text: #ececee;
   --muted: #8e8e93;
   --accent: #5697d7;
@@ -17,8 +21,44 @@
     var(--bg);
   /** Selected/focused row. */
   --focus: rgba(255, 255, 255, 0.09);
+  /** Status bar pills, over the presence. */
+  --pill: rgba(255, 255, 255, 0.1);
+  --pill-hover: rgba(255, 255, 255, 0.16);
+  /** The mini player in the middle of the status bar: solid, a step off the pills. */
+  --player: #0c0a09;
+  /** Lock screen text: the accent, lightened to read on the dark wallpaper. */
+  --ink: color-mix(in srgb, var(--accent), white 80%);
+  /** Lifts captions off the presence behind them. */
+  --halo: rgba(0, 0, 0, 0.6);
   color-scheme: dark;
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', ui-sans-serif, system-ui, sans-serif;
+}
+:root[data-theme='light'] {
+  --bg: #f2f2f4;
+  --window: rgba(255, 255, 255, 0.8);
+  --window-border: rgba(0, 0, 0, 0.08);
+  --window-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 0 0 0.5px rgba(0, 0, 0, 0.12), 0 24px 80px rgba(0, 0, 0, 0.16);
+  --panel: rgba(0, 0, 0, 0.04);
+  --hover: rgba(0, 0, 0, 0.05);
+  --border: rgba(0, 0, 0, 0.1);
+  --border-strong: rgba(0, 0, 0, 0.3);
+  --text: #1c1c1e;
+  --muted: #6e6e73;
+  --accent: #3d84c9;
+  --danger: #e5484d;
+  --wallpaper:
+    radial-gradient(1200px 600px at 15% -10%, rgba(255, 255, 255, 0.8), transparent 60%),
+    radial-gradient(900px 500px at 110% 110%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 60%),
+    var(--bg);
+  --focus: rgba(0, 0, 0, 0.07);
+  --pill: rgba(255, 255, 255, 0.6);
+  --pill-hover: rgba(255, 255, 255, 0.85);
+  --player: #ffffff;
+  --ink: color-mix(in srgb, var(--accent), black 62%);
+  --halo: rgba(255, 255, 255, 0.85);
+  color-scheme: light;
+}
+:root {
+  font-family: 'Inter Variable', -apple-system, BlinkMacSystemFont, ui-sans-serif, system-ui, sans-serif;
   font-size: 13px;
   letter-spacing: 0.01em;
   color: var(--text);
@@ -34,7 +74,7 @@ input:not([type='checkbox']), textarea {
   background: var(--panel); border: 1px solid var(--border); border-radius: 8px; outline: none;
   transition: border-color 0.12s;
 }
-input:not([type='checkbox']):focus, textarea:focus { border-color: rgba(255, 255, 255, 0.28); }
+input:not([type='checkbox']):focus, textarea:focus { border-color: var(--border-strong); }
 ::placeholder { color: var(--muted); }
 input[type='checkbox'] { accent-color: var(--accent); }
 button {
@@ -45,8 +85,8 @@ button:hover { background: var(--hover); }
 kbd {
   display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px;
   font-size: 11px; font-weight: 500; line-height: 1; color: var(--muted);
-  background: rgba(255, 255, 255, 0.07); border: 1px solid var(--border); border-radius: 5px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 5px;
 }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 999px; border: 3px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--text) 15%, transparent); border-radius: 999px; border: 3px solid transparent; background-clip: content-box; }
 ::-webkit-scrollbar-track { background: transparent; }

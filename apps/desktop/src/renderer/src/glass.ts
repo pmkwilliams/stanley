@@ -1,4 +1,4 @@
-import { hsl, type Style } from './presence'
+import type { Style } from './presence'
 
 /**
  * Fluted glass in front of the presence, as tuned by eye in a prototype. Lengths are CSS pixels;
@@ -37,7 +37,11 @@ export interface Scene {
   time: number
   /** 0: the aurora is centred. 1: docked at the bottom edge. */
   dock: number
+  /** 0: dark theme, the aurora is light in the dark. 1: light theme, it tints the glass like ink. */
+  light: number
   style: Style
+  /** RGB of the aurora's colors, up the curtain: the bottom fringe, the middle and the crown. */
+  colors: Uint8ClampedArray
 }
 
 const f = (n: number) => n.toFixed(4)
@@ -51,7 +55,7 @@ const BLUR = `#version 300 es
 precision highp float;
 uniform sampler2D uTex;
 uniform vec2 uSize, uStep;
-uniform float uGlow, uTime, uDock, uAspect;
+uniform float uGlow, uTime, uDock, uAspect, uLight;
 uniform vec3 uC0, uC1, uC2;
 out vec4 o;
 
@@ -78,7 +82,11 @@ void main() {
     ws += w;
   }
   c /= ws;
-  if (uGlow > 0.0) c.rgb += glow(uv);
+  if (uGlow > 0.0) {
+    // Dark, the glow is light added to the background; light, it is a tint laid over it.
+    vec3 g = glow(uv);
+    c += vec4(g, uLight * max(g.r, max(g.g, g.b)));
+  }
   o = c;
 }`
 
@@ -88,11 +96,13 @@ const PANE = `#version 300 es
 precision highp float;
 uniform sampler2D uScene;
 uniform vec2 uRes, uSpan;
-uniform float uDpr, uTime;
+uniform float uDpr, uTime, uLight;
 out vec4 o;
 
 const float ANGLE = ${f((GLASS.angle * Math.PI) / 180)};
-const vec3 BG = vec3(${f(10 / 255)}, ${f(10 / 255)}, ${f(11 / 255)});
+// The window background per theme: app.css's --bg.
+const vec3 DARK = vec3(${f(10 / 255)}, ${f(10 / 255)}, ${f(11 / 255)});
+const vec3 LIGHT = vec3(${f(242 / 255)}, ${f(242 / 255)}, ${f(244 / 255)});
 
 float hash11(float n) { return fract(sin(n * 127.1 + 3.7) * 43758.5453); }
 // Per pixel, a float hash makes a pattern on the pixel grid; an integer one (pcg2d) is noise.
@@ -141,7 +151,7 @@ void main() {
   col += ${f(GLASS.highlight)} * exp(-(0.5 - s) * W / (1.2 * uDpr)) * col * 1.6;
 
   // The scene is premultiplied light over the window background; grain moves at film rate.
-  vec3 c = BG * (1.0 - a) + col;
+  vec3 c = mix(DARK, LIGHT, uLight) * (1.0 - a) + col;
   float lum = dot(col, vec3(0.3, 0.59, 0.11));
   uvec2 at = uvec2(gl_FragCoord.xy);
   c += (noise(at + uint(uTime * 24.0) * uvec2(7919u, 104729u)) - 0.5) * ${f(GLASS.grain)} * (0.12 + sqrt(max(lum, 0.0)));
@@ -209,8 +219,6 @@ export function glass(canvas: HTMLCanvasElement) {
     gl.viewport(0, 0, w, h)
     gl.drawArrays(gl.TRIANGLES, 0, 3)
   }
-  const rgb = new Uint8ClampedArray(9)
-
   return {
     /** Sizes the canvas to `width`×`height` CSS pixels. */
     resize(width: number, height: number, ratio: number) {
@@ -219,15 +227,12 @@ export function glass(canvas: HTMLCanvasElement) {
       canvas.height = Math.max(1, Math.round(height * dpr))
     },
 
-    draw({ image, cell, time, dock, style: p }: Scene) {
+    draw({ image, cell, time, dock, light, style: p, colors: rgb }: Scene) {
       if (image.width !== bw || image.height !== bh) allocate(image.width, image.height)
       gl.bindTexture(gl.TEXTURE_2D, scene)
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image)
 
       // The glow takes the aurora's colors, and brightens a little as the aurora does.
-      hsl(p.h0, p.sat, Math.min(90, p.lit + 18), rgb, 0)
-      hsl(p.h1, p.sat, p.lit, rgb, 3)
-      hsl(p.h2, p.sat, p.lit + 8, rgb, 6)
       const radius = GLASS.softness + p.blur * 0.02
       gl.useProgram(blur.p)
       gl.uniform1i(blur.u('uTex'), 0)
@@ -235,6 +240,7 @@ export function glass(canvas: HTMLCanvasElement) {
       gl.uniform1f(blur.u('uTime'), time)
       gl.uniform1f(blur.u('uDock'), dock)
       gl.uniform1f(blur.u('uAspect'), bw / bh)
+      gl.uniform1f(blur.u('uLight'), light)
       gl.uniform3f(blur.u('uC0'), rgb[0]! / 255, rgb[1]! / 255, rgb[2]! / 255)
       gl.uniform3f(blur.u('uC1'), rgb[3]! / 255, rgb[4]! / 255, rgb[5]! / 255)
       gl.uniform3f(blur.u('uC2'), rgb[6]! / 255, rgb[7]! / 255, rgb[8]! / 255)
@@ -253,6 +259,7 @@ export function glass(canvas: HTMLCanvasElement) {
       gl.uniform2f(pane.u('uSpan'), bw * cell * dpr, bh * cell * dpr)
       gl.uniform1f(pane.u('uDpr'), dpr)
       gl.uniform1f(pane.u('uTime'), time)
+      gl.uniform1f(pane.u('uLight'), light)
       draw(null, canvas.width, canvas.height)
     },
 

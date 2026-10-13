@@ -55,9 +55,22 @@ export interface ActionResult<S> {
   title?: string
 }
 
+/** Values that outlast a session and the app quitting, e.g. settings. */
+export interface AppStore {
+  get(key: string): unknown
+  set(key: string, value: unknown): void
+}
+
+/** What the assistant is called until the user names it otherwise (in Settings). */
+export const DEFAULT_AGENT_NAME = 'Stanley'
+
 export interface AppContext {
   env: Record<string, string | undefined>
   fetch: typeof fetch
+  /** Without one (e.g. in tests), what an app saves lasts only as long as its state. */
+  store?: AppStore
+  /** What the user calls the assistant. Defaults to `DEFAULT_AGENT_NAME`. */
+  agentName?: string
 }
 
 export interface AppModule<S = unknown> {
@@ -71,7 +84,7 @@ export interface AppModule<S = unknown> {
   current(state: S): string
   perform(state: S, nodeId: string, args: ActionArgs, ctx: AppContext): Promise<ActionResult<S>>
   /** What the user would read on the current screen, as markdown. */
-  toMarkdown(state: S): string
+  toMarkdown(state: S, ctx?: AppContext): string
   /** Apps that show web pages: the address of the page on screen, if any. */
   url?(state: S): string | undefined
   /** Apps that show web pages: open one by its address. The shell sends every page Stanley opens here. */
@@ -87,8 +100,10 @@ export interface AppUiProps<S> {
   /** Named `data`, not `state`, to avoid clashing with the `$state` rune. */
   data: S
   perform: (nodeId: string, args?: ActionArgs) => void
-  /** How loud the app's own sound may be, 0–1: lowered while Stanley talks. */
+  /** How loud the app's own sound may be, 0–1: lowered while the assistant talks. */
   volume?: number
+  /** What the user calls the assistant. Defaults to `DEFAULT_AGENT_NAME`. */
+  agentName?: string
 }
 
 export interface Surface<S = unknown> {

@@ -1,4 +1,4 @@
-import { defineApp, type AgentNode, type AppContext } from '@stanley/app-sdk'
+import { DEFAULT_AGENT_NAME, defineApp, type AgentNode, type AppContext } from '@stanley/app-sdk'
 
 export interface ForecastDay {
   /** `YYYY-MM-DD` in the location's timezone */
@@ -31,6 +31,16 @@ export interface WeatherState {
   /** Text typed in the city box, not yet looked up. */
   box: string
 }
+
+/** The search field's placeholder, which is its label. */
+const FIELD_LABEL = 'Search for a city'
+
+/** The forecast list's section title: `7-day forecast`. */
+/** The empty state, before any city is looked up. */
+export const EMPTY_TITLE = 'No forecast yet'
+export const emptyText = (agentName: string) => `Search for a city, or ask ${agentName} about the weather anywhere.`
+
+export const forecastTitle = (r: WeatherResult) => `${r.days.length}-day forecast`
 
 const GEOCODE_URL = 'https://geocoding-api.open-meteo.com/v1/search'
 const FORECAST_URL = 'https://api.open-meteo.com/v1/forecast'
@@ -69,6 +79,12 @@ const wmo: Record<number, string> = {
 
 export const describeCode = (code: number): string => wmo[code] ?? 'unknown conditions'
 
+/** As shown on screen: `partly cloudy` → `Partly cloudy`. */
+export const conditionLabel = (code: number): string => {
+  const d = describeCode(code)
+  return d[0]!.toUpperCase() + d.slice(1)
+}
+
 const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
@@ -78,13 +94,25 @@ export function dayName(date: string): string {
   return `${weekdays[d.getUTCDay()]} ${months[d.getUTCMonth()]} ${d.getUTCDate()}`
 }
 
+/** `2026-10-14` → `Wed`: the forecast row's label (the first row is `Today`). */
+export const shortDay = (date: string): string => dayName(date).slice(0, 3)
+
+/** `Denver, Colorado, United States` → `{ city: 'Denver', region: 'Colorado, United States' }` */
+export function splitPlace(place: string): { city: string; region: string } {
+  const [city = place, ...rest] = place.split(', ')
+  return { city, region: rest.join(', ') }
+}
+
+/** A temperature as shown on screen: `18°`, `−1°` (a true minus sign). */
+export const temp = (n: number) => `${Math.round(n)}°`.replace('-', '\u2212')
+
 const deg = (n: number) => `${Math.round(n)}°C`
 
 const dayLine = (d: ForecastDay) => `${dayName(d.date)}: ${describeCode(d.code)}, high ${deg(d.high)}, low ${deg(d.low)}`
 
 function resultMarkdown(r: WeatherResult): string {
   const now = `Now: ${deg(r.temperature)}, ${describeCode(r.code)}, wind ${Math.round(r.windSpeed)} km/h`
-  return `# Weather in ${r.place}\n${now}\n\n## Next ${r.days.length} days\n${r.days.map((d) => `- ${dayLine(d)}`).join('\n')}`
+  return `# Weather in ${r.place}\n${now}\n\n## ${forecastTitle(r)}\n${r.days.map((d) => `- ${dayLine(d)}`).join('\n')}`
 }
 
 interface GeocodeResponse {
@@ -102,7 +130,7 @@ async function getJson<T>(ctx: AppContext, url: string): Promise<T> {
   return (await res.json()) as T
 }
 
-/** Geocode a place name, then fetch current conditions and a 5-day forecast. `null` = place not found. */
+/** Geocode a place name, then fetch current conditions and a 7-day forecast. `null` = place not found. */
 async function lookup(ctx: AppContext, query: string): Promise<WeatherResult | null> {
   const geo = await getJson<GeocodeResponse>(ctx, `${GEOCODE_URL}?${new URLSearchParams({ name: query, count: '1', language: 'en', format: 'json' })}`)
   const place = geo.results?.[0]
@@ -113,7 +141,7 @@ async function lookup(ctx: AppContext, query: string): Promise<WeatherResult | n
     longitude: String(place.longitude),
     current: 'temperature_2m,weather_code,wind_speed_10m',
     daily: 'weather_code,temperature_2m_max,temperature_2m_min',
-    forecast_days: '5',
+    forecast_days: '7',
     timezone: 'auto',
   })
   const f = await getJson<ForecastResponse>(ctx, `${FORECAST_URL}?${params}`)
@@ -135,38 +163,45 @@ async function lookup(ctx: AppContext, query: string): Promise<WeatherResult | n
 export const weatherApp = defineApp<WeatherState>({
   id: 'weather',
   title: 'Weather',
-  description: 'Weather: current conditions and 5-day forecast for any city',
+  description: 'Weather: current conditions and 7-day forecast for any city',
 
   init: () => ({ route: 'home', query: null, result: null, loading: false, error: null, box: '' }),
 
   current: (s) => s.route,
 
   nodes(s) {
-    // As on screen: the city box (Enter looks it up), then current conditions and the days.
+    // As on screen: the search field (Enter looks it up), then the hero for now, then the forecast.
     const r = s.result
     const field: AgentNode = {
       id: 'city',
       kind: 'input',
-      label: 'Search a city',
+      label: FIELD_LABEL,
       value: s.box,
       children: s.box ? [{ id: 'location', kind: 'action', role: 'key', label: 'press Enter' }] : [],
     }
     if (!r) return [field]
-    const days: AgentNode[] = r.days.map((d, i) => ({
-      id: `day/${i}`,
-      kind: 'location',
-      role: 'button',
-      label: i === 0 ? 'Today' : dayName(d.date).split(' ')[0]!,
-      description: `${describeCode(d.code)}, ${Math.round(d.high)}° / ${Math.round(d.low)}°${s.route === `day/${i}` ? ', selected' : ''}`,
-    }))
+    const selected = (route: string) => (s.route === route ? ', selected' : '')
+    const today = r.days[0]
     const now: AgentNode = {
       id: 'home',
       kind: 'location',
       role: 'button',
       label: r.place,
-      description: `${Math.round(r.temperature)}°, ${describeCode(r.code)}${s.route === 'home' ? ', selected' : ''}`,
+      description: [
+        temp(r.temperature),
+        conditionLabel(r.code),
+        ...(today ? [`H:${temp(today.high)} L:${temp(today.low)}`] : []),
+        `wind ${Math.round(r.windSpeed)} km/h`,
+      ].join(', ') + selected('home'),
     }
-    return [field, now, ...days]
+    const days: AgentNode[] = r.days.map((d, i) => ({
+      id: `day/${i}`,
+      kind: 'location',
+      role: 'button',
+      label: i === 0 ? 'Today' : shortDay(d.date),
+      description: `${conditionLabel(d.code)}, low ${temp(d.low)}, high ${temp(d.high)}${selected(`day/${i}`)}`,
+    }))
+    return [field, now, { id: 'forecast', kind: 'group', label: forecastTitle(r), children: days }]
   },
 
   async perform(s, nodeId, args, ctx) {
@@ -205,9 +240,9 @@ export const weatherApp = defineApp<WeatherState>({
     return { state: s, summary: `Unknown action ${nodeId}` }
   },
 
-  toMarkdown(s) {
-    const notice = `\n\n[Search a city: ${s.box || 'empty'}]` + (s.error ? `\n\n_${s.error}_` : '')
-    if (!s.result) return `# Weather\n_Search a city to see the forecast._${notice}`
+  toMarkdown(s, ctx) {
+    const notice = `\n\n[${FIELD_LABEL}: ${s.box || 'empty'}]` + (s.error ? `\n\n_${s.error}_` : '')
+    if (!s.result) return `# Weather\n**${EMPTY_TITLE}**\n${emptyText(ctx?.agentName ?? DEFAULT_AGENT_NAME)}${notice}`
     const day = s.route.startsWith('day/') ? s.result.days[Number(s.route.split('/')[1])] : undefined
     if (day) return `# Weather › ${s.result.place} › ${dayName(day.date)}\n${dayLine(day)}${notice}`
     return `${resultMarkdown(s.result)}${notice}`

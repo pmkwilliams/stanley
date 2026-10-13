@@ -1,6 +1,8 @@
 import type { DecisionClient } from '@stanley/jev'
 import type { AgentDebugEvent } from './debug'
 import type { HeardWord } from './heard'
+import { DEFAULT_AGENT_NAME } from '@stanley/app-sdk'
+import { named, namedOptions } from './narrate'
 import { normalize } from './transcript'
 
 type Overlap = 'acknowledging' | 'interrupting' | 'answering' | 'elsewhere'
@@ -53,6 +55,8 @@ export interface BargeInDeps {
   conversation(except: number): string
   /** What Stanley is saying, or null once it isn't. */
   speech(): Speech | null
+  /** What the user calls the assistant, read each time it is needed. Defaults to `DEFAULT_AGENT_NAME`. */
+  name?(): string
   config?: BargeInConfig
   events: {
     /** Lower Stanley's voice (true), or bring it back up (false). */
@@ -167,17 +171,18 @@ export class BargeIn {
     const { user } = this.heard()
     const controller = new AbortController()
     this.asking = controller
+    const name = this.deps.name?.() ?? DEFAULT_AGENT_NAME
     const state = [
-      OVERLAP_PROMPT,
+      named(OVERLAP_PROMPT, name),
       this.deps.conversation(speech?.id ?? -1),
-      '## What Stanley is saying',
+      `## What ${name} is saying`,
       speech ? `Said so far: "${speech.spoken.trim()}"\nStill to say: ${speech.rest.trim() ? `"${speech.rest.trim()}"` : 'nothing, it was finishing'}` : 'It has just finished.',
       '## What the user said over it',
       `"${user.map((w) => w.text).join(' ')}"`,
     ].join('\n\n')
     const started = performance.now()
     this.deps.jev
-      .choose({ state, instructions: OVERLAP_INSTRUCTIONS, options: OVERLAP, signal: controller.signal })
+      .choose({ state, instructions: named(OVERLAP_INSTRUCTIONS, name), options: namedOptions(OVERLAP, name), signal: controller.signal })
       .then((result) => {
         if (this.asking !== controller) return
         this.asking = null

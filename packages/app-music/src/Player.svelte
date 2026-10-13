@@ -5,7 +5,7 @@
 
 <script lang="ts">
   import type { AppUiProps } from '@stanley/app-sdk'
-  import type { MusicState } from './core'
+  import { nowPlaying, type MusicState } from './core'
 
   // Literal URLs so Vite bundles each asset.
   const urls: Record<string, string> = {
@@ -17,8 +17,9 @@
   let { data, perform, volume = 1 }: AppUiProps<MusicState> = $props()
   let audio: HTMLAudioElement | undefined = $state()
 
-  let track = $derived(data.tracks.find((t) => t.id === data.currentId))
-  let src = $derived(track ? urls[track.src] : undefined)
+  let track = $derived(nowPlaying(data))
+  // A remote stream (Jamendo) when there is one, otherwise the bundled file.
+  let src = $derived(track ? (track.audio ?? (track.src ? urls[track.src] : undefined)) : undefined)
 
   // Core only owns state; the <audio> element follows it.
   $effect(() => {

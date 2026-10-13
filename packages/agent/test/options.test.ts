@@ -30,6 +30,10 @@ describe('stepOptions', () => {
     expect(Object.keys(options.criteria)).toEqual(['Inbox (5)', 'Sam: Lunch Friday?', '"Lunch Friday?" › Archive', '"Lunch Friday?" › Reply to Sam', 'Archive', 'open To-do', 'back', 'home'])
   })
 
+  it('offers lock last, only when the world can lock', () => {
+    expect(Object.keys(stepOptions(screen, apps, 50, '', [], true).criteria).slice(-3)).toEqual(['back', 'home', 'lock'])
+  })
+
   it('describes elements by role and what the screen shows, nothing more', () => {
     expect(options.criteria['Inbox (5)']).toBe('tab, selected')
     expect(options.criteria['"Lunch Friday?" › Reply to Sam']).toBe('field, containing "Sure"')
@@ -47,6 +51,7 @@ describe('stepOptions', () => {
     expect(navigates(options.targets.get('Sam: Lunch Friday?')!)).toBe(true)
     expect(navigates(options.targets.get('open To-do')!)).toBe(true)
     expect(navigates(options.targets.get('back')!)).toBe(true)
+    expect(navigates({ kind: 'lock' })).toBe(false)
     expect(navigates(options.targets.get('Archive')!)).toBe(false)
     expect(navigates(options.targets.get('"Lunch Friday?" › Reply to Sam')!)).toBe(false)
   })

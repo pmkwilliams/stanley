@@ -1,9 +1,10 @@
-import type { ActionArgs, AgentNode } from '@stanley/app-sdk'
+import { DEFAULT_AGENT_NAME, type ActionArgs, type AgentNode } from '@stanley/app-sdk'
 import type { Answer, DecisionClient, MultiChoiceResult, Question } from '@stanley/jev'
 import type { JSONValue } from 'ai'
 import { defaultConfig, type AgentConfig } from './config'
 import type { AgentDebugEvent, GateRule, RequestResult, TickReason } from './debug'
 import { createEffectJudge, type EffectJudge, type EffectVerdict } from './effects'
+import { bashText, JEV_FILES, knownFiles, listCommand, readCommand, type BashResult, type FileMeta, type FileTools, type KnownFile } from './files'
 import {
   Conversation,
   note,
@@ -20,7 +21,7 @@ import {
   type StepTarget,
 } from './conversation'
 import { markUnsure, unmarked, type HeardWord } from './heard'
-import { describeStep, narrate } from './narrate'
+import { describeStep, named, namedOptions, narrate } from './narrate'
 import { navigates, stepOptions, type OptionSet, type Target } from './options'
 import { confirmNote, instructions, longDate, PartialTurn, writeNote, type ActCall, type PageOutput, type SearchOutput, type Thinker, type ThinkResult } from './think'
 import { fullText, hasNewWords, type TranscriptSnapshot } from './transcript'
@@ -98,12 +99,16 @@ export interface AgentDeps {
   effects?: EffectJudge
   /** Background web search and page reading for thinking. Without it, thinking only has the screen. */
   web?: WebTools
+  /** The user's files: Jev lists and reads them, thinking runs bash on them. Without it, there are no files. */
+  files?: FileTools
   events?: Partial<AgentEvents>
   config?: AgentConfig
   /** Receives the history as it changes; replaying it rebuilds what thinking was sent. */
   sink?: (record: HistoryRecord) => void
   /** Today, for the instructions and Jev's state. Defaults to the system clock. */
   clock?: () => Date
+  /** What the user calls the assistant, read each time it is needed. Defaults to `DEFAULT_AGENT_NAME`. */
+  name?: () => string
 }
 
 export const SYSTEM_PROMPT = `# Stanley
@@ -196,8 +201,6 @@ type StepRecord =
 export class Agent {
   readonly history: Conversation
   readonly config: AgentConfig
-  /** Thinking's instructions, fixed for the session. */
-  readonly instructions: string
   private transcript: TranscriptSnapshot = { finalized: [], partial: '' }
   private seen: TranscriptSnapshot | null = null
   private seenUtterance = 0
@@ -244,11 +247,15 @@ export class Agent {
    */
   private taskHeard: string[] = []
   private clock: () => Date
+  private name: () => string
+  /** When the session started: the day its instructions give. */
+  private started: Date
   private world: World
   private jev: DecisionClient
   private thinker: Thinker
   private effects: EffectJudge
   private web?: WebTools
+  private files?: FileTools
   private events: Partial<AgentEvents>
 
   constructor(deps: AgentDeps) {
@@ -256,14 +263,20 @@ export class Agent {
     this.jev = deps.jev
     this.thinker = deps.thinker
     this.web = deps.web
+    this.files = deps.files
     this.events = deps.events ?? {}
     this.config = deps.config ?? defaultConfig
     this.effects = deps.effects ?? createEffectJudge(deps.jev, this.config.commits)
     this.history = new Conversation(deps.sink)
     this.clock = deps.clock ?? (() => new Date())
-    const today = this.clock()
-    this.today = longDate(today)
-    this.instructions = instructions({ web: !!this.web, today })
+    this.name = deps.name ?? (() => DEFAULT_AGENT_NAME)
+    this.started = this.clock()
+    this.today = longDate(this.started)
+  }
+
+  /** Thinking's instructions, fixed for the session unless the user renames the assistant. */
+  get instructions(): string {
+    return instructions({ web: !!this.web, files: this.files?.root, today: this.started, name: this.name() })
   }
 
   /** An utterance is open: the user is speaking, or paused without having finished. */
@@ -273,13 +286,13 @@ export class Agent {
 
   /** The conversation and screen as Jev reads them right now. */
   async context(): Promise<string> {
-    return narrate(this.view(), await this.world.screen(), this.live(), this.config.jevTurns)
+    return narrate(this.view(), await this.world.screen(), this.live(), this.config.jevTurns, this.name())
   }
 
   /** The conversation alone, without the screen, and without reply `except` (the one being said). */
   conversation(except?: number): string {
     const entries = this.view().filter((e) => !(e.meta.kind === 'said' && e.meta.replyId === except))
-    return narrate(entries, null, this.live(), this.config.jevTurns)
+    return narrate(entries, null, this.live(), this.config.jevTurns, this.name())
   }
 
   /**
@@ -445,9 +458,24 @@ export class Agent {
     return unmarked(this.history.lastWords())
   }
 
+  /**
+   * The steps on offer on `screen`: up to `limit` elements, `pages` and `files`, then the apps and
+   * navigation. Thinking gets no `files`: it has bash.
+   */
+  private options(screen: Screen, limit: number, pages: KnownPage[] = [], files?: KnownFile[]): OptionSet {
+    return stepOptions(screen, this.world.appList(), limit, this.focus(), pages, !!this.world.lock, files)
+  }
+
   /** Web pages Stanley can open: what it found or read, while Jev still reads about it. */
   private pages(): KnownPage[] {
     return this.world.openUrl ? knownPages(recentEntries(this.view(), this.config.jevTurns)) : []
+  }
+
+  /** Folders and files Jev can list or read: what it listed and read lately first, then everything else in the folder. */
+  private async knownFiles(): Promise<KnownFile[] | undefined> {
+    if (!this.files) return undefined
+    const paths = await this.files.paths().catch(() => [])
+    return knownFiles(recentEntries(this.view(), this.config.jevTurns), paths)
   }
 
   /** The history as Jev reads it: committed, and what is staged placed as it would be now. */
@@ -479,12 +507,14 @@ export class Agent {
       // A decision is a guess until the person finishes or the agent has started acting on it.
       this.events.status?.(!seenEnded && this.steps === 0 ? 'guessing' : 'thinking')
       const screen = await this.world.screen()
-      const options = stepOptions(screen, this.world.appList(), this.config.maxElements, this.focus(), this.pages())
-      const state = `${SYSTEM_PROMPT}\n\nToday is ${longDate(this.clock())}.\n\n${narrate(this.view(), screen, this.live(), this.config.jevTurns)}`
+      const options = this.options(screen, this.config.maxElements, this.pages(), await this.knownFiles())
+      const name = this.name()
+      const prompt = this.files ? `${SYSTEM_PROMPT}\n\n${JEV_FILES}` : SYSTEM_PROMPT
+      const state = `${named(prompt, name)}\n\nToday is ${longDate(this.clock())}.\n\n${narrate(this.view(), screen, this.live(), this.config.jevTurns, name)}`
       const questions: Record<string, Question> = {
-        next: { instructions: NEXT_INSTRUCTIONS, options: NEXT },
-        step: { instructions: STEP_INSTRUCTIONS, options: options.criteria },
-        heard: { instructions: HEARD_INSTRUCTIONS, options: HEARD },
+        next: { instructions: named(NEXT_INSTRUCTIONS, name), options: namedOptions(NEXT, name) },
+        step: { instructions: named(STEP_INSTRUCTIONS, name), options: options.criteria },
+        heard: { instructions: named(HEARD_INSTRUCTIONS, name), options: namedOptions(HEARD, name) },
       }
       this.events.debug?.({
         type: 'tick-start',
@@ -689,6 +719,14 @@ export class Agent {
       return 'stuck'
     }
 
+    if (target.kind === 'folder' || target.kind === 'file') {
+      this.report(id, d, option, 'executed')
+      this.events.status?.('acting')
+      await this.look(id, option, target)
+      this.request('action')
+      return option
+    }
+
     // Words are thinking's: it knows whether they are the user's or its own.
     if (target.kind === 'element' && target.node.kind === 'input') {
       this.report(id, d, option, 'executed')
@@ -871,6 +909,31 @@ export class Agent {
     return verdict
   }
 
+  /**
+   * Jev lists a folder or reads a file, in the background. It goes into the history as the bash
+   * command it is, so thinking reads it as its own; Jev reads what was in the folder, or how the
+   * file starts.
+   */
+  private async look(tickId: number, option: string, target: { kind: 'folder' | 'file'; path: string }): Promise<void> {
+    const started = performance.now()
+    const command = target.kind === 'folder' ? listCommand(target.path) : readCommand(target.path)
+    let result: BashResult
+    try {
+      result = await this.files!.bash(command)
+    } catch (err) {
+      result = { output: err instanceof Error ? err.message : String(err), exitCode: -1 }
+    }
+    const error = result.exitCode === 0 ? undefined : result.output.trim().split('\n').at(-1) || `exit code ${result.exitCode}`
+    const utteranceId = this.utteranceId || undefined
+    const file: FileMeta =
+      target.kind === 'folder'
+        ? { kind: 'list', path: target.path, entries: error ? [] : result.output.split('\n').filter((l) => l.trim()), ...(error && { error }), utteranceId }
+        : { kind: 'read', path: target.path, excerpt: error ? '' : result.output.slice(0, 1000), ...(error && { error }), utteranceId }
+    const toolCallId = `jev_file-${++this.stepCount}`
+    this.history.stagePair({ toolCallId, tool: 'bash', input: { command }, by: 'jev' }, { type: 'text', value: bashText(result) }, { toolCallId, file })
+    this.events.debug?.({ type: 'act', tickId, option, summary: error ? `failed: ${error}` : `ran ${command}`, observation: bashText(result), latencyMs: performance.now() - started })
+  }
+
   /** Runs one step and records it (see `StepRecord`). A failure is recorded as its result, then rethrown. */
   private async step(tickId: number, option: string, target: Target, args: ActionArgs, by: Actor, record: StepRecord, decision?: DecisionMeta, wrote?: 'user' | 'stanley'): Promise<StepResult> {
     const started = performance.now()
@@ -890,7 +953,12 @@ export class Agent {
       if (target.kind === 'app') result = await this.world.open(target.app.id)
       else if (target.kind === 'element') result = await this.world.perform(target.node, args)
       else if (target.kind === 'page') result = await this.world.openUrl!(target.url)
-      else {
+      else if (target.kind === 'folder' || target.kind === 'file') throw new Error('Files are looked at in the background, not opened')
+      else if (target.kind === 'lock') {
+        // The session ends with it: this agent is cancelled, and what it reports from here is ignored.
+        await this.world.lock!()
+        result = { summary: 'Locked the computer' }
+      } else {
         await this.world.global(target.kind)
         result = { summary: target.kind === 'back' ? 'Went back' : 'Went home' }
       }
@@ -945,7 +1013,7 @@ export class Agent {
     single?: { kind: 'write' | 'confirm'; option: string },
   ): Promise<{ result: ThinkResult; options: OptionSet; steps: number } | null> {
     const screen = await this.world.screen()
-    const options = stepOptions(screen, this.world.appList(), this.config.thinkingElements, this.focus())
+    const options = this.options(screen, this.config.thinkingElements)
     const next = single && (single.kind === 'write' ? writeNote(single.option) : confirmNote(single.option))
     const sent = this.history.send(this.observe(screen, options, next ? [next] : []), this.live())
     this.events.debug?.({ type: 'think-start', tickId: id, mode, handover, option: single?.option, entries: sent.entries, cacheAt: sent.cacheAt })
@@ -975,6 +1043,7 @@ export class Agent {
           fetch: (url: string, toolCallId: string) => (steps++, this.read(id, url, toolCallId, signal, ran)),
         }),
         ...(this.world.openUrl && { openPage: (url: string, toolCallId: string) => (steps++, this.openPage(id, url, toolCallId, signal, ran)) }),
+        ...(this.files && { bash: (command: string, toolCallId: string) => (steps++, this.bash(id, command, toolCallId, signal, ran)) }),
       })
       const { final, toolCallIds } = this.history.appendTurn(result.messages, result.sent, ran, id)
       this.saw(ran, toolCallIds)
@@ -1019,7 +1088,7 @@ export class Agent {
     signal.throwIfAborted()
     const { text, wrote } = call
     let option = call.option
-    const options = stepOptions(await this.world.screen(), this.world.appList(), this.config.thinkingElements, this.focus())
+    const options = this.options(await this.world.screen(), this.config.thinkingElements)
     const done = (result: string) => {
       this.events.debug?.({ type: 'think-step', tickId: id, option, text, result })
       return result
@@ -1109,9 +1178,26 @@ export class Agent {
     return result
   }
 
+  /** A command thinking runs on the user's files. A command that fails is an answer too: what it printed, and how it exited. */
+  private async bash(id: number, command: string, toolCallId: string, signal: AbortSignal, ran: Map<string, Ran>): Promise<string> {
+    signal.throwIfAborted()
+    const utteranceId = this.utteranceId || undefined
+    let result: BashResult
+    try {
+      result = await this.files!.bash(command, signal)
+    } catch (err) {
+      if (signal.aborted) throw err
+      result = { output: `It couldn't run: ${err instanceof Error ? err.message : String(err)}`, exitCode: -1 }
+    }
+    const text = bashText(result)
+    ran.set(toolCallId, { tool: 'bash', input: { command }, output: { type: 'text', value: text }, result: { toolCallId, file: { kind: 'bash', command, exitCode: result.exitCode, utteranceId } } })
+    this.events.debug?.({ type: 'think-step', tickId: id, option: 'bash', text: command, result: text })
+    return text
+  }
+
   private async screenText(options?: OptionSet): Promise<string> {
     const screen = await this.world.screen()
-    return screenText(screen, options ?? stepOptions(screen, this.world.appList(), this.config.thinkingElements, this.focus()))
+    return screenText(screen, options ?? this.options(screen, this.config.thinkingElements))
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────────
@@ -1343,6 +1429,7 @@ export function stepTarget(option: string, target: Target): StepTarget {
   if (target.kind === 'app') return { kind: 'app', appId: target.app.id, title: target.app.title }
   if (target.kind === 'element') return { kind: 'element', name: option, role: target.role, nodeKind: target.node.kind, nodeId: target.node.id }
   if (target.kind === 'page') return { kind: 'page', url: target.url, title: target.title }
+  if (target.kind === 'folder' || target.kind === 'file') throw new Error('Files are looked at in the background, not opened')
   return { kind: target.kind }
 }
 

@@ -1,8 +1,10 @@
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { lookupsOf, saidOf, stepsOf, targetOf, type Agent } from '@stanley/agent'
 import type { Shell } from '../apps/desktop/src/main/shell'
 
-/** Returns a failure message, or nothing when the check passes. */
-export type Check = (shell: Shell, agent: Agent) => string | void
+/** Returns a failure message, or nothing when the check passes. `files` is the user's folder for the run. */
+export type Check = (shell: Shell, agent: Agent, files: string) => string | void
 
 export interface Scenario {
   name: string
@@ -50,6 +52,22 @@ const searches = (agent: Agent) => lookupsOf(agent.history.view()).filter((l) =>
 const searched: Check = (_, agent) => (searches(agent).length ? undefined : 'expected a web search')
 /** Thinking searched exactly `n` times: what it found earlier is reused, not looked up again. */
 const searchCount = (n: number): Check => (_, agent) => (searches(agent).length === n ? undefined : `expected ${n} web search${n === 1 ? '' : 'es'}, got ${searches(agent).map((l) => (l.kind === 'search' ? `"${l.query}"` : '')).join(', ') || 'none'}`)
+
+/** A file in the user's folder whose text matches every pattern. */
+const fileSays = (path: string, ...patterns: RegExp[]): Check => (_, __, files) => {
+  const file = join(files, path)
+  if (!existsSync(file)) return `expected the file ${path}`
+  const text = readFileSync(file, 'utf8')
+  const missing = patterns.filter((p) => !p.test(text))
+  return missing.length ? `expected ${path} to match ${missing.join(', ')}, got: ${JSON.stringify(text)}` : undefined
+}
+const fileGone = (path: string): Check => (_, __, files) => (existsSync(join(files, path)) ? `expected ${path} to be gone` : undefined)
+/** Some new file anywhere in the folder, named like `name`, says `text`. */
+const newFile = (name: RegExp, text: RegExp): Check => (_, __, files) => {
+  const all = readdirSync(files, { recursive: true, encoding: 'utf8' })
+  const hit = all.find((f) => name.test(f) && text.test(readFileSync(join(files, f), 'utf8')))
+  return hit ? undefined : `expected a file named ~ ${name} saying ~ ${text}, got ${all.join(', ')}`
+}
 
 const said = (pattern = /\S/): Check => (_, agent) =>
   spoken(agent).some((t) => pattern.test(t)) ? undefined : `expected Stanley to say something matching ${pattern}`
@@ -327,6 +345,33 @@ export const scenarios: Scenario[] = [
     name: 'reply-unsure-word-reads-back',
     utterances: ['open the email from Sam', "reply saying I'm in, see you fry(?) day(?)"],
     checks: [sentCount(0), said(/\?/)],
+  },
+  {
+    // Answered from a file: Jev can look it up while the user speaks, thinking says it.
+    name: 'files-answer',
+    utterances: ["what's on my packing list for Lisbon"],
+    checks: [said(/passport|adapter|rain jacket|shoes|charger/i), changedNothing],
+  },
+  {
+    name: 'files-add-a-line',
+    utterances: ['put sunscreen on the Lisbon list'],
+    checks: [fileSays('Trips/Lisbon packing.md', /sunscreen/i, /Passport/, /Phone charger/)],
+  },
+  {
+    // Working something out from a file takes a command, not just reading it.
+    name: 'files-add-up',
+    utterances: ['how much have I spent on groceries this year'],
+    checks: [said(/316/), changedNothing],
+  },
+  {
+    name: 'files-new-note',
+    utterances: ['make a new file for the plumber saying he comes Thursday at nine'],
+    checks: [newFile(/plumber/i, /thursday/i)],
+  },
+  {
+    name: 'files-delete-when-asked',
+    utterances: ['delete the shakshuka recipe'],
+    checks: [fileGone('Recipes/shakshuka.md'), fileSays('Recipes/banana bread.md', /bananas/)],
   },
   {
     // A question is answered from a background search; nothing opens on screen.

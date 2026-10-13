@@ -18,7 +18,7 @@ const grams = (t: string, n: number) => {
 /** Every file that holds prompt text, option descriptions or field instructions. */
 const sources = [
   ...readdirSync(join(root, 'packages/agent/src')).map((f) => join(root, 'packages/agent/src', f)),
-  ...readdirSync(join(root, 'packages')).filter((d) => d.startsWith('app-') && d !== 'app-sdk').map((d) => join(root, 'packages', d, 'src/core.ts')),
+  ...readdirSync(join(root, 'packages')).filter((d) => d.startsWith('app-') && d !== 'app-sdk' && d !== 'app-ui').map((d) => join(root, 'packages', d, 'src/core.ts')),
   ...readdirSync(join(root, 'packages/browser/src')).map((f) => join(root, 'packages/browser/src', f)),
 ]
 const prompts = words(sources.map((f) => readFileSync(f, 'utf8')).join('\n')).join(' ')

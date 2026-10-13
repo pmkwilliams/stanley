@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import type { AppStore } from '@stanley/app-sdk'
 import { emailApp } from '@stanley/app-email/core'
+import { readSettings, settingsApp } from '@stanley/app-settings/core'
 import { todoApp } from '@stanley/app-todo/core'
 import { webApp } from '@stanley/app-web/core'
 import { Shell } from './shell'
@@ -7,6 +9,43 @@ import { Shell } from './shell'
 const make = () => new Shell([emailApp, todoApp], { env: {}, fetch }, () => {})
 
 describe('Shell', () => {
+  it('changes the theme in Settings, and keeps it for the next session', async () => {
+    const values = new Map<string, unknown>()
+    const store: AppStore = { get: (k) => values.get(k), set: (k, v) => void values.set(k, v) }
+    const shell = new Shell([settingsApp], { env: {}, fetch, store }, () => {})
+    expect(readSettings(store).theme).toBe('dark')
+    await shell.open('settings')
+    const light = (await shell.screen()).elements.find((e) => e.label === 'Appearance')!.children!.find((e) => e.label === 'Light')!
+    expect(light.role).toBe('radio')
+    await shell.perform(light, {})
+    expect(readSettings(store).theme).toBe('light')
+    const next = new Shell([settingsApp], { env: {}, fetch, store }, () => {})
+    await next.open('settings')
+    expect((await next.screen()).markdown).toContain('(•) Light')
+  })
+
+  it('names the assistant in Settings, back to the default when the name is cleared', async () => {
+    const values = new Map<string, unknown>()
+    const store: AppStore = { get: (k) => values.get(k), set: (k, v) => void values.set(k, v) }
+    const shell = new Shell([settingsApp], { env: {}, fetch, store }, () => {})
+    expect(readSettings(store).name).toBe('Stanley')
+    await shell.open('settings')
+    const field = (await shell.screen()).elements.find((e) => e.label === 'Assistant')!.children!.find((e) => e.label === 'Name')!
+    expect(field).toMatchObject({ kind: 'input', value: 'Stanley' })
+    await shell.perform(field, { text: ' Jarvis ' })
+    expect(readSettings(store).name).toBe('Jarvis')
+    expect((await shell.screen()).markdown).toContain('[Name:  Jarvis ]')
+    await shell.perform(field, { text: '' })
+    expect(readSettings(store).name).toBe('Stanley')
+  })
+
+  it('locks through the host', async () => {
+    let locks = 0
+    const shell = new Shell([todoApp], { env: {}, fetch }, () => {}, () => locks++)
+    await shell.lock()
+    expect(locks).toBe(1)
+  })
+
   it("offers only the focused screen's elements, named as the UI shows them", async () => {
     const shell = make()
     await shell.open('email')

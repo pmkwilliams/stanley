@@ -16,8 +16,11 @@
   },
   "include": [
     "src/renderer/src/**/*",
+    "gallery/**/*.ts",
+    "gallery/**/*.svelte",
     "src/preload/*.d.ts",
     "src/shared",
-    "../../packages/app-*/src/**/*.svelte"
+    "../../packages/app-*/src/**/*.svelte",
+    "../../packages/app-ui/src/**/*.ts"
   ]
 }

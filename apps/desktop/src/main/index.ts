@@ -1,15 +1,19 @@
 import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { readSettings } from '@stanley/app-settings/core'
 import { parallelWeb } from '@stanley/app-web/parallel'
-import { Agent, BargeIn, createThinker, defaultConfig, findElement, screenVocabulary, scriptedTurn, SYSTEM_PROMPT, type AgentStatus, type Overheard, type Thinker } from '@stanley/agent'
+import { localFiles } from '@stanley/files'
+import { Agent, BargeIn, createThinker, defaultConfig, findElement, named, screenVocabulary, scriptedTurn, SYSTEM_PROMPT, type AgentStatus, type FileTools, type Overheard, type Thinker } from '@stanley/agent'
 import { createJevClient, createMockJevClient, type DecisionClient } from '@stanley/jev'
 import { SAMPLE_RATE, Transcriber, writeWav } from '@stanley/stt'
 import { KOKORO, loadKokoro, Speaker } from '@stanley/tts'
-import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, Menu, session } from 'electron'
+import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, Menu, nativeTheme, session } from 'electron'
 import type { AppDebugEvent, ReplayRequest, Snapshot } from '../shared/ipc'
 import { apps } from './apps'
 import { DebugRecorder } from './debug'
 import { Shell } from './shell'
+import { fileStore } from './store'
 
 app.setName('Stanley')
 
@@ -59,10 +63,10 @@ let clipCount = 0
 /** The apps' state and what's on screen. Replaced whole when the user locks, which starts a new session. */
 let shell!: Shell
 
-/** Speech recognition favours the names and labels on the screen Stanley is working on. */
+/** Speech recognition favours the assistant's name, and the names and labels on the screen it is working on. */
 async function refreshHotwords() {
   if (!transcriber) return
-  transcriber.setHotwords(screenVocabulary(await shell.screen(), shell.appList()))
+  transcriber.setHotwords([...new Set([agentName(), ...screenVocabulary(await shell.screen(), shell.appList())])])
 }
 
 /** Offline, thinking types the user's last words and otherwise apologises. */
@@ -78,6 +82,16 @@ const thinker: Thinker = mock
   : createThinker()
 
 const sessionsDir = join(app.getPath('userData'), 'sessions')
+/**
+ * The user's files: one real folder (`STANLEY_FILES`, else ~/Stanley), outlasting sessions. Every
+ * version of it is kept next to the settings, where commands can read it but not change it.
+ */
+const files: FileTools | undefined =
+  process.platform === 'darwin' ? localFiles({ root: process.env.STANLEY_FILES || join(homedir(), 'Stanley'), history: join(app.getPath('userData'), 'files-history.git') }) : undefined
+/** Settings, which outlast sessions: locking starts every app over, but not these. */
+const store = fileStore(join(app.getPath('userData'), 'settings.json'), applySettings)
+/** What the user calls the assistant (Settings). */
+const agentName = () => readSettings(store).name
 mkdirSync(sessionsDir, { recursive: true })
 let sessionName = ''
 let sessionFile = ''
@@ -119,17 +133,25 @@ function startSession() {
   sessionName = new Date().toISOString().replace(/[:.]/g, '-')
   sessionFile = join(sessionsDir, `${sessionName}.jsonl`)
   debug = new DebugRecorder(sessionsDir, sessionName, (e) => debugWin?.webContents.send('debug:event', e))
-  const world: Shell = new Shell(apps, { env: process.env, fetch }, () => {
-    if (world !== shell) return
-    sendSnapshot()
-    void refreshHotwords()
-  })
+  const ctx = { env: process.env, fetch, store, get agentName() { return agentName() } }
+  const world: Shell = new Shell(
+    apps,
+    ctx,
+    () => {
+      if (world !== shell) return
+      sendSnapshot()
+      void refreshHotwords()
+    },
+    // The agent locks the way the lock button does.
+    () => world === shell && lock(),
+  )
   shell = world
   const self: Agent = new Agent({
     world: shell,
     jev,
     thinker,
     web: process.env.PARALLEL_API_KEY ? parallelWeb(process.env.PARALLEL_API_KEY) : undefined,
+    files,
     events: {
       status: (s) => {
         if (self !== agent) return
@@ -160,6 +182,7 @@ function startSession() {
         }),
     },
     config: defaultConfig,
+    name: agentName,
     sink: (record) => {
       if (self !== agent) return
       appendFileSync(sessionFile, JSON.stringify(record) + '\n')
@@ -167,7 +190,7 @@ function startSession() {
     },
   })
   agent = self
-  appEvent({ type: 'session-start', session: sessionName, config: defaultConfig, systemPrompt: SYSTEM_PROMPT, instructions: agent.instructions, mock })
+  appEvent({ type: 'session-start', session: sessionName, config: defaultConfig, systemPrompt: named(SYSTEM_PROMPT, agentName()), instructions: agent.instructions, mock })
   status = 'idle'
   said = null
   void refreshHotwords()
@@ -182,6 +205,7 @@ const bargeIn = new BargeIn({
   jev,
   conversation: (except) => agent.conversation(except),
   speech: () => speaker?.position() ?? null,
+  name: agentName,
   events: {
     duck: (on) => {
       speaker?.duck(on)
@@ -237,6 +261,8 @@ function sendSnapshot() {
     tts,
     mock,
     ptt,
+    theme: readSettings(store).theme,
+    name: agentName(),
   }
   broadcast('snapshot', snapshot)
 }
@@ -443,12 +469,27 @@ async function loadTts() {
   }
 }
 
+/** The renderer's `--bg` per theme, shown before it paints. */
+const WINDOW_BG = { light: '#f2f2f4', dark: '#0a0a0b' }
+
+/**
+ * Matches the window and web pages (through prefers-color-scheme) to the theme, and the window
+ * titles to the assistant's name. The renderer follows the snapshot.
+ */
+function applySettings() {
+  const { theme, name } = readSettings(store)
+  nativeTheme.themeSource = theme
+  win?.setBackgroundColor(WINDOW_BG[theme])
+  win?.setTitle(name)
+  debugWin?.setTitle(`${name} Debug`)
+}
+
 function createWindow() {
   win = new BrowserWindow({
     width: 1280,
     height: 820,
-    title: 'Stanley',
-    backgroundColor: '#0a0a0b',
+    title: agentName(),
+    backgroundColor: WINDOW_BG[readSettings(store).theme],
     titleBarStyle: 'hidden',
     webPreferences: {
       preload: join(import.meta.dirname, '../preload/index.mjs'),
@@ -458,6 +499,8 @@ function createWindow() {
   })
   // The renderer's status bar spans the full width, like an OS menu bar; ⌘W / ⌘Q still close.
   win.setWindowButtonVisibility(false)
+  // The title is the assistant's name (see `applySettings`), not the page's.
+  win.on('page-title-updated', (e) => e.preventDefault())
   win.webContents.on('did-finish-load', sendSnapshot)
   win.on('closed', () => {
     win = null
@@ -471,10 +514,11 @@ function openDebugWindow() {
   debugWin = new BrowserWindow({
     width: 1280,
     height: 860,
-    title: 'Stanley Debug',
+    title: `${agentName()} Debug`,
     backgroundColor: '#0f1115',
     webPreferences: { preload: join(import.meta.dirname, '../preload/index.mjs'), sandbox: false },
   })
+  debugWin.on('page-title-updated', (e) => e.preventDefault())
   debugWin.webContents.on('did-finish-load', sendSnapshot)
   debugWin.on('closed', () => (debugWin = null))
   loadRenderer(debugWin, 'debug')
@@ -541,6 +585,7 @@ ipcMain.on('perform', async (_, appId: string, nodeId: string, args) => {
     args?.text,
   )
 })
+ipcMain.on('theme', (e) => (e.returnValue = readSettings(store).theme))
 ipcMain.on('say', (_, text: string) => {
   appEvent({ type: 'typed', text })
   // Typing over Stanley cuts in, like speaking over it.
@@ -580,6 +625,7 @@ app.whenReady().then(() => {
     cb(contents === win?.webContents && permission === 'media' && audioOnly)
   })
   setMenu()
+  applySettings()
   createWindow()
   // ⌥Space is often taken (Raycast, ChatGPT); fall back rather than silently failing.
   ptt = PTT_SHORTCUTS.find((key) => globalShortcut.register(key, () => toggleListening('ptt'))) ?? null

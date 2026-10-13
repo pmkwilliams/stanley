@@ -32,7 +32,7 @@ Several models do the work, but it should read as one Stanley, in the trace and 
 
 - **Fast: Jev** (~330 ms). Decides turn-taking and takes clear, reversible steps, including while
   the user is still speaking: open an app, open an item, press play, tick a box.
-- **Slow: thinking** (Claude Haiku 5.5). Anything that needs words or judgement: what goes in a
+- **Slow: thinking** (Claude Sonnet 5.5). Anything that needs words or judgement: what goes in a
   field, whether to press something that sends or deletes, answering, asking, and working out a
   request the fast part can't.
 
@@ -56,6 +56,9 @@ Each tick the world provides (`World` in `packages/agent/src/world.ts`):
   conversation still shows it, as `open page: <title>` (told apart by site when titles repeat).
   Opening one is a single navigation step, like typing its address into a browser
   (`World.openUrl`). The page already on screen isn't offered.
+- **The user's files** (see **Files**): `list files`, then `list folder: <path>` and
+  `read file: <path>` for everything in the folder, most recently looked at first. Looking only
+  reads, in the background: nothing comes on screen.
 
 Apart from known pages, only what is on the current screen is offered. The agent can't reach into a
 screen it isn't on, because on a real website it can't either: to archive an email it opens the
@@ -105,7 +108,7 @@ of certainty:
 
 | Step | Waits for |
 | --- | --- |
-| Open, navigate, scroll | Nothing: runs mid-word |
+| Open, navigate, scroll, list or read files | Nothing: runs mid-word |
 | Type the user's own words into a field | A pause (a field can be retyped) |
 | Press a button, type words Stanley composed, hand over to thinking | The thought to finish |
 | Press something that commits (send, delete, archive) | The turn to end, then thinking confirms |
@@ -188,7 +191,8 @@ returned. Three ways in, all with the same tools and `toolChoice: 'auto'`:
   up in the background without changing the screen, and `open_page(url)`. A question is answered
   from a lookup; something the user wants to see goes on screen. What a search found stays in the
   history in full, so thinking can answer a follow-up from it, and Jev can open any of it later
-  ("show me that", "the Wikipedia one") without searching again.
+  ("show me that", "the Wikipedia one") without searching again. With the user's files it also
+  has `bash` (see **Files**).
 
 Whatever thinking is doing is dropped if the user says more while it works: it says nothing, and the
 steps it already took stay done and in the history (a step that ran in a step cut short goes in as
@@ -338,12 +342,12 @@ Stanley said: "I wrote "Ramen? I was born ready." Should I send it?"
 | Steps | Jev's: call and summary. Thinking's: as sent, with the screens they returned | Step lines |
 | Screens | Every observation; `<screen unchanged/>` when identical | The current screen, once |
 | Search / fetch | In full (≤ 8 × 500 chars / ≤ 6,000 chars) | Title, address, 100-char excerpt / page title |
+| Commands on files | In full (≤ 16,000 chars: the start and end of longer output) | A listing's names (≤ 40) / a file's first 200 chars / the command |
 | Reasoning | Replayed as sent | Never |
 
 Growth comes mostly from screens. Only the new part of each call is uncached, but time to first
-token rises with the total, and Haiku 5.5's input price rises past 100K prompt tokens. The debug
-window and the evals report each call's input size; when sessions near 100K, the plan is
-server-side compaction (`docs/plans/one-history.md`).
+token rises with the total. The debug window and the evals report each call's input size; when
+sessions near 100K, the plan is server-side compaction (`docs/plans/one-history.md`).
 
 ## Websites
 
@@ -360,6 +364,35 @@ server-side compaction (`docs/plans/one-history.md`).
 
 It runs in the evals today. Being plain JS, the extractor can run in an Electron `WebContentsView`
 next, which is how the desktop app would drive real sites.
+
+## Files
+
+The user's files are one real folder, `~/Stanley` (`STANLEY_FILES` moves it), not an app: there is
+nothing to show, so nothing goes on screen. The user puts things there in Finder, and what Stanley
+writes there is usable outside it.
+
+- **Jev looks.** `list files`, `list folder: …` and `read file: …` are step options, offered for
+  everything in the folder (`FileTools.paths`, read from disk each tick, hidden files left out) and
+  ranked with the screen's elements by the user's words. They only read, so they run mid-word like
+  navigation. Each goes into the history as the bash command it is (`ls -p -- '…'`,
+  `cat -- '…'`) with its output, so thinking reads it as its own call and can answer at once.
+  Jev reads a listing's names, or how the file starts.
+- **Thinking does the rest** with one tool, `bash`, run in the folder: finding, answering, adding
+  up, writing, moving, deleting. Jev has no search: searching needs words, which are thinking's.
+  Each command reads to Jev as `Stanley ran \`…\` on the user's files.`
+- **Consent** is the same rule as for buttons, in thinking's instructions: overwrite, move or
+  delete only what the user asked for; making new files is fine. There is no confirm step, because
+  the snapshots make every change undoable.
+- **Every version is kept.** Before each command (what the user changed since) and after it (what
+  the command did), the folder is committed to a git directory of its own outside it
+  (`userData/files-history.git`). Commands can read it (`$STANLEY_HISTORY`), so thinking can bring
+  an earlier version back with `git show`, but not change it.
+- **Sandboxed** (`packages/files`, macOS `sandbox-exec`, deny by default): writes only in the folder
+  and a temporary directory; no reading the rest of the user's home (paths can be stat'ed, not
+  read or listed); no network, no opening apps or URLs, no Apple Events, no signals outside the
+  sandbox. `HOME` is the folder. 30 s per command, then the process group is killed; barge-in
+  kills it too. `rg`, `git`, `python3`, `node`, `zip`, `sed` and `awk` work; `textutil` and
+  `mdls` don't (they need system services the sandbox blocks).
 
 ## Surfaces and layout
 
@@ -452,12 +485,14 @@ All via **Vercel AI Gateway** with the AI SDK (`ai`, pinned exactly), one `AI_GA
   `providerMetadata.typesafe.confidence[questionId]`. `packages/jev` normalizes each answer to
   `{ choice, probabilities, confidence }`: `decide` for several questions in one call, `choose` for
   one, plus a mock.
-- **Thinking**: Claude Haiku 5.5 via gateway (pinned to Anthropic, for its prompt caching) behind a
+- **Thinking**: Claude Sonnet 5.5 via gateway (pinned to Anthropic, for its prompt caching) behind a
   `Thinker` interface with one method, `run`: a tool loop with `act`, plus `search`, `fetch` and
   `open_page` when the agent has them, or one step whose calls come back unrun (write, confirm).
 - **Web**: Parallel Search and Extract APIs (`PARALLEL_API_KEY`), in `@stanley/app-web/parallel`:
   the agent's background search and fetch, and the Web app's page reader.
 - **Weather**: Open-Meteo forecast + geocoding (no key).
+- **Lights**: the Hue Bridge's local API (v1, HTTP). The bridge is found by Philips' discovery service or
+  `HUE_BRIDGE`; Connect gets a key in the 30 s after its link button is pressed, kept in the shell's store.
 
 ## Demo apps
 
@@ -467,6 +502,7 @@ All via **Vercel AI Gateway** with the AI SDK (`ai`, pinned exactly), one `AI_GA
 | Email | seeded, in-memory | Inbox / Sent tabs, the inbox list, an open email with Mark unread / Archive / Delete, a reply box and Send reply |
 | Weather | Open-Meteo | "Search a city" box (Enter looks up), current conditions, one button per day |
 | Music | bundled tracks | Previous / Play / Next / Volume buttons, one button per track |
+| Lights | your Philips Hue Bridge | Rooms and zones, each a row with a switch, and "Turn all off"; a room has its switch, a Brightness slider (a field taking a percentage), scene buttons, color swatches and a switch per light |
 | Web | Parallel extract + webview | No elements: shows the page Stanley opened (`openUrl`). Not in the agent's app list, since it shows nothing on its own; known pages open in it |
 
 Each app's `nodes()` lists only what its screen shows, labelled as the UI labels it.
@@ -497,7 +533,7 @@ and the history's records. Each session's stream is written to
 ## Development and evaluation
 
 - **Typed utterances**: the debug window's text box (and `window.stanley.say`) injects an utterance as if spoken.
-- **Headless evals**: `pnpm eval [filter…]` runs scenarios with the real Shell, apps, Jev and Haiku,
+- **Headless evals**: `pnpm eval [filter…]` runs scenarios with the real Shell, apps, Jev and Sonnet,
   no Electron; `pnpm eval:web` runs the same agent on fixture websites in headless Chromium, and
   `--live` on real ones. Utterances are fed word by word to exercise live ticking. `--runs N` reports
   pass rates, `--trace` prints what the models read at the end. See `evals/README.md`.
@@ -516,7 +552,7 @@ and the history's records. Each session's stream is written to
 ## Status
 
 Working, verified end to end:
-- Jev via AI Gateway (~250–400 ms per decision), Haiku thinking, Parallel search + extract,
+- Jev via AI Gateway (~250–400 ms per decision), Sonnet thinking, Parallel search + extract,
   Open-Meteo.
 - Parakeet + Silero live transcription: partials every ~430 ms, segments at pauses, silence
   auto-end at 2 s; model loads in ~1.3 s. Verified by streaming synthesized speech through the app.
@@ -524,6 +560,9 @@ Working, verified end to end:
 - Evals: demo apps 84/84 (42 scenarios × 2, including 9 turn-taking ones and 4 web lookups),
   fixture websites 28/30 (15 × 2; both misses passed 4/4 on rerun, as before the change), live websites 8/8 (4 × 2), synthetic voice through the real transcriber and Smart Turn
   10/10 on the turn-taking set.
+- Files: 5 scenarios (answer from a file, add a line, add up a column, new file, delete when
+  asked), 13/15 over 3 runs. The misses are `files-answer`, where Jev opens To-do on "my packing
+  list…" before the file name is said; it still answers from the file.
 - Turn detection (`pnpm eval:turn`, LiveKit EoT benchmark, 100 real clips): the turn's end is called
   0.75 s after the last word (median) vs 2 s before, and 4% of mid-turn pauses cut in vs 11%.
 
@@ -542,6 +581,9 @@ Not yet verified / known gaps:
 - Thinking steps make writing and sending slower than the fast path alone: typically 2–4 s to settle
   after the user stops, vs 1–2 s for pure navigation.
 - Native apps would need an OS accessibility adapter producing the same `Screen`.
+- Files: the snapshot before and after each command runs `git status`, which slows down on a large
+  folder, and large binaries grow the history. Rich documents (PDF, Word) can't be read yet: the
+  tools that extract their text don't run in the sandbox.
 
 ## Architecture
 
@@ -556,11 +598,13 @@ packages/app-sdk      AppModule / Node / Surface / Action types
 packages/agent        loop, tick scheduler, message log, conversation, guardrails, options, thinking
 packages/jev          Jev client (AI SDK decide) + mock
 packages/browser      any web page as a screen: generic extractor + Playwright World
+packages/files        the user's files folder: sandboxed bash, every version kept in git
 packages/stt          sherpa-onnx + Parakeet + Silero VAD → partial/final events; Smart Turn on pauses
 packages/tts          Kokoro via sherpa-onnx; segmenter; speaker (pacing, what was said)
 packages/app-todo     ./core (headless) + ./ui (Svelte)
 packages/app-email    ″
 packages/app-weather  ″
+packages/app-lights   ″ (Hue Bridge client in src/hue.ts)
 packages/app-music    ″ + ./player (headless <audio>, mounted while the surface exists)
 packages/app-web      ″ + ./parallel (Parallel search and extract: the agent's lookups, the page reader)
 evals                 scenario evals with real models: demo apps, websites (fixture and live), voice, STT
@@ -574,5 +618,5 @@ Electron 44 · electron-vite 5 · Vite 7 · Svelte 5 · TypeScript 5.9 · pnpm.
 
 ### Config / secrets
 
-`.env` (gitignored): `AI_GATEWAY_API_KEY`, `PARALLEL_API_KEY`. `pnpm models` downloads Parakeet,
+`.env` (gitignored): `AI_GATEWAY_API_KEY`, `PARALLEL_API_KEY`, optionally `STANLEY_FILES`. `pnpm models` downloads Parakeet,
 Silero, Smart Turn and Kokoro into `models/` (gitignored).

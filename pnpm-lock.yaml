@@ -20,27 +20,42 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@fontsource-variable/inter':
+        specifier: ^5.3.0
+        version: 5.3.0
       '@stanley/agent':
         specifier: workspace:*
         version: link:../../packages/agent
       '@stanley/app-email':
         specifier: workspace:*
         version: link:../../packages/app-email
+      '@stanley/app-lights':
+        specifier: workspace:*
+        version: link:../../packages/app-lights
       '@stanley/app-music':
         specifier: workspace:*
         version: link:../../packages/app-music
       '@stanley/app-sdk':
         specifier: workspace:*
         version: link:../../packages/app-sdk
+      '@stanley/app-settings':
+        specifier: workspace:*
+        version: link:../../packages/app-settings
       '@stanley/app-todo':
         specifier: workspace:*
         version: link:../../packages/app-todo
+      '@stanley/app-ui':
+        specifier: workspace:*
+        version: link:../../packages/app-ui
       '@stanley/app-weather':
         specifier: workspace:*
         version: link:../../packages/app-weather
       '@stanley/app-web':
         specifier: workspace:*
         version: link:../../packages/app-web
+      '@stanley/files':
+        specifier: workspace:*
+        version: link:../../packages/files
       '@stanley/jev':
         specifier: workspace:*
         version: link:../../packages/jev
@@ -72,6 +87,9 @@ importers:
       electron-vite:
         specifier: 5.0.0
         version: 5.0.0(vite@7.3.7(@types/node@24.19.2)(tsx@4.23.15))
+      playwright-core:
+        specifier: 1.64.0
+        version: 1.64.0
       svelte:
         specifier: 5.57.2
         version: 5.57.2
@@ -90,6 +108,9 @@ importers:
       '@stanley/app-email':
         specifier: workspace:*
         version: link:../packages/app-email
+      '@stanley/app-lights':
+        specifier: workspace:*
+        version: link:../packages/app-lights
       '@stanley/app-music':
         specifier: workspace:*
         version: link:../packages/app-music
@@ -108,6 +129,9 @@ importers:
       '@stanley/browser':
         specifier: workspace:^
         version: link:../packages/browser
+      '@stanley/files':
+        specifier: workspace:*
+        version: link:../packages/files
       '@stanley/jev':
         specifier: workspace:*
         version: link:../packages/jev
@@ -142,6 +166,21 @@ importers:
       '@stanley/app-sdk':
         specifier: workspace:*
         version: link:../app-sdk
+      '@stanley/app-ui':
+        specifier: workspace:*
+        version: link:../app-ui
+      svelte:
+        specifier: ^5.0.0
+        version: 5.57.2
+
+  packages/app-lights:
+    dependencies:
+      '@stanley/app-sdk':
+        specifier: workspace:*
+        version: link:../app-sdk
+      '@stanley/app-ui':
+        specifier: workspace:*
+        version: link:../app-ui
       svelte:
         specifier: ^5.0.0
         version: 5.57.2
@@ -151,17 +190,41 @@ importers:
       '@stanley/app-sdk':
         specifier: workspace:*
         version: link:../app-sdk
+      '@stanley/app-ui':
+        specifier: workspace:*
+        version: link:../app-ui
       svelte:
         specifier: ^5.0.0
         version: 5.57.2
 
   packages/app-sdk: {}
 
+  packages/app-settings:
+    dependencies:
+      '@stanley/app-sdk':
+        specifier: workspace:*
+        version: link:../app-sdk
+      '@stanley/app-ui':
+        specifier: workspace:*
+        version: link:../app-ui
+      svelte:
+        specifier: ^5.0.0
+        version: 5.57.2
+
   packages/app-todo:
     dependencies:
       '@stanley/app-sdk':
         specifier: workspace:*
         version: link:../app-sdk
+      '@stanley/app-ui':
+        specifier: workspace:*
+        version: link:../app-ui
+      svelte:
+        specifier: ^5.0.0
+        version: 5.57.2
+
+  packages/app-ui:
+    dependencies:
       svelte:
         specifier: ^5.0.0
         version: 5.57.2
@@ -171,6 +234,9 @@ importers:
       '@stanley/app-sdk':
         specifier: workspace:*
         version: link:../app-sdk
+      '@stanley/app-ui':
+        specifier: workspace:*
+        version: link:../app-ui
       svelte:
         specifier: ^5.0.0
         version: 5.57.2
@@ -180,6 +246,9 @@ importers:
       '@stanley/app-sdk':
         specifier: workspace:*
         version: link:../app-sdk
+      '@stanley/app-ui':
+        specifier: workspace:*
+        version: link:../app-ui
       svelte:
         specifier: ^5.0.0
         version: 5.57.2
@@ -195,6 +264,12 @@ importers:
       playwright-core:
         specifier: 1.64.0
         version: 1.64.0
+
+  packages/files:
+    dependencies:
+      '@stanley/agent':
+        specifier: workspace:*
+        version: link:../agent
 
   packages/jev:
     dependencies:
@@ -631,6 +706,9 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@fontsource-variable/inter@5.3.0':
+    resolution: {integrity: sha512-OupL48va4JNofb97w6NYeF9S7W/kHNKM0Er8Dem5nqi4jeOLrVJDoE8tZEpnMJmtkvNbB1EIPPwHcdkF6b1oUA==}
 
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
@@ -1697,6 +1775,8 @@ snapshots:
 
   '@esbuild/win32-x64@0.28.2':
     optional: true
+
+  '@fontsource-variable/inter@5.3.0': {}
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:

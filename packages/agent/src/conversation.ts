@@ -1,4 +1,5 @@
 import type { ModelMessage, ToolResultPart } from 'ai'
+import type { FileMeta } from './files'
 import type { WebResult } from './web'
 
 export interface DecisionMeta {
@@ -17,6 +18,7 @@ export type StepTarget =
   | { kind: 'app'; appId: string; title: string }
   | { kind: 'back' }
   | { kind: 'home' }
+  | { kind: 'lock' }
   /** A web page Stanley found or read, opened on screen by its address. */
   | { kind: 'page'; url: string; title: string }
 
@@ -50,6 +52,8 @@ export interface ResultMeta {
   toolCallId?: string
   step?: StepMeta
   lookup?: LookupMeta
+  /** A command on the user's files. */
+  file?: FileMeta
 }
 
 export interface EntryMeta {
@@ -413,6 +417,7 @@ export function place(staged: Entry[], segments: Map<number, string[]>, printed:
     const r = e.meta.results?.[0]
     if (r?.step) return { utteranceId: r.step.utteranceId, step: r.step }
     if (r?.lookup) return { utteranceId: r.lookup.utteranceId }
+    if (r?.file) return { utteranceId: r.file.utteranceId }
     return {}
   }
 
@@ -503,6 +508,11 @@ export function stepsOf(entries: Entry[]): StepMeta[] {
 /** The lookups in `entries`, in order. */
 export function lookupsOf(entries: Entry[]): LookupMeta[] {
   return entries.flatMap((e) => e.meta.results?.flatMap((r) => (r.lookup ? [r.lookup] : [])) ?? [])
+}
+
+/** The commands on the user's files in `entries`, in order. */
+export function filesOf(entries: Entry[]): FileMeta[] {
+  return entries.flatMap((e) => e.meta.results?.flatMap((r) => (r.file ? [r.file] : [])) ?? [])
 }
 
 /** What Stanley said in `entries`, as far as the user heard it. */

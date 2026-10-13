@@ -8,6 +8,7 @@
   import StatusBar from './StatusBar.svelte'
   import { loudness, mic, voiceOut } from './presence'
   import { backgrounds, surfaces } from './surfaces'
+  import { setTheme } from './theme.svelte'
   import { startVoice } from './voice'
 
   let snapshot = $state<Snapshot | null>(null)
@@ -47,6 +48,10 @@
     return () => offs.forEach((off) => off())
   })
 
+  $effect(() => {
+    if (snapshot) setTheme(snapshot.theme)
+  })
+
   const visible = $derived(snapshot?.layout.visible ?? null)
   /** Main owns it (see `lock` there); locked until the first snapshot says otherwise. */
   const locked = $derived(snapshot?.locked ?? true)
@@ -62,8 +67,8 @@
       <!-- Keyed on the app, so switching plays the old window's outro while the new one pops in over it. -->
       {#each visible && surfaces[visible] ? [visible] : [] as id (id)}
         {@const Surface = surfaces[id]}
-        <div class="window" in:scale={{ start: 0.96, duration: 180, easing: cubicOut }} out:scale={{ start: 0.94, duration: 140, easing: cubicIn }}>
-          <Surface data={snapshot.surfaces[id]} perform={(nodeId: string, args?: { text?: string }) => window.stanley.perform(id, nodeId, args)} />
+        <div class="window ui-window" in:scale={{ start: 0.96, duration: 180, easing: cubicOut }} out:scale={{ start: 0.94, duration: 140, easing: cubicIn }}>
+          <Surface data={snapshot.surfaces[id]} perform={(nodeId: string, args?: { text?: string }) => window.stanley.perform(id, nodeId, args)} agentName={snapshot.name} />
         </div>
       {/each}
     {/if}
@@ -71,13 +76,13 @@
 </div>
 
 {#if locked}
-  <div transition:fade={{ duration: 250 }}><LockScreen onunlock={() => window.stanley.unlock()} /></div>
+  <div transition:fade={{ duration: 250 }}><LockScreen name={snapshot?.name} onunlock={() => window.stanley.unlock()} /></div>
 {/if}
 
 {#if snapshot}
   {#each Object.entries(backgrounds) as [appId, Background] (appId)}
     {#if snapshot.surfaces[appId] !== undefined}
-      <Background data={snapshot.surfaces[appId]} perform={(nodeId: string, args?: { text?: string }) => window.stanley.perform(appId, nodeId, args)} volume={snapshot.talking ? 0.25 : 1} />
+      <Background data={snapshot.surfaces[appId]} perform={(nodeId: string, args?: { text?: string }) => window.stanley.perform(appId, nodeId, args)} volume={snapshot.talking ? 0.25 : 1} agentName={snapshot.name} />
     {/if}
   {/each}
 {/if}
@@ -101,10 +106,8 @@
   .window {
     /* Share one cell so an outgoing window sinks behind the incoming one instead of pushing it aside. */
     grid-area: 1 / 1; z-index: 1;
-    display: flex; flex-direction: column; max-width: var(--window-max-width); max-height: var(--window-max-height); overflow: auto;
-    background: var(--window); backdrop-filter: blur(40px) saturate(1.6);
-    border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 14px;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 0 0 0.5px rgba(0, 0, 0, 0.8), 0 24px 80px rgba(0, 0, 0, 0.55);
+    /* The glass itself is `.ui-window` (app-ui kit); apps size themselves (`.ui-app`) and scroll inside. */
+    display: flex; flex-direction: column; max-width: var(--window-max-width); max-height: var(--window-max-height); overflow: hidden;
   }
   /* Svelte marks an outroing element inert; keep it underneath the incoming window. */
   .window:global([inert]) { z-index: 0; }

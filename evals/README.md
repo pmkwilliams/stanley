@@ -4,10 +4,10 @@
 |---|---|---|
 | `pnpm eval:stt` | Transcription accuracy on recorded clips | Free (local) |
 | `pnpm eval:turn` | Turn detection on LiveKit's end-of-turn benchmark: cut-ins and how fast a turn's end is called | Free; `--jev N` adds Jev's word judgement (paid) |
-| `pnpm eval:voice <filter>` | Agent behaviour when a recorded clip is the request | Paid (Jev + Haiku) |
-| `pnpm eval <filter>` | Agent behaviour on typed scenarios, demo apps | Paid (Jev + Haiku) |
-| `pnpm eval:web <filter>` | The same agent on fixture websites in headless Chromium | Paid (Jev + Haiku) |
-| `pnpm eval:web --live <filter>` | Read-only scenarios on real websites (they change, so not in the default set) | Paid (Jev + Haiku) |
+| `pnpm eval:voice <filter>` | Agent behaviour when a recorded clip is the request | Paid (Jev + Sonnet) |
+| `pnpm eval <filter>` | Agent behaviour on typed scenarios, demo apps | Paid (Jev + Sonnet) |
+| `pnpm eval:web <filter>` | The same agent on fixture websites in headless Chromium | Paid (Jev + Sonnet) |
+| `pnpm eval:web --live <filter>` | Read-only scenarios on real websites (they change, so not in the default set) | Paid (Jev + Sonnet) |
 | `pnpm smoke:desktop` | Builds and launches the real app, types two utterances, screenshots both windows | A few paid calls |
 
 The paid evals run nothing without a filter or `--all`. They list what they would run instead, and
@@ -40,6 +40,13 @@ alone; `eval:voice --say` and recorded clips go through the real transcriber and
 EoT benchmark, CC-BY-4.0, downloaded once to `.cache/`). Mid-turn pauses that would have ended the
 turn are cut-ins; for real ends it reports how long until the end is called. The fixed 2 s silence
 is the baseline.
+
+## The user's files
+
+Every demo-app scenario runs with a fresh copy of `evals/files/` as the user's folder (macOS only,
+for the sandbox), so Jev always has the file options it has in the app. Checks get the copy's path
+as their third argument (`fileSays`, `fileGone`, `newFile` in `scenarios.mts`). `--no-files` runs
+without them, to compare.
 
 ## Held-out utterances
 

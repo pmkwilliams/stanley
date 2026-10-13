@@ -1,4 +1,5 @@
 import type { AgentNode } from '@stanley/app-sdk'
+import type { KnownFile } from './files'
 import { domainOf, sameUrl, type KnownPage } from './web'
 import type { AppEntry, Screen } from './world'
 
@@ -8,7 +9,11 @@ export type Target =
   | { kind: 'app'; app: AppEntry }
   | { kind: 'back' }
   | { kind: 'home' }
+  | { kind: 'lock' }
   | { kind: 'page'; url: string; title: string }
+  /** Looked at in the background: a folder of the user's files is listed (`''` is the whole folder), a file read. */
+  | { kind: 'folder'; path: string }
+  | { kind: 'file'; path: string }
 
 export interface OptionSet {
   /** Option name → description, sent to Jev as one question's options. */
@@ -19,15 +24,21 @@ export interface OptionSet {
 export const NAVIGATION = {
   back: 'Go back to the previous screen.',
   home: 'Go to the home screen, which lists the apps.',
+  lock: 'Lock the computer: go to the lock screen.',
+  files: "List the user's files, in the background.",
 } as const
 
 export function roleOf(node: AgentNode): string {
   return node.role ?? { location: 'link', action: 'button', input: 'field', group: 'group' }[node.kind]
 }
 
-/** Navigation is cheap to undo, so it may run while the user is still speaking. */
+/**
+ * Navigation is cheap to undo, so it may run while the user is still speaking, and so may looking at
+ * files. Locking isn't: it waits until they finish.
+ */
 export function navigates(target: Target): boolean {
-  return target.kind !== 'element' || target.node.kind === 'location'
+  if (target.kind === 'element') return target.node.kind === 'location'
+  return target.kind !== 'lock'
 }
 
 /** How an option reads to Jev: its role, then whatever the screen shows about it. */
@@ -91,11 +102,12 @@ export function findElement(screen: Screen, nodeId: string): { node: AgentNode; 
 
 /**
  * What Stanley can do next: the screen's elements in screen order, the pages it found or read on
- * the web (up to `limit` together, see `pick`), the apps, and back / home. Names are unique; a clash
- * gets a counter. `focus` is what the user is asking for, used to choose when there are too many.
- * The page already on screen isn't offered: opening it again does nothing.
+ * the web and the files it has seen (up to `limit` together, see `pick`), the apps, back / home
+ * (and lock, when `lock`), and listing the user's files (when there are `files`). Names are unique;
+ * a clash gets a counter. `focus` is what the user is asking for, used to choose when there are too
+ * many. The page already on screen isn't offered: opening it again does nothing.
  */
-export function stepOptions(screen: Screen, apps: AppEntry[], limit: number, focus = '', pages: KnownPage[] = []): OptionSet {
+export function stepOptions(screen: Screen, apps: AppEntry[], limit: number, focus = '', pages: KnownPage[] = [], lock = false, files?: KnownFile[]): OptionSet {
   const criteria: Record<string, string | null> = {}
   const targets = new Map<string, Target>()
   const add = (name: string, description: string, target: Target) => {
@@ -104,13 +116,14 @@ export function stepOptions(screen: Screen, apps: AppEntry[], limit: number, foc
     criteria[unique] = description
     targets.set(unique, target)
   }
-  type Candidate = { flat: Flat } | { page: KnownPage }
+  type Candidate = { flat: Flat } | { page: KnownPage } | { file: KnownFile }
   const candidates: Candidate[] = [
     ...flatten(screen.elements).map((flat) => ({ flat })),
     ...pages.filter((p) => !screen.url || !sameUrl(p.url, screen.url)).map((page) => ({ page })),
+    ...(files ?? []).map((file) => ({ file })),
   ]
-  const text = (c: Candidate) => ('flat' in c ? [...c.flat.path, c.flat.node.label].join(' ') : `${c.page.title} ${domainOf(c.page.url)}`)
-  const near = (c: Candidate) => ('flat' in c ? !c.flat.node.offscreen : c.page.latest)
+  const text = (c: Candidate) => ('flat' in c ? [...c.flat.path, c.flat.node.label].join(' ') : 'page' in c ? `${c.page.title} ${domainOf(c.page.url)}` : c.file.path.replace(/[/._-]+/g, ' '))
+  const near = (c: Candidate) => ('flat' in c ? !c.flat.node.offscreen : 'page' in c ? c.page.latest : c.file.latest)
   const chosen = pick(candidates, limit, focus, text, near)
   // Two pages with the same title are told apart by their site.
   const titles = new Map<string, number>()
@@ -119,6 +132,11 @@ export function stepOptions(screen: Screen, apps: AppEntry[], limit: number, foc
     if ('flat' in c) {
       const { node, path } = c.flat
       add(elementName(path, node), describe(node), { kind: 'element', node, role: roleOf(node) })
+    } else if ('file' in c) {
+      const { path } = c.file
+      const folder = path.endsWith('/')
+      if (folder) add(`list folder: ${path.slice(0, -1)}`, "folder in the user's files", { kind: 'folder', path: path.slice(0, -1) })
+      else add(`read file: ${path}`, "file in the user's files", { kind: 'file', path })
     } else {
       const { url, title } = c.page
       const domain = domainOf(url)
@@ -128,5 +146,7 @@ export function stepOptions(screen: Screen, apps: AppEntry[], limit: number, foc
   for (const app of apps) add(`open ${app.title}`, `app: ${app.description}`, { kind: 'app', app })
   add('back', NAVIGATION.back, { kind: 'back' })
   add('home', NAVIGATION.home, { kind: 'home' })
+  if (lock) add('lock', NAVIGATION.lock, { kind: 'lock' })
+  if (files) add('list files', NAVIGATION.files, { kind: 'folder', path: '' })
   return { criteria, targets }
 }

@@ -1,10 +1,14 @@
 <script lang="ts">
   import type { Snapshot } from '../../shared/ipc'
+  import MiniPlayer from '@stanley/app-music/mini'
+  import type { MusicState } from '@stanley/app-music/core'
+  import { fade } from 'svelte/transition'
   import { clock, time, weekday } from './clock.svelte'
 
   let { snapshot, onlock }: { snapshot: Snapshot | null; onlock: () => void } = $props()
 
   const visible = $derived(snapshot?.layout.visible ?? null)
+  const music = $derived(snapshot?.surfaces.music as MusicState | undefined)
   const background = $derived(!!snapshot && snapshot.focus !== visible && (snapshot.status === 'writing' || snapshot.status === 'acting'))
 </script>
 
@@ -19,18 +23,21 @@
     {#if background}<span class="pill working">Working in background…</span>{/if}
   </div>
 
-  <!-- Stub: becomes the mini player for the Music app. -->
-  <div class="player">
-    <span class="art"></span>
-    <span class="wave" aria-hidden="true">{#each [12, 6, 11, 4] as h, i (i)}<i style:height="{h}px"></i>{/each}</span>
+  <!-- Now playing: there while Music has a track, whether or not its window is open. -->
+  <div class="middle">
+    {#if music}
+      <div transition:fade={{ duration: 180 }}>
+        <MiniPlayer data={music} perform={(nodeId: string) => window.stanley.perform('music', nodeId)} onopen={() => window.stanley.open('music')} />
+      </div>
+    {/if}
   </div>
 
   <div class="side right">
     <div class="pill tray">
       <span class="slot">
-        <button class="mic" aria-label={snapshot?.listening ? 'Stop listening' : 'Talk'} onclick={() => window.stanley.toggleListening()}>
+        <button class="icon mic" aria-label={snapshot?.listening ? 'Stop listening' : 'Talk'} onclick={() => window.stanley.toggleListening()}>
           {#if snapshot?.listening}
-            <svg viewBox="0 0 20 20" width="20" height="20"><rect x="3.5" y="3.5" width="13" height="13" rx="3" fill="var(--accent)" /></svg>
+            <span class="stop"></span>
           {:else}
             <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
               <rect x="6.75" y="1.9" width="6.5" height="10.6" rx="3.25" fill="currentColor" stroke="none" /><path d="M3.9 9.4a6.1 6.1 0 0 0 12.2 0M10 15.6v2.6" />
@@ -73,16 +80,16 @@
 
   .pill {
     display: flex; align-items: center; height: var(--pill-h); padding: 0 var(--pad); border: 0; border-radius: var(--pill-r);
-    color: #fff; background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(20px);
+    color: var(--text); background: var(--pill); backdrop-filter: blur(20px);
   }
   .home { position: relative; width: var(--pill-h); padding: 0; overflow: hidden; transition: background 0.12s; }
-  .home:hover { background: rgba(255, 255, 255, 0.16); }
+  .home:hover { background: var(--pill-hover); }
   /* Icons swap on a vertical track: the torus drops out the bottom as the lock drops in from the top; reversed on leave. */
   .home svg { position: absolute; top: 10px; left: 10px; transition: transform 0.32s cubic-bezier(0.2, 0.8, 0.2, 1); }
   .home .lock { transform: translateY(-30px); }
   .home:hover .torus { transform: translateY(30px); }
   .home:hover .lock { transform: none; }
-  .working { font-size: 13px; color: rgba(255, 255, 255, 0.6); }
+  .working { font-size: 13px; color: color-mix(in srgb, var(--text) 60%, transparent); }
 
   .tray { gap: 20px; }
   .slot { display: grid; place-items: center; width: 20px; height: 20px; }
@@ -90,20 +97,16 @@
   .clock { font-size: 16px; font-weight: 500; white-space: nowrap; font-variant-numeric: tabular-nums; }
 
   /* Hover fills a 32px square: 4 in from the pill's top and bottom, so its radius is 10 - 4. */
-  .mic {
+  .icon {
     position: relative; display: grid; place-items: center; width: 20px; height: 20px; padding: 0;
     color: inherit; background: none; border: 0;
   }
-  .mic::before { content: ''; position: absolute; inset: -6px; border-radius: calc(var(--pill-r) - 4px); transition: background 0.12s; }
-  .mic:hover::before { background: rgba(255, 255, 255, 0.12); }
-  .mic svg { position: relative; }
+  .icon::before { content: ''; position: absolute; inset: -6px; border-radius: calc(var(--pill-r) - 4px); transition: background 0.12s; }
+  .icon:hover::before { background: color-mix(in srgb, var(--text) 12%, transparent); }
+  .icon svg { position: relative; }
+  /* Listening: a plain dot that squares off into a stop button on hover. */
+  .stop { position: relative; width: 14px; height: 14px; border-radius: 50%; background: currentColor; transition: border-radius 0.24s cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .mic:hover .stop { border-radius: 1px; }
 
-  /* Player: 200×42, art 24px inset 9, so the art's radius is 14 - 9. */
-  .player {
-    flex: none; display: flex; align-items: center; justify-content: space-between; width: 200px; height: 42px; padding: 0 14px 0 9px;
-    background: #0c0a09; border-radius: 14px;
-  }
-  .art { width: 24px; height: 24px; border-radius: 5px; background: linear-gradient(135deg, #2b2f6e, #8a90e0 45%, #4b4fb0 70%, #171936); }
-  .wave { display: flex; align-items: center; gap: 2px; }
-  .wave i { width: 2px; border-radius: 1px; background: #7d81e0; }
+  .middle { flex: none; display: flex; justify-content: center; width: 200px; -webkit-app-region: no-drag; }
 </style>

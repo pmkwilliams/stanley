@@ -21,6 +21,8 @@ export class Shell implements World {
     private apps: AppModule<any>[],
     private ctx: AppContext,
     private onChange: () => void,
+    /** Goes to the lock screen, which ends the session. */
+    private onLock?: () => void,
   ) {}
 
   /** The surface Stanley is working on (which may be hidden): what it reads and its elements. */
@@ -47,7 +49,7 @@ export class Shell implements World {
       title: app.title,
       visible: this.layout.visible === app.id,
       url: app.url?.(state),
-      markdown: app.toMarkdown(state),
+      markdown: app.toMarkdown(state, this.ctx),
       elements: prefix(app.id, app.nodes(state)),
     }
   }
@@ -72,6 +74,10 @@ export class Shell implements World {
     this.onChange()
   }
 
+  async lock() {
+    this.onLock?.()
+  }
+
   /** Open (or switch to) an app's surface. `null` = home. */
   async open(appId: string | null): Promise<StepResult> {
     if (appId === null) {
@@ -84,7 +90,7 @@ export class Shell implements World {
       await this.ensure(app)
       this.navigate(appId)
       this.onChange()
-      return { summary: `Opened ${app.title}`, observation: app.toMarkdown(this.surfaces.get(appId)) }
+      return { summary: `Opened ${app.title}`, observation: app.toMarkdown(this.surfaces.get(appId), this.ctx) }
     })
   }
 
