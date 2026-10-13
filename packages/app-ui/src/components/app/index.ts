@@ -3,17 +3,19 @@ import Bar from "./app-bar.svelte";
 import Body from "./app-body.svelte";
 import Group from "./app-group.svelte";
 import Section from "./app-section.svelte";
-import Split from "./app-split.svelte";
+import Sidebar from "./app-sidebar.svelte";
+import Main from "./app-main.svelte";
 import Title from "./app-title.svelte";
 
-export { appVariants, type AppSize } from "./app.svelte";
+export { appVariants, appWindow, type AppSize } from "./app.svelte";
 
 export {
 	Root,
 	Bar,
 	Title,
 	Body,
-	Split,
+	Sidebar,
+	Main,
 	Section,
 	Group,
 	//
@@ -21,7 +23,8 @@ export {
 	Bar as AppBar,
 	Title as AppTitle,
 	Body as AppBody,
-	Split as AppSplit,
+	Sidebar as AppSidebar,
+	Main as AppMain,
 	Section as AppSection,
 	Group as AppGroup,
 };

@@ -10,6 +10,7 @@
   import StatusBar from '../src/renderer/src/StatusBar.svelte'
   import { backgrounds, surfaces } from '../src/renderer/src/surfaces'
   import { fixtures } from './fixtures'
+  import { appWindow } from '@stanley/app-ui/components/app'
 
   const apps: Record<string, AppModule<any>> = { email: emailApp, lights: lightsApp, music: musicApp, settings: settingsApp, todo: todoApp, weather: weatherApp, web: webApp }
 
@@ -74,7 +75,7 @@
   <div>{#if app}<StatusBar {snapshot} onlock={() => {}} />{/if}</div>
   <main class="grid min-h-0 place-items-center overflow-hidden">
     {#if app && data}
-      <div class="flex max-h-(--window-max-height) max-w-(--window-max-width) flex-col overflow-hidden rounded-3xl border bg-card/80 shadow-window backdrop-blur-2xl backdrop-saturate-150"><Surface {data} {perform} /></div>
+      <div class={appWindow}><Surface {data} {perform} /></div>
       {#if Background}<Background {data} {perform} />{/if}
     {:else if !app}
       <nav class="grid grid-cols-[repeat(2,auto)] gap-x-6 gap-y-2">

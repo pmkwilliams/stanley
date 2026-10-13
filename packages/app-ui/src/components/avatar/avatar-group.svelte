@@ -2,7 +2,6 @@
 	import { cn, type WithElementRef } from "$ui/utils.js";
 	import type { HTMLAttributes } from "svelte/elements";
 
-	/** A list pane and a detail pane (`AppBody`s), each scrolling on its own. */
 	let {
 		ref = $bindable(null),
 		class: className,
@@ -13,8 +12,11 @@
 
 <div
 	bind:this={ref}
-	data-slot="app-split"
-	class={cn("grid min-h-0 flex-1 grid-cols-[20rem_minmax(0,1fr)] [&>*+*]:border-l", className)}
+	data-slot="avatar-group"
+	class={cn(
+		"group/avatar-group flex -space-x-2 *:data-[slot=avatar]:ring-2 *:data-[slot=avatar]:ring-background",
+		className
+	)}
 	{...restProps}
 >
 	{@render children?.()}

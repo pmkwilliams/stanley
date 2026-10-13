@@ -23,7 +23,7 @@ export interface SentEmail {
 export interface EmailState {
   emails: Email[]
   sent: SentEmail[]
-  /** `inbox`, `sent` or `email/<id>` */
+  /** A mailbox (`inbox`, `sent`, `archived`), or the message open in one: `email/<id>` or `sent/<id>`. */
   route: string
   nextSentId: number
   /** Unsent reply text per email id. Typing a reply never sends it; `send` does. */
@@ -31,6 +31,16 @@ export interface EmailState {
 }
 
 const seed: Email[] = [
+  {
+    id: 'm5',
+    from: 'GitHub',
+    address: 'notifications@github.com',
+    subject: '[pmkwilliams/stanley] Email: sidebar layout, avatars, fixed header and reply box (PR #1)',
+    date: '2026-10-13T13:05',
+    body: "You can view, comment on, or merge this pull request online at:\n\n  https://github.com/pmkwilliams/stanley/pull/1\n\nOverhauls the Email app's layout, from a hand sketch: a sidebar with Inbox / Sent / Archived over a scrolling list, a main pane with a fixed header and reply box, and avatars for every sender.\n\nCommit Summary\n\n  * Email: sidebar layout, avatars, fixed header and reply box\n  * Email: the GitHub email is PR #1\n  * Email: drop the sample email from Mom\n\nFile Changes (24 files, +434 −225)\n\nPatch Links:\n\n  https://github.com/pmkwilliams/stanley/pull/1.patch\n  https://github.com/pmkwilliams/stanley/pull/1.diff",
+    read: true,
+    archived: false,
+  },
   {
     id: 'm1',
     from: 'Sam Lee',
@@ -59,26 +69,6 @@ const seed: Email[] = [
     date: '2026-10-08T18:30',
     body: 'Check-in is now open for flight DL 1482, San Francisco (SFO) to Denver (DEN), departing Sunday Oct 11 at 7:15am. Confirmation number: HXQ7RT. Seat 14C.',
     read: false,
-    archived: false,
-  },
-  {
-    id: 'm4',
-    from: 'Mom',
-    address: 'linda.williams@gmail.com',
-    subject: 'Photos from the weekend',
-    date: '2026-10-08T15:12',
-    body: "Hi sweetheart, I finally uploaded the photos from Grandpa's birthday. The one of you and the dog is my favourite. Call me when you get a chance!\n\nLove, Mom",
-    read: true,
-    archived: false,
-  },
-  {
-    id: 'm5',
-    from: 'GitHub',
-    address: 'noreply@github.com',
-    subject: '[stanley] PR #42: Add tick scheduler',
-    date: '2026-10-07T22:47',
-    body: 'jordan-k requested your review on pull request #42 "Add tick scheduler". 6 files changed, +312 −48. The PR adds stale-result handling and the confidence gate.',
-    read: true,
     archived: false,
   },
   {
@@ -126,11 +116,24 @@ export function formatDate(iso: string): string {
   return `${formatDay(iso)}, ${(iso.split('T')[1] ?? '').slice(0, 5)}`
 }
 
+/** The open email, in the inbox or the archive. */
+export const openEmail = (s: EmailState) => (s.route.startsWith('email/') ? s.emails.find((e) => `email/${e.id}` === s.route) : undefined)
+
+/** The open sent message. */
+export const openSent = (s: EmailState) => (s.route.startsWith('sent/') ? s.sent.find((m) => `sent/${m.id}` === s.route) : undefined)
+
+/** The mailbox on screen. An open email is in whichever one it is filed in. */
+export function mailbox(s: EmailState): 'inbox' | 'sent' | 'archived' {
+  if (s.route === 'sent' || s.route.startsWith('sent/')) return 'sent'
+  if (s.route === 'archived') return 'archived'
+  return openEmail(s)?.archived ? 'archived' : 'inbox'
+}
+
 /** The visible names and counts of the view switcher, shared by the UI and `nodes()`. */
 export function tabs(s: EmailState): { id: 'inbox' | 'sent' | 'archived'; label: string; count: string | undefined; selected: boolean }[] {
   const unread = s.emails.filter((e) => !e.archived && !e.read).length
   const archived = s.emails.filter((e) => e.archived).length
-  const view = s.route === 'sent' || s.route === 'archived' ? s.route : 'inbox'
+  const view = mailbox(s)
   const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`
   return [
     { id: 'inbox', label: 'Inbox', count: unread ? `${unread} unread` : undefined, selected: view === 'inbox' },
@@ -141,6 +144,10 @@ export function tabs(s: EmailState): { id: 'inbox' | 'sent' | 'archived'; label:
 
 function emailMarkdown(e: Email): string {
   return `# ${e.subject}\nFrom: ${e.from} <${e.address}>\nDate: ${formatDate(e.date)}\n\n${e.body}`
+}
+
+function sentMarkdown(m: SentEmail): string {
+  return `# ${m.subject}\nTo: ${m.to}\nDate: ${formatDate(m.date)}\n\n${m.body}`
 }
 
 function localNow(): string {
@@ -159,10 +166,8 @@ export const emailApp = defineApp<EmailState>({
   current: (s) => s.route,
 
   nodes(s) {
-    // As on screen: the Inbox / Sent / Archived switcher (each with its count), the inbox list
-    // (also beside an open email), and the open email with its buttons and reply box.
-    const inbox = s.emails.filter((e) => !e.archived)
-    const archived = s.emails.filter((e) => e.archived)
+    // As on screen: the sidebar's Inbox / Sent / Archived switcher (each with its count) and the
+    // mailbox's messages, then the open message with its buttons and the reply box under it.
     const switcher = tabs(s).map((t): AgentNode => ({
       id: t.id,
       kind: 'location',
@@ -170,35 +175,36 @@ export const emailApp = defineApp<EmailState>({
       label: t.label,
       description: [t.count, t.selected ? 'selected' : undefined].filter(Boolean).join(', ') || undefined,
     }))
-    if (s.route === 'sent') return switcher
-    if (s.route === 'archived') {
-      return [
-        ...switcher,
-        ...archived.map((e): AgentNode => ({
-          id: `email/${e.id}/row`,
-          kind: 'group',
-          label: `${e.from}: ${e.subject}`,
-          description: formatDate(e.date),
-          children: [{ id: `email/${e.id}/restore`, kind: 'action', label: 'Move to Inbox' }],
-        })),
-      ]
+    if (mailbox(s) === 'sent') {
+      const open = openSent(s)
+      const rows = s.sent.toReversed().map((m): AgentNode => ({
+        id: `sent/${m.id}`,
+        kind: 'location',
+        label: `To ${m.to}: ${m.subject}`,
+        description: open?.id === m.id ? 'open' : undefined,
+      }))
+      if (!open) return [...switcher, ...rows]
+      return [...switcher, ...rows, { id: `sent/${open.id}/article`, kind: 'group', role: 'article', label: `"${open.subject}"`, description: `To ${open.to}, ${formatDate(open.date)}` }]
     }
-    const rows: AgentNode[] = inbox.map((e) => ({
-      id: `email/${e.id}`,
-      kind: 'location',
-      label: `${e.from}: ${e.subject}`,
-      description: [e.read ? undefined : 'unread', formatDay(e.date), s.route === `email/${e.id}` ? 'open' : undefined].filter(Boolean).join(', '),
-    }))
-    const open = s.route.startsWith('email/') ? inbox.find((e) => `email/${e.id}` === s.route) : undefined
+    const open = openEmail(s)
+    const rows = s.emails
+      .filter((e) => e.archived === (mailbox(s) === 'archived'))
+      .map((e): AgentNode => ({
+        id: `email/${e.id}`,
+        kind: 'location',
+        label: `${e.from}: ${e.subject}`,
+        description: [e.read ? undefined : 'unread', open?.id === e.id ? 'open' : undefined].filter(Boolean).join(', ') || undefined,
+      }))
     if (!open) return [...switcher, ...rows]
     const article: AgentNode = {
       id: `email/${open.id}/article`,
       kind: 'group',
       role: 'article',
       label: `"${open.subject}"`,
+      description: `From ${open.from} <${open.address}>, ${formatDate(open.date)}`,
       children: [
         { id: `email/${open.id}/unread`, kind: 'action', label: 'Mark unread' },
-        { id: `email/${open.id}/archive`, kind: 'action', label: 'Archive' },
+        open.archived ? { id: `email/${open.id}/restore`, kind: 'action', label: 'Move to Inbox' } : { id: `email/${open.id}/archive`, kind: 'action', label: 'Archive' },
         { id: `email/${open.id}/delete`, kind: 'action', label: 'Delete' },
         { id: `email/${open.id}/reply`, kind: 'input', label: `Reply to ${open.from}`, value: s.drafts[open.id] ?? '' },
         { id: `email/${open.id}/send`, kind: 'action', label: 'Send reply' },
@@ -212,10 +218,17 @@ export const emailApp = defineApp<EmailState>({
     if (nodeId === 'sent') return { state: { ...s, route: 'sent' }, summary: 'Opened sent mail' }
     if (nodeId === 'archived') return { state: { ...s, route: 'archived' }, summary: 'Opened archived mail' }
 
+    if (nodeId.startsWith('sent/')) {
+      const sent = s.sent.find((m) => `sent/${m.id}` === nodeId)
+      if (!sent) return { state: s, summary: `No such sent message ${nodeId}` }
+      return { state: { ...s, route: nodeId }, summary: `Opened "${sent.subject}" to ${sent.to}`, observation: sentMarkdown(sent) }
+    }
+
     const [, id, verb] = nodeId.split('/')
     const email = s.emails.find((e) => e.id === id)
     if (!email) return { state: s, summary: `No such email ${id}` }
     const label = `"${email.subject}" from ${email.from}`
+    const isOpen = s.route === `email/${id}`
 
     if (!verb) {
       const emails = s.emails.map((e) => (e.id === id ? { ...e, read: true } : e))
@@ -225,16 +238,19 @@ export const emailApp = defineApp<EmailState>({
       const emails = s.emails.map((e) => (e.id === id ? { ...e, read: false } : e))
       return { state: { ...s, emails }, summary: `Marked ${label} unread` }
     }
+    // Filing an open email away leaves its mailbox on screen, not the email in its new one.
     if (verb === 'archive') {
       const emails = s.emails.map((e) => (e.id === id ? { ...e, archived: true } : e))
-      return { state: { ...s, emails, route: 'inbox' }, summary: `Archived ${label}` }
+      return { state: { ...s, emails, route: isOpen ? 'inbox' : s.route }, summary: `Archived ${label}` }
     }
     if (verb === 'restore') {
       const emails = s.emails.map((e) => (e.id === id ? { ...e, archived: false } : e))
-      return { state: { ...s, emails }, summary: `Moved ${label} back to the inbox` }
+      return { state: { ...s, emails, route: isOpen ? 'archived' : s.route }, summary: `Moved ${label} back to the inbox` }
     }
     if (verb === 'delete') {
-      return { state: { ...s, emails: s.emails.filter((e) => e.id !== id), route: 'inbox' }, summary: `Deleted ${label}` }
+      const { [id!]: _, ...drafts } = s.drafts
+      const route = isOpen ? (email.archived ? 'archived' : 'inbox') : s.route
+      return { state: { ...s, emails: s.emails.filter((e) => e.id !== id), drafts, route }, summary: `Deleted ${label}` }
     }
     if (verb === 'reply') {
       const body = args.text?.trim() ?? ''
@@ -248,9 +264,9 @@ export const emailApp = defineApp<EmailState>({
       if (!body) return { state: s, summary: `No reply drafted to ${email.from}; nothing sent` }
       const reply = { id: `s${s.nextSentId}`, to: email.from, subject: `Re: ${email.subject}`, date: localNow(), body }
       const { [id!]: _, ...drafts } = s.drafts
-      // Show the sent mail, so it is clear the reply went out.
+      // Stay on the email: the reply box empties and Sent's count goes up.
       return {
-        state: { ...s, sent: [...s.sent, reply], nextSentId: s.nextSentId + 1, drafts, route: 'sent' },
+        state: { ...s, sent: [...s.sent, reply], nextSentId: s.nextSentId + 1, drafts },
         summary: `Reply sent to ${email.from}: "${reply.subject}"`,
       }
     }
@@ -258,24 +274,23 @@ export const emailApp = defineApp<EmailState>({
   },
 
   toMarkdown(s) {
-    if (s.route === 'archived') {
-      const archived = s.emails.filter((e) => e.archived).map((e) => `- "${e.subject}" from ${e.from}, ${formatDate(e.date)} [Move to Inbox]`).join('\n')
-      return `# Email › Archived\n${archived || '_Nothing archived_'}`
-    }
-    if (s.route === 'sent') {
-      const sent = s.sent.map((m) => `- To ${m.to}: "${m.subject}" (${formatDate(m.date)})\n  ${m.body}`).join('\n')
+    if (mailbox(s) === 'sent') {
+      const open = openSent(s)
+      if (open) return `# Email › Sent › ${open.subject}\nTo: ${open.to}\nDate: ${formatDate(open.date)}\n\n${open.body}`
+      const sent = s.sent.toReversed().map((m) => `- To ${m.to}: "${m.subject}" (${formatDate(m.date)})`).join('\n')
       return `# Email › Sent\n${sent || '_No sent mail_'}`
     }
-    const open = s.route.startsWith('email/') ? s.emails.find((e) => `email/${e.id}` === s.route) : undefined
+    const open = openEmail(s)
     if (open) {
-      const reply = `\n\n[Reply to ${open.from}: ${s.drafts[open.id] || 'empty'}] [Send reply]`
-      return `# Email › ${open.subject}\nFrom: ${open.from} <${open.address}>\nDate: ${formatDate(open.date)}\n\n${open.body}${reply}`
+      const reply = `[Reply to ${open.from}: ${s.drafts[open.id] || 'empty'}] [Send reply]`
+      return `# Email › ${open.subject}\nFrom: ${open.from} <${open.address}>\nDate: ${formatDate(open.date)}\n\n${open.body}\n\n${reply}`
     }
+    const archived = mailbox(s) === 'archived'
     const list = s.emails
-      .filter((e) => !e.archived)
+      .filter((e) => e.archived === archived)
       .map((e) => `- ${e.read ? '' : '**[unread]** '}"${e.subject}" from ${e.from}, ${formatDate(e.date)}`)
       .join('\n')
-    return `# Email › Inbox\n${list || '_No messages_'}`
+    return archived ? `# Email › Archived\n${list || '_Nothing archived_'}` : `# Email › Inbox\n${list || '_No messages_'}`
   },
 })
 
