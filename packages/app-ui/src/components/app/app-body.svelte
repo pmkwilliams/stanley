@@ -2,7 +2,7 @@
 	import { cn, type WithElementRef } from "$ui/utils.js";
 	import type { HTMLAttributes } from "svelte/elements";
 
-	/** Scrolls under the bar. Its 16px inset is why groups are rounded-lg inside the rounded-3xl window. */
+	/** Scrolls under the bar, 16px in from the window's sides. */
 	let {
 		ref = $bindable(null),
 		class: className,

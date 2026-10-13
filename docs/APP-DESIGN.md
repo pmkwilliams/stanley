@@ -39,14 +39,17 @@ without the shell, use the gallery (`apps/desktop/gallery/README.md`).
 
 ## Shape
 
-Radii are concentric: an inner radius is the outer one less the inset between them.
+| Surface | Radius |
+|---|---|
+| Window (shell) | `rounded-3xl` (24) |
+| Group, card | `rounded-xl` (12) |
+| Row in a group | `rounded-lg` (8) |
+| Buttons, fields | shadcn defaults (`rounded-lg` / `rounded-md`) |
 
-| Surface | Radius | Inset from its parent |
-|---|---|---|
-| Window (shell) | `rounded-3xl` (24) | – |
-| Group, card | `rounded-lg` (8) | 16 (`App.Body`'s `px-4`) |
-| Row in a group | `rounded-sm` (4) | 4 (the group's `p-1`) |
-| Buttons, fields | shadcn defaults (`rounded-lg` / `rounded-md`) | – |
+A shape nested in another's corner is concentric: its radius is the outer one less the inset. Rows
+sit 4px inside their group's corners (`p-1`), so they're 12 − 4 = 8. Groups don't sit in the
+window's corners (the bar is above them and free space below), so that rule doesn't apply to them:
+their radius is in proportion to the window's instead.
 
 ## Window
 
@@ -67,7 +70,7 @@ Radii are concentric: an inner radius is the outer one less the inset between th
 
 ## Lists
 
-- The standard is the **inset grouped list**: `<App.Group>` (`bg-muted rounded-lg p-1`, a `<ul>`)
+- The standard is the **inset grouped list**: `<App.Group>` (`bg-muted rounded-xl p-1`, a `<ul>`)
   holding `<li>`s with an `<Item.Root size="row">` each. Hairlines between rows are automatic, inset to
   the text, and hide next to a hovered or selected row.
 - A row: `Item.Media` (icon, check or artwork), `Item.Content` with `Item.Title` and optional

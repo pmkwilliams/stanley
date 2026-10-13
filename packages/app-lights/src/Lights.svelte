@@ -128,7 +128,7 @@
       {#if data.error}{@render notice(data.error)}{/if}
 
       {#if lights.some((l) => l.dims)}
-        <div class="flex items-center gap-3 rounded-lg bg-muted px-4 py-3 text-muted-foreground">
+        <div class="flex items-center gap-3 rounded-xl bg-muted px-4 py-3 text-muted-foreground">
           <Icon name="sun" size={16} />
           <Slider
             thumbLabel="Brightness"

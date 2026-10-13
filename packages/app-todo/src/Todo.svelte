@@ -72,7 +72,7 @@
     <App.Group>
       <li>
         <!-- The add row: a field that sits in the list as its first row, like Reminders' "New Reminder". -->
-        <form class="flex min-h-11 items-center gap-3 rounded-sm px-3 py-2 focus-within:bg-accent" onsubmit={add}>
+        <form class="flex min-h-11 items-center gap-3 rounded-lg px-3 py-2 focus-within:bg-accent" onsubmit={add}>
           <label class="flex w-5 cursor-text justify-center text-primary" for="todo-new"><Icon name="plus" size={18} weight={2.25} /></label>
           <input
             id="todo-new"

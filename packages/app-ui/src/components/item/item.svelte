@@ -13,8 +13,8 @@
 				default: "gap-2.5 px-3 py-2.5",
 				sm: "gap-2.5 px-3 py-2.5",
 				xs: "gap-2 px-2.5 py-2 in-data-[slot=dropdown-menu-content]:p-0",
-				/** A row in an AppGroup: 44px tall, rounded-sm (4px inside the group's rounded-lg). */
-				row: "min-h-11 gap-3 rounded-sm border-0 px-3 py-2",
+				/** A row in an AppGroup: 44px tall, rounded-lg (4px inside the group's rounded-xl). */
+				row: "min-h-11 gap-3 rounded-lg border-0 px-3 py-2",
 			},
 		},
 		defaultVariants: {

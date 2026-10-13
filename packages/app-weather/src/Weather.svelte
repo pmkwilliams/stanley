@@ -127,7 +127,7 @@
       {@const g = glyph(r.code)}
       <!-- Now: like an iOS Weather widget. Where and how warm on the left, what it's like on the right.
            Selectable like a row, so it is where Stanley "is" on home. -->
-      <Item.Root data-selected={data.route === 'home'} class="flex-none flex-nowrap items-stretch justify-between gap-4 px-4 pt-3.5 pb-4 hover:bg-accent">
+      <Item.Root data-selected={data.route === 'home'} class="flex-none flex-nowrap items-stretch justify-between gap-4 rounded-xl px-4 pt-3.5 pb-4 hover:bg-accent">
         {#snippet child({ props })}
           <button {...props} aria-current={data.route === 'home'} onclick={() => perform('home')}>
             <span class="flex min-w-0 flex-col text-left">
