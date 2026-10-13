@@ -40,6 +40,8 @@ export const usage = {
   fallbacks: [] as string[],
   searches: 0,
   reads: 0,
+  /** How long thinking calls took, by kind. */
+  thinkMs: { run: [] as number[], write: [] as number[], confirm: [] as number[] },
 }
 
 export function loadEnv() {
@@ -67,6 +69,8 @@ export function select<T>(items: T[], name: (t: T) => string, command: string): 
 export function printUsage() {
   const ratio = usage.thinkingInputTokens ? `${Math.round((usage.thinkingCachedTokens / usage.thinkingInputTokens) * 100)}%` : '—'
   console.log(`Paid calls: ${usage.jev} Jev (${usage.jevInputTokens.toLocaleString()} input tokens, p50 ${median(usage.jevMs)}s), ${usage.thinking} thinking turns, ${usage.writing} writes, ${usage.confirming} confirms (${usage.singleFallbacks} handed over to a whole turn) (Sonnet: ${usage.thinkingInputTokens.toLocaleString()} input tokens, ${ratio} read from cache, largest call ${usage.largestThinkingInput.toLocaleString()}), ${usage.searches} searches, ${usage.reads} page reads (Parallel)`)
+  const t = usage.thinkMs
+  console.log(`Thinking latency p50: run ${median(t.run)}s (${t.run.length}), write ${median(t.write)}s (${t.write.length}), confirm ${median(t.confirm)}s (${t.confirm.length})`)
   for (const f of usage.fallbacks) console.log(`  handed over: ${f}`)
 }
 
@@ -148,6 +152,7 @@ export async function drive(world: World, utterances: string[], speak: Speak, fi
   /** When each step on the screen ran (not Jev's background file reads). */
   const stepsAt: number[] = []
   const thinking = { inputTokens: 0, cachedTokens: 0, largestInput: 0 }
+  const modes = new Map<number, 'run' | 'write' | 'confirm'>()
   const agent = makeAgent(world, {
     debug: (e) => {
       if (e.type === 'act' && !e.summary?.startsWith('ran ')) stepsAt.push(Date.now())
@@ -155,6 +160,8 @@ export async function drive(world: World, utterances: string[], speak: Speak, fi
         usage.singleFallbacks++
         usage.fallbacks.push(e.handover)
       }
+      if (e.type === 'think-start') modes.set(e.tickId, e.mode)
+      if (e.type === 'think-end' && !e.aborted) usage.thinkMs[modes.get(e.tickId) ?? 'run'].push(e.latencyMs)
       if (e.type !== 'think-end' || !e.usage) return
       thinking.inputTokens += e.usage.inputTokens ?? 0
       thinking.cachedTokens += e.usage.cacheReadTokens ?? 0

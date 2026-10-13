@@ -278,7 +278,7 @@ describe('Agent loop', () => {
     const { agent, performed, ticks } = setup(async (_, i) => {
       if (i === 0) {
         await gate
-        return { next: 'act', step: 'Sort' }
+        return { next: 'act', step: 'Sort', stepConfidence: 0.7 }
       }
       return { next: 'done' }
     })
@@ -291,6 +291,29 @@ describe('Agent loop', () => {
     expect(performed).not.toContain('todo:sort')
     expect(ticks[0]!.outcome).toBe('stale-discarded')
   })
+
+  it('still presses a sure undoable button when the new words only add to the ones it decided on', async () => {
+    for (const [later, runs] of [['sort my list please', true], ['sort my lists please', false]] as const) {
+      let release!: () => void
+      const gate = new Promise<void>((r) => (release = r))
+      const { agent, performed } = setup(async (_, i) => {
+        if (i === 0) {
+          await gate
+          return { next: 'act', step: 'Sort' }
+        }
+        return { next: 'listen' }
+      })
+      agent.utteranceStart()
+      agent.voice(true)
+      say(agent, 'sort my list')
+      await settle()
+      say(agent, later)
+      release()
+      await settle()
+      expect(performed.includes('todo:sort')).toBe(runs)
+    }
+  })
+
 
   it('still runs a confident navigation decided from a stale transcript', async () => {
     let release!: () => void

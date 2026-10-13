@@ -35,3 +35,10 @@ export function hasNewWords(current: TranscriptSnapshot, seen: TranscriptSnapsho
   const b = stableWords(seen)
   return a.length > b.length && a.join(' ') !== b.join(' ')
 }
+
+/** True when `current` only adds words after all of `seen`'s, its last partial word included. */
+export function extendsWords(current: TranscriptSnapshot, seen: TranscriptSnapshot): boolean {
+  const a = normalize(fullText(current))
+  const b = normalize(fullText(seen))
+  return a.length >= b.length && b.every((w, i) => a[i] === w)
+}

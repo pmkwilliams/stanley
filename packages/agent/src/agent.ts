@@ -24,7 +24,7 @@ import { markUnsure, unmarked, type HeardWord } from './heard'
 import { describeStep, named, namedOptions, narrate } from './narrate'
 import { navigates, stepOptions, type OptionSet, type Target } from './options'
 import { confirmNote, instructions, longDate, PartialTurn, writeNote, type ActCall, type PageOutput, type SearchOutput, type Thinker, type ThinkResult } from './think'
-import { fullText, hasNewWords, type TranscriptSnapshot } from './transcript'
+import { extendsWords, fullText, hasNewWords, type TranscriptSnapshot } from './transcript'
 import { knownPages, sameUrl, shortUrl, type KnownPage, type WebTools } from './web'
 import type { Screen, StepResult, World } from './world'
 
@@ -620,21 +620,25 @@ export class Agent {
       mode = to
     }
 
+    // New words arrived during the call. A navigation Jev is sure of still runs; so does a button
+    // it is sure of that doesn't commit, when the new words only add to the ones it decided on.
+    const button = mode === 'act' && target.kind === 'element' && target.node.kind === 'action' ? target.node : null
+    const added = () => this.seenUtterance === this.utteranceId && !!this.seen && extendsWords(this.transcript, this.seen)
+    const sureStep = mode === 'act' && step.confidence >= c.staleNavConfidence
     if (stale) {
-      const confidentNav = mode === 'act' && navigates(target) && step.confidence >= c.staleNavConfidence
-      if (mode !== 'listen' && !confidentNav) {
-        this.gate(id, 'stale', `new words arrived during the call; only a navigation at ≥ ${c.staleNavConfidence} survives`)
+      const confidentNav = sureStep && navigates(target)
+      if (mode !== 'listen' && !confidentNav && !(sureStep && button && added())) {
+        this.gate(id, 'stale', `new words arrived during the call; only a navigation or a button at ≥ ${c.staleNavConfidence} survives`)
         this.report(id, d, 'stale', 'stale-discarded')
         return 'stale'
       }
     }
 
-    // What pressing a button does decides when it may run, so it is judged first (once per button).
-    // Not when the decision is too unsure to act either way.
+    // What pressing a button does decides when it may run, so it is judged first (once per kind of
+    // button). Not when the decision is too unsure to act either way.
     const sure = next.confidence >= (this.thoughtDone() ? c.act : Math.min(c.speakingAct, c.speakingChange))
-    const button = mode === 'act' && sure && target.kind === 'element' && target.node.kind === 'action' ? target.node : null
-    const effect = button ? (await this.judge(id, option, button, screen)).effect : null
-    if (button && changed()) {
+    const effect = button && sure ? (await this.judge(id, option, button, screen)).effect : null
+    if (effect && changed() && (effect === 'commits' || !sureStep || !added())) {
       this.gate(id, 'stale', 'new words arrived while judging the button')
       this.report(id, d, 'stale', 'stale-discarded')
       return 'stale'
@@ -653,7 +657,7 @@ export class Agent {
     // need to wait for the voice. Type the user's words at a pause, since a field can be retyped.
     // Commit or hand over only once they finish the thought: thinking only ever gets whole turns.
     const field = target.kind === 'element' && target.node.kind === 'input'
-    const unheard = effect === 'changes' && (this.heardNow() ?? 0) < c.finished.heard
+    const unheard = effect === 'changes' && (heardOf(d) ?? 0) < c.finished.heard
     const waits = mode === 'think' || (mode === 'act' && (field || effect === 'commits' || unheard))
     if (waits && !finished) {
       if (this.voiceOn || this.midWord()) {

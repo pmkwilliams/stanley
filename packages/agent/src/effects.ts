@@ -23,7 +23,7 @@ export interface EffectJudge {
 }
 
 /**
- * Asks Jev what a button does, once per app and label: a button's effect doesn't change, and the
+ * Asks Jev what a button does, once per app and label (its own, not the item's it is on): a button's effect doesn't change, and the
  * conversation doesn't matter to it, so only the screen is sent. Real apps and pages don't label
  * their buttons; an app's `destructive` hint, where one exists, counts as `commits`.
  */
@@ -32,7 +32,8 @@ export function createEffectJudge(jev: DecisionClient, commits = 0.3): EffectJud
   return {
     async judge({ option, node, screen, appId, signal }) {
       if (node.destructive) return { effect: 'commits', probabilities: { commits: 1 }, cached: true }
-      const key = `${appId}\n${option}`
+      // A kind of button does the same on every item: "› Delete" deletes whichever to-do it's on.
+      const key = `${appId}\n${option.split(' › ').at(-1)}`
       const hit = cache.get(key)
       const probabilities =
         hit ??
