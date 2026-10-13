@@ -32,6 +32,16 @@ export interface EmailState {
 
 const seed: Email[] = [
   {
+    id: 'm5',
+    from: 'GitHub',
+    address: 'notifications@github.com',
+    subject: '[pmkwilliams/stanley] Email: sidebar layout, avatars, fixed header and reply box (PR #1)',
+    date: '2026-10-13T13:05',
+    body: "You can view, comment on, or merge this pull request online at:\n\n  https://github.com/pmkwilliams/stanley/pull/1\n\nOverhauls the Email app's layout, from a hand sketch: a sidebar with Inbox / Sent / Archived over a scrolling list, a main pane with a fixed header and reply box, and avatars for every sender.\n\nCommit Summary\n\n  * Email: sidebar layout, avatars, fixed header and reply box\n  * Email: the GitHub email is PR #1\n\nFile Changes (25 files, +430 −210)\n\nPatch Links:\n\n  https://github.com/pmkwilliams/stanley/pull/1.patch\n  https://github.com/pmkwilliams/stanley/pull/1.diff",
+    read: true,
+    archived: false,
+  },
+  {
     id: 'm1',
     from: 'Sam Lee',
     address: 'sam.lee@fastmail.com',
@@ -68,16 +78,6 @@ const seed: Email[] = [
     subject: 'Photos from the weekend',
     date: '2026-10-08T15:12',
     body: "Hi sweetheart, I finally uploaded the photos from Grandpa's birthday. The one of you and the dog is my favourite. Call me when you get a chance!\n\nLove, Mom",
-    read: true,
-    archived: false,
-  },
-  {
-    id: 'm5',
-    from: 'GitHub',
-    address: 'noreply@github.com',
-    subject: '[stanley] PR #42: Add tick scheduler',
-    date: '2026-10-07T22:47',
-    body: 'jordan-k requested your review on pull request #42 "Add tick scheduler". 6 files changed, +312 −48. The PR adds stale-result handling and the confidence gate.',
     read: true,
     archived: false,
   },
