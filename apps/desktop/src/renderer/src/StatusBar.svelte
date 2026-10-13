@@ -7,9 +7,7 @@
 
   let { snapshot, onlock }: { snapshot: Snapshot | null; onlock: () => void } = $props()
 
-  const visible = $derived(snapshot?.layout.visible ?? null)
   const music = $derived(snapshot?.surfaces.music as MusicState | undefined)
-  const background = $derived(!!snapshot && snapshot.focus !== visible && (snapshot.status === 'writing' || snapshot.status === 'acting'))
 </script>
 
 <!--
@@ -30,7 +28,6 @@
         <path d="M6.5 9V6.5a3.5 3.5 0 0 1 7 0V9" fill="none" stroke="currentColor" stroke-width="1.8" /><rect x="4" y="8.5" width="12" height="9" rx="2" fill="currentColor" />
       </svg>
     </button>
-    {#if background}<span class="flex h-10 items-center rounded-xl bg-pill px-5 text-sm text-muted-foreground backdrop-blur-xl">Working in background…</span>{/if}
   </div>
 
   <!-- Now playing: there while Music has a track, whether or not its window is open. -->
