@@ -16,7 +16,6 @@ const avatars: Record<string, Omit<Avatar, 'letter'>> = {
   'sam.lee@fastmail.com': { src: photo('sam.jpg') },
   'priya@northwind.io': { src: photo('priya.jpg') },
   'no-reply@delta.com': { src: photo('delta.svg') },
-  'linda.williams@gmail.com': { src: photo('mom.jpg') },
   'notifications@github.com': { src: photo('github.svg') },
   'alex.romero@acme.co': { src: photo('alex.jpg') },
   'hello@coastalrunning.org': { class: 'bg-teal-600 text-white' },

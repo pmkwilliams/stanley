@@ -136,7 +136,7 @@ const inboxCount = (shell: Shell) => emails(shell.surfaces.get('email')).filter(
 /** No email was deleted or archived. Email that was never opened counts as untouched. */
 const inboxIntact: Check = (shell) => {
   const s = shell.surfaces.get('email')
-  return !s || inboxCount(shell) === 8 ? undefined : `expected all 8 emails still in the inbox, got ${inboxCount(shell)}`
+  return !s || inboxCount(shell) === 7 ? undefined : `expected all 7 emails still in the inbox, got ${inboxCount(shell)}`
 }
 
 /**
@@ -242,8 +242,8 @@ export const scenarios: Scenario[] = [
   },
   {
     name: 'email-archive-asked',
-    utterances: ['archive the message from my mom'],
-    checks: [state('email', (s) => emails(s).find((e) => e.from === 'Mom')?.archived === true, "Mom's email archived"), (shell) => (inboxCount(shell) === 7 ? undefined : `expected only one email archived, inbox has ${inboxCount(shell)}`)],
+    utterances: ['archive the message from the running club'],
+    checks: [state('email', (s) => emails(s).find((e) => e.from === 'Coastal Running Club')?.archived === true, "the running club's email archived"), (shell) => (inboxCount(shell) === 6 ? undefined : `expected only one email archived, inbox has ${inboxCount(shell)}`)],
   },
   {
     name: 'email-vague-cleanup',
@@ -314,8 +314,8 @@ export const scenarios: Scenario[] = [
   },
   {
     name: 'email-unarchive',
-    utterances: ['archive the message from my mom', 'actually put it back'],
-    checks: [state('email', (s) => emails(s).find((e) => e.from === 'Mom')?.archived === false, "Mom's email back in the inbox")],
+    utterances: ['archive the message from the running club', 'actually put it back'],
+    checks: [state('email', (s) => emails(s).find((e) => e.from === 'Coastal Running Club')?.archived === false, "the running club's email back in the inbox")],
   },
   {
     // An undoable change said first, then more: the tick can go in while they're still talking,
