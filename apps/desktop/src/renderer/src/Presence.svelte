@@ -49,7 +49,7 @@
     const observer = new ResizeObserver(resize)
     observer.observe(canvas)
 
-    const envelope = (u: number, p: Style) => Math.exp(-(((u - 0.5) / (p.width * 0.5)) ** 2) * 2.2)
+    const envelope = (u: number, p: Style) => Math.exp(-(((u - 0.5) / (p.width * 0.6)) ** 2) * 2.2)
     const height = (i: number, u: number, p: Style) => {
       const phase = i * 1.9 * (1 - p.coherence)
       const t = drift
@@ -60,6 +60,7 @@
       let a = p.amp * (1 + 0.3 * p.breathe * Math.sin(time * 1.1))
       a += voice * p.voice * 0.09 * (0.65 + 0.35 * Math.sin(u * 13 + time * 9 + i * 1.3))
       a += p.scan * 0.07 * Math.exp(-(((u - scanAt()) / 0.07) ** 2))
+      a += p.roll * 0.025 * rollAt(u)
       a += p.travel * 0.05 * (0.5 + 0.5 * Math.sin((u * 2.5 - time * 0.8) * 6.28)) ** 6
       a *= 1 + p.pulse * 0.9 * talk
       a += wobble * 0.07 * Math.sin(u * 10 - time * 16) * (u < 0.5 ? 1 : 0.35)
@@ -67,6 +68,8 @@
       return envelope(u, p) * a * (0.6 + 0.4 * wave)
     }
     const scanAt = () => 0.5 + 0.36 * Math.sin(time * 1.7)
+    /** The idle roll at `u`: a swell crossing the screen in three seconds, then three seconds' rest offscreen. */
+    const rollAt = (u: number) => Math.exp(-(((u - (time % 6) / 3 + 0.4) / 0.2) ** 2))
 
     /** Color by height up the curtain, as a fraction of its ray length: index `t * LUT_PER_UNIT`. */
     const LUT_PER_UNIT = 48, LUT_SIZE = LUT_PER_UNIT * 2
@@ -137,6 +140,7 @@
         let rays = 0.35 + 0.65 * (0.6 * fine + 0.4 * coarse)
         rays *= 1 + p.shimmer * 1.4 * Math.max(0, Math.sin(u * 91 + time * 6 + 4 * Math.sin(u * 13 - time))) ** 10
         rays += p.scan * 0.8 * Math.exp(-(((u - scanAt()) / 0.05) ** 2))
+        rays *= 1 + p.roll * 0.9 * rollAt(u)
         const bright = drawn * env * rays * (1 + voice * p.voice * 0.35)
         // A curtain, not a mountain: the envelope fades it sideways more than it shortens it.
         const length = Math.max(cell * 2, (height(0, u, p) / env) * scale * 4.2 * (1 - dock * 0.45) * (0.45 + 0.55 * env) * (0.55 + 0.6 * folds + 0.25 * coarse))
