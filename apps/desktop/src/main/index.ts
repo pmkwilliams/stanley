@@ -469,8 +469,8 @@ async function loadTts() {
   }
 }
 
-/** The renderer's `--bg` per theme, shown before it paints. */
-const WINDOW_BG = { light: '#f2f2f4', dark: '#0a0a0b' }
+/** The renderer's `--background` per theme, shown before it paints. */
+const WINDOW_BG = { light: '#ffffff', dark: '#0c0a09' }
 
 /**
  * Matches the window and web pages (through prefers-color-scheme) to the theme, and the window

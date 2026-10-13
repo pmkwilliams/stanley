@@ -39,6 +39,8 @@ export interface Scene {
   dock: number
   /** 0: dark theme, the aurora is light in the dark. 1: light theme, it tints the glass like ink. */
   light: number
+  /** The theme's --background as sRGB 0–1, which the glass sits on. */
+  background: [number, number, number]
   style: Style
   /** RGB of the aurora's colors, up the curtain: the bottom fringe, the middle and the crown. */
   colors: Uint8ClampedArray
@@ -96,13 +98,11 @@ const PANE = `#version 300 es
 precision highp float;
 uniform sampler2D uScene;
 uniform vec2 uRes, uSpan;
-uniform float uDpr, uTime, uLight;
+uniform float uDpr, uTime;
+uniform vec3 uBg;
 out vec4 o;
 
 const float ANGLE = ${f((GLASS.angle * Math.PI) / 180)};
-// The window background per theme: the theme's --background.
-const vec3 DARK = vec3(${f(10 / 255)}, ${f(10 / 255)}, ${f(11 / 255)});
-const vec3 LIGHT = vec3(${f(242 / 255)}, ${f(242 / 255)}, ${f(244 / 255)});
 
 float hash11(float n) { return fract(sin(n * 127.1 + 3.7) * 43758.5453); }
 // Per pixel, a float hash makes a pattern on the pixel grid; an integer one (pcg2d) is noise.
@@ -151,7 +151,7 @@ void main() {
   col += ${f(GLASS.highlight)} * exp(-(0.5 - s) * W / (1.2 * uDpr)) * col * 1.6;
 
   // The scene is premultiplied light over the window background; grain moves at film rate.
-  vec3 c = mix(DARK, LIGHT, uLight) * (1.0 - a) + col;
+  vec3 c = uBg * (1.0 - a) + col;
   float lum = dot(col, vec3(0.3, 0.59, 0.11));
   uvec2 at = uvec2(gl_FragCoord.xy);
   c += (noise(at + uint(uTime * 24.0) * uvec2(7919u, 104729u)) - 0.5) * ${f(GLASS.grain)} * (0.12 + sqrt(max(lum, 0.0)));
@@ -227,7 +227,7 @@ export function glass(canvas: HTMLCanvasElement) {
       canvas.height = Math.max(1, Math.round(height * dpr))
     },
 
-    draw({ image, cell, time, dock, light, style: p, colors: rgb }: Scene) {
+    draw({ image, cell, time, dock, light, background: bg, style: p, colors: rgb }: Scene) {
       if (image.width !== bw || image.height !== bh) allocate(image.width, image.height)
       gl.bindTexture(gl.TEXTURE_2D, scene)
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image)
@@ -259,7 +259,7 @@ export function glass(canvas: HTMLCanvasElement) {
       gl.uniform2f(pane.u('uSpan'), bw * cell * dpr, bh * cell * dpr)
       gl.uniform1f(pane.u('uDpr'), dpr)
       gl.uniform1f(pane.u('uTime'), time)
-      gl.uniform1f(pane.u('uLight'), light)
+      gl.uniform3f(pane.u('uBg'), bg[0], bg[1], bg[2])
       draw(null, canvas.width, canvas.height)
     },
 

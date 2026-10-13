@@ -19,7 +19,7 @@
   <div class="flex flex-1 items-center gap-2.5">
     <!-- Icons swap on a vertical track: the torus drops out the bottom as the lock drops in from the top; reversed on leave. -->
     <button
-      class="group relative flex size-10 items-center overflow-hidden rounded-xl bg-pill text-foreground backdrop-blur-xl before:absolute before:inset-0 before:transition-colors hover:before:bg-accent"
+      class="group relative flex size-10 items-center overflow-hidden rounded-xl bg-pill text-foreground backdrop-blur-sm before:absolute before:inset-0 before:transition-colors hover:before:bg-accent"
       aria-label="Lock"
       onclick={onlock}
     >
@@ -40,7 +40,7 @@
   </div>
 
   <div class="flex flex-1 items-center justify-end gap-2.5">
-    <div class="flex h-10 items-center gap-5 rounded-xl bg-pill px-5 text-foreground backdrop-blur-xl">
+    <div class="flex h-10 items-center gap-5 rounded-xl bg-pill px-5 text-foreground backdrop-blur-sm">
       <span class="grid size-5 place-items-center">
         <!-- Hover fills a 32px square, 4 in from the pill's top and bottom, so its radius is the pill's less 4. -->
         <button

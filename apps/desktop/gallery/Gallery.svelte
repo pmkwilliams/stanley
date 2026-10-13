@@ -69,7 +69,7 @@
 <div
   class="relative grid h-screen grid-rows-[var(--bar-height)_minmax(0,1fr)]"
   style="--bar-height: 80px; --window-max-width: calc(100vw - 64px); --window-max-height: calc(100vh - var(--bar-height) - 64px);
-         background: radial-gradient(40% 30% at 30% 100%, rgba(79, 209, 165, 0.35), transparent 70%), radial-gradient(40% 30% at 70% 100%, rgba(138, 124, 240, 0.35), transparent 70%), var(--wallpaper)"
+         background: radial-gradient(40% 30% at 30% 100%, rgba(79, 209, 165, 0.35), transparent 70%), radial-gradient(40% 30% at 70% 100%, rgba(138, 124, 240, 0.35), transparent 70%), var(--background)"
 >
   <div>{#if app}<StatusBar {snapshot} onlock={() => {}} />{/if}</div>
   <main class="grid min-h-0 place-items-center overflow-hidden">

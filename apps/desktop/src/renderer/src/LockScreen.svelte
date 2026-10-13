@@ -22,7 +22,7 @@
 </script>
 
 <!--
-  See-through: the shell's wallpaper and the assistant's aura show behind it.
+  See-through: the shell's background and the assistant's aura show behind it.
   The window has no title bar: the lock screen is what you drag it by.
 -->
 <div class="fixed inset-0 z-10 flex flex-col items-center justify-between pt-[14vh] pb-14 select-none [-webkit-app-region:drag]">

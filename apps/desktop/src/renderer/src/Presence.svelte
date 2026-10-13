@@ -31,6 +31,10 @@
     let talk = 0
     /** The theme, eased so switching fades the glass from one to the other. */
     let light = theme.current === 'light' ? 1 : 0
+    /** The theme's --background, eased the same way. Re-read whenever the token changes (a theme switch, or an edit). */
+    const root = getComputedStyle(document.documentElement)
+    let bgToken = root.getPropertyValue('--background'), bgTarget = rgbOf(bgToken)
+    const background: [number, number, number] = [...bgTarget]
 
     // The aurora is drawn per pixel into a coarse buffer, then softened and seen through glass on the GPU:
     // soft by construction, and cheap.
@@ -95,6 +99,9 @@
       for (const k in target) cur[k as keyof Style] += (target[k as keyof Style] - cur[k as keyof Style]) * ease(3.2)
       dock += ((docked ? 1 : 0) - dock) * ease(3.5)
       light += ((theme.current === 'light' ? 1 : 0) - light) * ease(6)
+      const token = root.getPropertyValue('--background')
+      if (token !== bgToken) bgTarget = rgbOf((bgToken = token))
+      bgTarget.forEach((v, i) => (background[i] += (v - background[i]!) * ease(6)))
       // Without a level (e.g. injected audio), the VAD alone still shows the wave hearing.
       const level = Math.max(mic.level, snapshot.speaking ? 0.35 : 0)
       voice += (level - voice) * ease(14)
@@ -164,7 +171,7 @@
           data[o + 3] = 255 * v * bright
         }
       }
-      pane.draw({ image, cell, time, dock, light, style: p, colors: stops })
+      pane.draw({ image, cell, time, dock, light, background, style: p, colors: stops })
       frame = requestAnimationFrame(draw)
     }
     frame = requestAnimationFrame(draw)
@@ -174,6 +181,15 @@
       pane.dispose()
     }
   })
+
+  /** Any CSS colour (the theme's are oklch) as sRGB 0–1, by painting it. */
+  function rgbOf(color: string): [number, number, number] {
+    const ctx = new OffscreenCanvas(1, 1).getContext('2d', { willReadFrequently: true })!
+    ctx.fillStyle = color
+    ctx.fillRect(0, 0, 1, 1)
+    const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data
+    return [r! / 255, g! / 255, b! / 255]
+  }
 
   const words = $derived([...snapshot.transcript.finalized, snapshot.transcript.partial].join(' ').trim())
   const captioned = $derived(!!words && (snapshot.utteranceOpen || shown === 'guessing' || shown === 'thinking'))

@@ -63,7 +63,7 @@
   Locked, only the aura stays: the bar and windows fade with the lock screen's own fade.
 -->
 <div
-  class={['grid h-screen grid-cols-1 grid-rows-[var(--bar-height)_minmax(0,1fr)] [background:var(--wallpaper)] [&>header]:transition-opacity [&>header]:duration-250', locked && '[&>header]:opacity-0']}
+  class={['grid h-screen grid-cols-1 grid-rows-[var(--bar-height)_minmax(0,1fr)] bg-background [&>header]:transition-opacity [&>header]:duration-250', locked && '[&>header]:opacity-0']}
   style="--bar-height: 80px; --window-max-width: calc(100vw - 64px); --window-max-height: calc(100vh - var(--bar-height) - 64px)"
   inert={locked}
 >
