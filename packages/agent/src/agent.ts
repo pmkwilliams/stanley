@@ -629,19 +629,33 @@ export class Agent {
       }
     }
 
+    // What pressing a button does decides when it may run, so it is judged first (once per button).
+    // Not when the decision is too unsure to act either way.
+    const sure = next.confidence >= (this.thoughtDone() ? c.act : Math.min(c.speakingAct, c.speakingChange))
+    const button = mode === 'act' && sure && target.kind === 'element' && target.node.kind === 'action' ? target.node : null
+    const effect = button ? (await this.judge(id, option, button, screen)).effect : null
+    if (button && changed()) {
+      this.gate(id, 'stale', 'new words arrived while judging the button')
+      this.report(id, d, 'stale', 'stale-discarded')
+      return 'stale'
+    }
+
     // Unsure while the user is still talking: listen for more. Unsure after they finish: think.
     const finished = this.thoughtDone()
     const unsure: Next = finished ? 'think' : 'listen'
     if (mode === 'act') {
-      const [name, min] = finished ? ['act', c.act] : ['speakingAct', c.speakingAct]
+      const [name, min] = finished ? ['act', c.act] : effect === 'changes' ? ['speakingChange', c.speakingChange] : ['speakingAct', c.speakingAct]
       if (next.confidence < min) gate('act-confidence', `P(act) ${next.confidence.toFixed(2)} < ${name} ${min} → ${unsure}`, unsure)
       else if (step.confidence < c.stepConfidence) gate('step-confidence', `step "${option}" at ${step.confidence.toFixed(2)} < stepConfidence ${c.stepConfidence} → ${unsure}`, unsure)
     }
-    // Navigate while the user speaks. Type the user's words at a pause, since a field can be
-    // retyped. Change things or hand over only once they finish the thought: "add a task
-    // called…" must not add before the title is said, and thinking only ever gets whole turns.
+    // Anything that only looks runs while the user speaks. So does a change that can be changed
+    // back, as soon as Jev is sure and has heard what it needs ("add one called…" hasn't): no
+    // need to wait for the voice. Type the user's words at a pause, since a field can be retyped.
+    // Commit or hand over only once they finish the thought: thinking only ever gets whole turns.
     const field = target.kind === 'element' && target.node.kind === 'input'
-    if (((mode === 'act' && !navigates(target)) || mode === 'think') && !finished) {
+    const unheard = effect === 'changes' && (this.heardNow() ?? 0) < c.finished.heard
+    const waits = mode === 'think' || (mode === 'act' && (field || effect === 'commits' || unheard))
+    if (waits && !finished) {
       if (this.voiceOn || this.midWord()) {
         gate('mid-speech', mode === 'think' ? 'thinking waits until the user pauses' : `"${option}" is held until the user pauses`, 'listen')
       } else if (!(mode === 'act' && field)) {
@@ -671,8 +685,9 @@ export class Agent {
     }
 
     // A button pressed before the user finished was a guess. Before closing the task, thinking
-    // checks the guesses against everything they said, and undoes any they took back.
-    if (mode === 'done' && this.utteranceEnded && this.guessedEarly()) {
+    // checks the guesses against everything they said, and undoes any they took back, unless Jev
+    // is sure it's done (which includes that nothing Stanley did goes against what they want).
+    if (mode === 'done' && this.utteranceEnded && next.confidence < c.earlyGuessDone && this.guessedEarly()) {
       this.report(id, d, 'think', 'gated')
       this.gate(id, 'early-guess', 'a button was pressed before the user finished; thinking checks it against what they said')
       return this.think(id, 'a button was pressed before the user finished: check it against what they said')
@@ -734,22 +749,14 @@ export class Agent {
     }
 
     // Consent is a judgement about the conversation, so a button that commits goes to thinking.
-    if (target.kind === 'element' && target.node.kind === 'action') {
-      const verdict = await this.judge(id, option, target.node, screen)
-      if (changed()) {
-        this.gate(id, 'stale', 'new words arrived while judging the button')
-        this.report(id, d, 'stale', 'stale-discarded')
-        return 'stale'
+    if (effect === 'commits') {
+      // Sending, deleting or paying can't be taken back, so it waits for the whole turn.
+      if (!this.utteranceEnded) {
+        this.report(id, d, option, 'gated')
+        return this.hold(id, 'turn', 'turn-open', `"${option}" commits, so it waits until the user's turn ends`, () => this.handle(id, d, options, screen, this.utteranceEnded, false, changed))
       }
-      if (verdict.effect === 'commits') {
-        // Sending, deleting or paying can't be taken back, so it waits for the whole turn.
-        if (!this.utteranceEnded) {
-          this.report(id, d, option, 'gated')
-          return this.hold(id, 'turn', 'turn-open', `"${option}" commits, so it waits until the user's turn ends`, () => this.handle(id, d, options, screen, this.utteranceEnded, false, changed))
-        }
-        this.report(id, d, option, 'executed')
-        return this.confirm(id, option, target, decision)
-      }
+      this.report(id, d, option, 'executed')
+      return this.confirm(id, option, target, decision)
     }
 
     this.report(id, d, option, 'executed')
@@ -789,9 +796,11 @@ export class Agent {
       const input = call.input as unknown as ActCall
       return this.applyWrite(id, option, target, decision, { source: input.wrote ?? 'user', text: input.text ?? '', say: result.text }, reply, call.toolCallId)
     }
-    // Another option or a lookup: that needs a whole turn.
+    // Several steps (tick this, then type that) run as they are; a lookup needs a whole turn.
     if (result.calls.length) {
       for (const c of result.calls) this.history.dropCall(c.toolCallId)
+      const ran = await this.runCalls(id, result, reply)
+      if (ran) return ran
       return this.think(id, `asked to type into [${option}], thinking chose ${result.calls.map((c) => `${c.tool} ${JSON.stringify(c.input)}`).join(', ')}`)
     }
     // Text without a call asks; neither means nothing to type yet.
@@ -884,6 +893,8 @@ export class Agent {
       return option
     }
     for (const c of result.calls) this.history.dropCall(c.toolCallId)
+    const ran = result.calls.length ? await this.runCalls(id, result, reply) : null
+    if (ran) return ran
     if (!result.calls.length && result.text) {
       this.finish(reply, result.text)
       await this.finishTask('done')
@@ -891,6 +902,47 @@ export class Agent {
     }
     // Another option, a lookup, or no answer at all: that needs a whole turn.
     return this.think(id, `asked whether to press [${option}], thinking ${result.calls.length ? `chose ${result.calls.map((c) => `${c.tool} ${JSON.stringify(c.input)}`).join(', ')}` : 'neither pressed nor asked'}`)
+  }
+
+  /**
+   * A single step that thinking answered with several (tick this, then type that): they run in
+   * order, as thinking's own, instead of a whole turn deciding them again. Only `act` calls on
+   * options still on screen, typing only the user's own words, and nothing that commits before the
+   * user's turn is over or with words they may not have said. Where one can't run, what ran stays
+   * and the rest is left: to a whole turn when nothing ran, else to Jev, which carries on.
+   * Returns what took effect, or null when nothing ran. The calls must already be dropped.
+   */
+  private async runCalls(id: number, result: ThinkResult, reply: Reply): Promise<string | null> {
+    if (!result.calls.every((c) => c.tool === 'act')) return null
+    let last: string | null = null
+    for (const call of result.calls) {
+      const input = call.input as unknown as ActCall
+      const options = this.options(await this.world.screen(), this.config.thinkingElements)
+      const option = resolveOption(options, String(input.option))
+      const target = option && options.targets.get(option)
+      if (!option || !target || target.kind === 'lock' || target.kind === 'folder' || target.kind === 'file') break
+      const field = target.kind === 'element' && target.node.kind === 'input'
+      if (field && (input.wrote !== 'user' || !input.text?.trim())) break
+      if (target.kind === 'element' && target.node.kind === 'action') {
+        const { effect } = await this.judge(id, option, target.node, await this.world.screen())
+        if (effect === 'commits' && (!this.utteranceEnded || this.unsureDictation())) break
+      }
+      const args: ActionArgs = field ? { text: unmarked(input.text!).replace(/\s+/g, ' ').trim() } : {}
+      this.events.status?.(field ? 'writing' : 'acting')
+      const done = await this.attempt(id, option, target, args, 'thinking', { apply: call.toolCallId }, undefined, field ? 'user' : undefined)
+      if (!done) break
+      last = option
+    }
+    if (!last) return null
+    this.events.debug?.({ type: 'gate', tickId: id, rule: 'ran-calls', detail: `ran thinking's steps up to "${last}" without a whole turn` })
+    const say = result.text.trim()
+    this.finish(reply, say)
+    if (say) {
+      await this.finishTask('done')
+      return last
+    }
+    this.request('action')
+    return last
   }
 
   /** New words made what thinking was doing out of date: it says nothing, and Jev decides again with them. */

@@ -1,12 +1,16 @@
 export interface AgentConfig {
   /** While the user is speaking, `act` needs at least this confidence; below it Stanley listens. */
   speakingAct: number
+  /** While the user is speaking, a press that changes something undoable needs at least this P(act). */
+  speakingChange: number
   /** After they finish, `act` needs at least this confidence; below it thinking takes the turn. */
   act: number
   /** After the user finishes, `done` needs at least this confidence; below it thinking checks what's left. */
   done: number
   /** The chosen step needs at least this confidence; below it Stanley listens (mid-speech) or thinks. */
   stepConfidence: number
+  /** After a press made before the user finished, `done` at or above this closes the task without thinking checking it. */
+  earlyGuessDone: number
   /** `think` with a field step at least this sure is handled as writing that field (one call, not a tool loop). */
   writeStep: number
   /** P(commits) at or above this makes a button go to thinking: unsure counts as committing. */
@@ -43,8 +47,10 @@ export interface AgentConfig {
 
 export const defaultConfig: AgentConfig = {
   speakingAct: 0.6,
+  speakingChange: 0.6,
   act: 0.4,
   done: 0.5,
+  earlyGuessDone: 0.8,
   stepConfidence: 0.4,
   writeStep: 0.9,
   commits: 0.3,

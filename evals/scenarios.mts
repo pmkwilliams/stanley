@@ -321,7 +321,7 @@ export const scenarios: Scenario[] = [
     // An undoable change said first, then more: the tick can go in while they're still talking,
     // and the rest still gets done.
     name: 'todo-done-then-add',
-    utterances: ["okay I finished the dentist one | and we're out of bananas so add those"],
+    utterances: ['show me my to-dos', "okay I finished the dentist one | and we're out of bananas so add those"],
     checks: [todoDone(/dentist/i, true), todoDone(/passport/i, false), newTodos(1), state('todo', (s) => todos(s).some((t) => /banana/i.test(t.title)), 'a bananas to-do')],
   },
   {

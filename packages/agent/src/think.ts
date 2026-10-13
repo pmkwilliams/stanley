@@ -247,10 +247,10 @@ export function unrunCalls(messages: ModelMessage[]): UnrunCall[] {
 let scripted = 0
 
 /** A turn that says `text` and makes `call` without running it: for stand-ins and tests. */
-export function scriptedTurn(text: string, call?: ActCall): ThinkResult {
-  const toolCallId = `scripted_${++scripted}`
-  const content = [...(text ? [{ type: 'text' as const, text }] : []), ...(call ? [{ type: 'tool-call' as const, toolCallId, toolName: 'act', input: call }] : [])]
-  return { text, messages: content.length ? [{ role: 'assistant', content }] : [], sent: 0, calls: call ? [{ tool: 'act', input: { ...call }, toolCallId }] : [] }
+export function scriptedTurn(text: string, ...calls: ActCall[]): ThinkResult {
+  const unrun = calls.map((call) => ({ tool: 'act', input: { ...call }, toolCallId: `scripted_${++scripted}` }))
+  const content = [...(text ? [{ type: 'text' as const, text }] : []), ...unrun.map((c) => ({ type: 'tool-call' as const, toolCallId: c.toolCallId, toolName: 'act', input: c.input }))]
+  return { text, messages: content.length ? [{ role: 'assistant', content }] : [], sent: 0, calls: unrun }
 }
 
 /** Claude through Vercel AI Gateway, driving the same options as Jev. */

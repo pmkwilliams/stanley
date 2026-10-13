@@ -3,6 +3,7 @@ import type { AgentNode } from '@stanley/app-sdk'
 import type { ChoiceRequest, ChoiceResult, DecideRequest, DecisionClient, MultiChoiceResult } from '@stanley/jev'
 import { Agent, type AgentDeps, type AgentStatus, type TickReport } from '../src/agent'
 import { defaultConfig } from '../src/config'
+import { validate } from '../src/conversation'
 import type { AgentDebugEvent } from '../src/debug'
 import type { Effect } from '../src/effects'
 import type { FileTools } from '../src/files'
@@ -204,16 +205,57 @@ describe('Agent loop', () => {
     expect(performed).toEqual(['open todo', 'todo:item', 'show'])
   })
 
-  it('navigates mid-word but holds a button press until the user pauses', async () => {
-    const { agent, performed, debug } = setup((_, i) => (i === 0 ? { next: 'act', step: 'open To-do' } : { next: 'act', step: 'Sort' }))
+  it('navigates and makes an undoable change mid-word once Jev is sure it heard enough', async () => {
+    const { agent, performed, debug } = setup((_, i) => (i === 0 ? { next: 'act', step: 'open To-do' } : i === 1 ? { next: 'act', step: 'Sort' } : { next: 'done' }))
     agent.utteranceStart()
+    agent.voice(true)
     say(agent, 'open my to do and sort')
     await settle()
-    expect(performed).toEqual(['open todo'])
+    expect(performed.slice(0, 2)).toEqual(['open todo', 'todo:sort'])
+    expect(debug.some((e) => e.type === 'gate' && e.rule === 'mid-speech')).toBe(false)
+  })
+
+  it('holds an undoable change mid-word while Jev hears more coming, and decides again with the words', async () => {
+    const { agent, performed, debug } = setup((req) => (req.state.includes('by date') ? { next: 'act', step: 'Sort' } : { next: 'act', step: 'Sort', heard: 0.2 }))
+    agent.utteranceStart()
+    agent.voice(true)
+    say(agent, 'sort my list by')
+    await settle()
+    expect(performed).toEqual([])
     expect(debug.some((e) => e.type === 'gate' && e.rule === 'mid-speech')).toBe(true)
-    spoke(agent, 'open my to do and sort')
+    say(agent, 'sort my list by date')
     await settle()
     expect(performed).toContain('todo:sort')
+  })
+
+  it('closes a task with an early press when Jev is sure it is done, and has thinking check it when not', async () => {
+    for (const [doneP, runs] of [[0.9, 0], [0.6, 1]] as const) {
+      let ended = false
+      const { agent, thinker, performed } = setup((_, i) => (i === 0 ? { next: 'act', step: 'Sort' } : ended ? { next: 'done', nextConfidence: doneP } : { next: 'listen' }))
+      agent.utteranceStart()
+      agent.voice(true)
+      say(agent, 'sort my list')
+      await settle()
+      say(agent, 'sort my list and that is all')
+      await settle()
+      agent.voice(false)
+      agent.segment('sort my list and that is all')
+      ended = true
+      agent.utteranceEnd()
+      await settle()
+      expect(performed).toContain('todo:sort')
+      expect(thinker.runs).toHaveLength(runs)
+    }
+  })
+
+  it('holds a press that commits while the user is speaking', async () => {
+    const { agent, performed, debug } = setup(() => ({ next: 'act', step: 'Delete' }), { effect: 'commits' })
+    agent.utteranceStart()
+    agent.voice(true)
+    say(agent, 'delete it')
+    await settle()
+    expect(performed).toEqual([])
+    expect(debug.some((e) => e.type === 'gate' && e.rule === 'mid-speech')).toBe(true)
   })
 
   it('does not call again after listen until new words arrive', async () => {
@@ -738,18 +780,18 @@ describe('Agent turn-taking', () => {
     expect(performed.slice(0, 3)).toEqual(['todo:title=Buy', 'todo:title=Buy oat milk', 'todo:add'])
   })
 
-  it('runs a held change without asking again once the voice says the thought is finished', async () => {
-    const { agent, performed, jev, debug } = setup(plan({ next: 'act', step: 'Sort' }, { next: 'done' }))
+  it('runs held thinking without asking again once the voice says the thought is finished', async () => {
+    const { agent, jev, debug, thinker } = setup(plan({ next: 'think' }))
     agent.utteranceStart()
-    spoke(agent, 'sort my list', 0.1)
+    spoke(agent, 'what should I do today', 0.1)
     await settle()
-    expect(performed).toEqual([])
+    expect(thinker.runs).toHaveLength(0)
     expect(debug.some((e) => e.type === 'gate' && e.rule === 'thought-open')).toBe(true)
     const calls = jev.calls
     agent.pause({ complete: 0.9 })
     await settle()
-    expect(performed).toContain('todo:sort')
-    expect(jev.calls).toBe(calls + 1) // only the decision after the step
+    expect(thinker.runs).toHaveLength(1)
+    expect(jev.calls).toBe(calls)
   })
 
   it('decides again when the turn ends on a change held while the words sounded unfinished', async () => {
@@ -1217,7 +1259,7 @@ describe('Agent history', () => {
     expect(observation(thinker.runs[1]!)).toContain('<note>It is now Tuesday, 13 October 2026.</note>')
   })
 
-  it('types into a field as the answer to the single step, and hands a different choice to a whole turn', async () => {
+  it('types into a field as the answer to the single step, and runs a different choice as thinking\'s own step', async () => {
     let choice = 'Add a task'
     const { agent, thinker, performed } = setup(plan({ next: 'act', step: 'Add a task' }, { next: 'done' }, { next: 'act', step: 'Add a task' }), {
       thinker: { single: async () => scriptedTurn('', { option: choice, text: 'Eggs', wrote: 'user' }) },
@@ -1237,9 +1279,38 @@ describe('Agent history', () => {
     agent.segment('add milk')
     agent.utteranceEnd()
     await settle()
+    expect(thinker.runs).toHaveLength(0)
+    expect(performed).toContain('todo:sort')
+    expect(validate(agent.history.messages())).toBeUndefined()
+  })
+
+  it('runs several steps thinking gave for one, without a whole turn, and stops before a commit mid-turn', async () => {
+    const { agent, thinker, performed, debug } = setup(plan({ next: 'act', step: 'Add a task' }, { next: 'done' }), {
+      effect: 'commits',
+      thinker: { single: async () => scriptedTurn('', { option: 'Buy milk' }, { option: 'Add a task', text: 'Eggs', wrote: 'user' }, { option: 'Delete' }) },
+    })
+    agent.utteranceStart()
+    spoke(agent, 'open milk and add eggs then delete')
+    await settle()
+    expect(performed.slice(0, 2)).toEqual(['todo:item', 'todo:title=Eggs'])
+    expect(performed).not.toContain('todo:delete')
+    expect(thinker.runs).toHaveLength(0)
+    expect(debug.some((e) => e.type === 'gate' && e.rule === 'ran-calls')).toBe(true)
+    expect(validate(agent.history.messages())).toBeUndefined()
+  })
+
+  it('hands steps to a whole turn when the first one is not on screen', async () => {
+    const { agent, thinker, performed } = setup(plan({ next: 'act', step: 'Add a task' }, { next: 'done' }), {
+      thinker: { single: async () => scriptedTurn('', { option: 'Nowhere' }, { option: 'Sort' }) },
+    })
+    agent.utteranceStart()
+    agent.segment('add something')
+    agent.utteranceEnd()
+    await settle()
     expect(thinker.runs).toHaveLength(1)
     expect(performed).not.toContain('todo:sort')
   })
+
 
   it('keeps the steps of a turn cut short, so the history stays valid', async () => {
     let release!: () => void
