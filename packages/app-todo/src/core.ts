@@ -23,11 +23,9 @@ export function sections(todos: Todo[]): { open: Todo[]; done: Todo[] } {
   return { open: todos.filter((t) => !t.done), done: todos.filter((t) => t.done) }
 }
 
-/** The bar's count: "3 remaining", "All done", or nothing when the list is empty. */
-export function remaining(todos: Todo[]): string {
-  if (!todos.length) return ''
-  const n = todos.filter((t) => !t.done).length
-  return n ? `${n} remaining` : 'All done'
+/** The bar's count: how many to-dos are still open. */
+export function remaining(todos: Todo[]): number {
+  return todos.filter((t) => !t.done).length
 }
 
 const seed: Todo[] = [
@@ -47,7 +45,7 @@ export const todoApp = defineApp<TodoState>({
   current: (s) => s.route,
 
   nodes(s) {
-    // As on screen: the "New to-do" box (Enter adds), the open to-dos, then a "Completed" section.
+    // As on screen: the open to-dos, the "New to-do" box (Enter adds), then a "Completed" section.
     const field: AgentNode = {
       id: 'title',
       kind: 'input',
@@ -68,7 +66,7 @@ export const todoApp = defineApp<TodoState>({
     })
     const { open, done } = sections(s.todos)
     const completed: AgentNode[] = done.length ? [{ id: 'completed', kind: 'group', label: 'Completed', children: done.map(row) }] : []
-    return [field, ...open.map(row), ...completed]
+    return [...open.map(row), field, ...completed]
   },
 
   async perform(s, nodeId, args) {
@@ -109,9 +107,9 @@ export const todoApp = defineApp<TodoState>({
     const item = (t: Todo) => `- [${t.done ? 'x' : ' '}] ${t.title}`
     const count = remaining(s.todos)
     const parts = [
-      `# To-do${count ? `\n${count}` : ''}`,
-      `[${FIELD}: ${s.newTitle || 'empty'}]`,
+      `# To-do${count ? ` (${count})` : ''}`,
       s.todos.length ? open.map(item).join('\n') : 'No to-dos',
+      `[${FIELD}: ${s.newTitle || 'empty'}]`,
       done.length ? `## Completed\n${done.map(item).join('\n')}` : '',
       selected ? `Selected: ${selected.title}` : '',
     ]

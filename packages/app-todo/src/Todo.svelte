@@ -2,6 +2,7 @@
   import { DEFAULT_AGENT_NAME, type AppUiProps } from '@stanley/app-sdk'
   import Icon from '@stanley/app-ui/Icon.svelte'
   import * as App from '@stanley/app-ui/components/app'
+  import { Badge } from '@stanley/app-ui/components/badge'
   import { Button } from '@stanley/app-ui/components/button'
   import { Checkbox } from '@stanley/app-ui/components/checkbox'
   import * as Empty from '@stanley/app-ui/components/empty'
@@ -62,16 +63,17 @@
   </li>
 {/snippet}
 
-<App.Root>
+<App.Root class="w-130">
   <App.Bar>
     <App.Title>To-do</App.Title>
-    {#if count}<span class="text-sm font-medium text-muted-foreground tabular-nums">{count}</span>{/if}
+    {#if count}<Badge class="h-6 min-w-6 px-2 text-sm tabular-nums">{count}</Badge>{/if}
   </App.Bar>
 
   <App.Body bind:ref={body}>
     <App.Group>
+      {#each lists.open as todo (todo.id)}{@render row(todo)}{/each}
       <li>
-        <!-- The add row: a field that sits in the list as its first row, like Reminders' "New Reminder". -->
+        <!-- The add row: a field that sits in the list as its last row, like Reminders' "New Reminder". -->
         <form class="flex min-h-11 items-center gap-3 rounded-lg px-3 py-2 focus-within:bg-accent" onsubmit={add}>
           <label class="flex w-5 cursor-text justify-center text-primary" for="todo-new"><Icon name="plus" size={18} weight={2.25} /></label>
           <input
@@ -86,7 +88,6 @@
           />
         </form>
       </li>
-      {#each lists.open as todo (todo.id)}{@render row(todo)}{/each}
     </App.Group>
 
     {#if lists.done.length}
