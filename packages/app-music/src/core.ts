@@ -23,8 +23,6 @@ export interface MusicState {
   /** The current track, always one of `tracks`. */
   currentId: string
   playing: boolean
-  /** 0–1 */
-  volume: number
 }
 
 /** A Creative Commons track on Jamendo. Its stream and cover need no API key. */
@@ -67,11 +65,7 @@ export const nowPlaying = (s: Pick<MusicState, 'tracks' | 'currentId'>): Track |
 /** `200` → `3:20`, as shown on screen. */
 export const time = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`
 
-const STEP = 0.1
-
-const pct = (v: number) => `${Math.round(v * 100)}%`
 const name = (t: Track) => `"${t.title}" by ${t.artist}`
-const clamp = (v: number) => Math.round(Math.min(1, Math.max(0, v)) * 10) / 10
 
 function listMarkdown(s: MusicState): string {
   const rows = s.tracks.map((t) => `- ${t.id === s.currentId ? '▶ ' : ''}${t.title} — ${t.artist} (${time(t.durationSec)})`).join('\n')
@@ -81,17 +75,17 @@ function listMarkdown(s: MusicState): string {
 export const musicApp = defineApp<MusicState>({
   id: 'music',
   title: 'Music',
-  description: 'Music player: play, pause, skip tracks, change volume and pick a song from the playlist',
+  description: 'Music player: play, pause, skip tracks and pick a song from the playlist',
 
   init() {
     const tracks = structuredClone(playlist)
-    return { tracks, currentId: tracks[0]!.id, playing: false, volume: 0.6 }
+    return { tracks, currentId: tracks[0]!.id, playing: false }
   },
 
   current: () => 'player',
 
   nodes(s) {
-    // As on screen: the transport and volume buttons (named by their aria-labels), then the playlist.
+    // As on screen: the transport buttons (named by their aria-labels), then the playlist.
     const tracks: AgentNode[] = s.tracks.map((t) => ({
       id: `track/${t.id}`,
       kind: 'action',
@@ -102,8 +96,6 @@ export const musicApp = defineApp<MusicState>({
       { id: 'previous', kind: 'action', label: 'Previous' },
       { id: 'toggle', kind: 'action', label: s.playing ? 'Pause' : 'Play' },
       { id: 'next', kind: 'action', label: 'Next' },
-      { id: 'volume-down', kind: 'action', label: 'Volume down', description: pct(s.volume) },
-      { id: 'volume-up', kind: 'action', label: 'Volume up', description: pct(s.volume) },
       { id: 'songs', kind: 'group', label: LIST_TITLE, children: tracks },
     ]
   },
@@ -123,10 +115,6 @@ export const musicApp = defineApp<MusicState>({
       const by = nodeId === 'next' ? 1 : -1
       return play(s.tracks[i < 0 ? 0 : (i + by + s.tracks.length) % s.tracks.length]!)
     }
-    if (nodeId === 'volume-up' || nodeId === 'volume-down') {
-      const volume = clamp(s.volume + (nodeId === 'volume-up' ? STEP : -STEP))
-      return { state: { ...s, volume }, summary: `Volume ${pct(volume)}` }
-    }
 
     const [, id] = nodeId.split('/')
     const track = s.tracks.find((t) => t.id === id)
@@ -136,7 +124,7 @@ export const musicApp = defineApp<MusicState>({
 
   toMarkdown(s) {
     const now = nowPlaying(s)
-    const head = `# Music\n${now ? `${s.playing ? 'Playing' : 'Paused'}: ${name(now)}` : 'Not playing'} · volume ${pct(s.volume)}`
+    const head = `# Music\n${now ? `${s.playing ? 'Playing' : 'Paused'}: ${name(now)}` : 'Not playing'}`
     return `${head}\n\n${listMarkdown(s)}`
   },
 })

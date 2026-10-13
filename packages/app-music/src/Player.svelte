@@ -22,7 +22,7 @@
   })
 
   $effect(() => {
-    if (audio) audio.volume = data.volume * volume
+    if (audio) audio.volume = volume
   })
 </script>
 
