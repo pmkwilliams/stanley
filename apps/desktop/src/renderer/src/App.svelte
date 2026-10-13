@@ -67,7 +67,7 @@
 -->
 <div
   class={['grid h-screen grid-cols-1 grid-rows-[var(--bar-height)_minmax(0,1fr)] bg-background [&>header]:transition-opacity [&>header]:duration-250', locked && '[&>header]:opacity-0']}
-  style="--bar-height: 80px; --caption-height: 80px; --window-max-width: calc(100vw - 64px); --window-max-height: calc(100vh - var(--bar-height) - var(--caption-height) - 64px)"
+  style="--bar-height: 80px; --caption-height: 48px; --window-max-width: calc(100vw - 64px); --window-max-height: calc(100vh - var(--bar-height) - var(--caption-height) - 64px)"
   inert={locked}
 >
   {#if snapshot}<Presence {snapshot} docked={!!visible && !locked} captions={!locked} />{/if}
