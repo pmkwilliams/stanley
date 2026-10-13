@@ -78,6 +78,12 @@ const noHedge: Check = (_, agent) => {
   return hedge ? `expected an answer, not a hedge: "${hedge}"` : undefined
 }
 
+/** Stanley never told the user what's on screen or what opened: they can see it. */
+const noNarration: Check = (_, agent) => {
+  const narrated = spoken(agent).find((t) => /\bon (the |your )?screen\b|\b(app|page|screen) (is|shows|says)\b|\b(is|are) (now )?(open|showing|up)\b|\b(i've |i )?(opened|pulled up|brought up)\b/i.test(t))
+  return narrated ? `expected no narration of the screen: "${narrated}"` : undefined
+}
+
 /** No sentence of an earlier reply comes back in a later one. */
 const noRepeat: Check = (_, agent) => {
   const replies = spoken(agent).map((t) => normalizeWords(t).join(' '))
@@ -147,7 +153,7 @@ export const scenarios: Scenario[] = [
   {
     name: 'weather-denver',
     utterances: ["what's the weather in Denver"],
-    checks: [visible('weather'), state('weather', (s) => /denver/i.test(JSON.stringify(s?.result ?? s)), 'Denver weather loaded'), actions(8)],
+    checks: [visible('weather'), state('weather', (s) => /denver/i.test(JSON.stringify(s?.result ?? s)), 'Denver weather loaded'), actions(8), said(/\d/), noNarration],
   },
   {
     name: 'inbox-walkthrough',
