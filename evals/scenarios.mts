@@ -349,6 +349,18 @@ export const scenarios: Scenario[] = [
     checks: [inboxIntact],
   },
   {
+    // Going somewhere and asking about it: the question still gets answered.
+    name: 'navigate-and-ask',
+    utterances: ['pull up my inbox and who sent the newest one'],
+    checks: [visible('email'), said(/sam/i)],
+  },
+  {
+    // Only going somewhere: nothing to say once it's there.
+    name: 'navigate-quietly',
+    utterances: ['take me to my to-dos'],
+    checks: [visible('todo'), (_, agent) => (spoken(agent).length === 0 ? undefined : `expected nothing said, got "${spoken(agent).join(' ')}"`)],
+  },
+  {
     name: 'question-after-pause',
     utterances: ["what's the weather | in Chicago tomorrow"],
     checks: [state('weather', (s) => /chicago/i.test(JSON.stringify(s?.result ?? '')), 'Chicago weather loaded')],

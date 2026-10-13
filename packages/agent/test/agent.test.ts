@@ -353,7 +353,7 @@ describe('Agent loop', () => {
   })
 
   it('needs more confidence to act while the user is speaking than after they finish', async () => {
-    const { agent, performed, debug, thinker } = setup(() => ({ next: 'act', step: 'open Email', nextConfidence: 0.5 }))
+    const { agent, performed, debug, thinker } = setup(() => ({ next: 'act', step: 'open Email', nextConfidence: 0.5, stepConfidence: 0.6 }))
     agent.utteranceStart()
     say(agent, 'open my email')
     await settle()
@@ -364,6 +364,59 @@ describe('Agent loop', () => {
     await settle()
     expect(performed).toContain('open email')
     expect(thinker.runs).toHaveLength(0)
+  })
+
+  it('goes somewhere it is sure of mid-speech with less certainty that now is the time', async () => {
+    const { agent, performed } = setup((_, i) => (i === 0 ? { next: 'act', step: 'open Email', nextConfidence: 0.45, stepConfidence: 0.8 } : { next: 'listen' }))
+    agent.utteranceStart()
+    agent.voice(true)
+    say(agent, 'go to my email')
+    await settle()
+    expect(performed).toEqual(['open email'])
+  })
+
+  it('closes quietly, without thinking, when it only went somewhere and Jev is unsure it is done', async () => {
+    for (const last of [{ next: 'done', nextConfidence: 0.3 }, { next: 'listen' }] as const) {
+      let ended = false
+      const { agent, performed, thinker, said } = setup((_, i) => (i === 0 ? { next: 'act', step: 'open Email' } : ended ? last : { next: 'listen' }))
+      agent.utteranceStart()
+      agent.segment('go to my email')
+      await settle()
+      ended = true
+      agent.utteranceEnd()
+      await settle()
+      expect(performed).toContain('open email')
+      expect(thinker.runs).toHaveLength(0)
+      expect(said).toEqual([])
+    }
+  })
+
+  it('still has thinking check a place it went to before the user finished', async () => {
+    let ended = false
+    const { agent, thinker } = setup((_, i) => (i === 0 ? { next: 'act', step: 'open Email' } : ended ? { next: 'done', nextConfidence: 0.3 } : { next: 'listen' }))
+    agent.utteranceStart()
+    agent.voice(true)
+    say(agent, 'open the one')
+    await settle()
+    agent.voice(false)
+    agent.segment('open the one from Priya')
+    await settle()
+    ended = true
+    agent.utteranceEnd()
+    await settle()
+    expect(thinker.runs).toHaveLength(1)
+  })
+
+  it('still has thinking check when it changed something and Jev is unsure it is done', async () => {
+    let ended = false
+    const { agent, thinker } = setup((_, i) => (i === 0 ? { next: 'act', step: 'Sort' } : ended ? { next: 'done', nextConfidence: 0.3 } : { next: 'listen' }))
+    agent.utteranceStart()
+    agent.segment('sort it')
+    await settle()
+    ended = true
+    agent.utteranceEnd()
+    await settle()
+    expect(thinker.runs).toHaveLength(1)
   })
 
   it('hands an unsure step to thinking once the user has finished', async () => {

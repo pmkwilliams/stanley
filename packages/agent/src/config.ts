@@ -1,6 +1,11 @@
 export interface AgentConfig {
   /** While the user is speaking, `act` needs at least this confidence; below it Stanley listens. */
   speakingAct: number
+  /**
+   * While the user is speaking, going somewhere (a navigation, or a button that only looks) needs
+   * this P(act), when the step is at least `step` and Jev's P(heard what it needs) at least `heard`.
+   */
+  speakingNav: { act: number; step: number; heard: number }
   /** While the user is speaking, a press that changes something undoable needs at least this P(act). */
   speakingChange: number
   /** After they finish, `act` needs at least this confidence; below it thinking takes the turn. */
@@ -50,6 +55,7 @@ export interface AgentConfig {
 export const defaultConfig: AgentConfig = {
   speakingAct: 0.6,
   speakingChange: 0.6,
+  speakingNav: { act: 0.4, step: 0.7, heard: 0.5 },
   act: 0.4,
   done: 0.5,
   earlyGuessDone: 0.8,

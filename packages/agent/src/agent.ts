@@ -24,7 +24,7 @@ import { markUnsure, unmarked, type HeardWord } from './heard'
 import { describeStep, named, namedOptions, narrate } from './narrate'
 import { navigates, stepOptions, type OptionSet, type Target } from './options'
 import { confirmNote, instructions, longDate, PartialTurn, writeNote, type ActCall, type PageOutput, type SearchOutput, type Thinker, type ThinkResult } from './think'
-import { extendsWords, fullText, hasNewWords, type TranscriptSnapshot } from './transcript'
+import { extendsWords, fullText, hasNewWords, normalize, type TranscriptSnapshot } from './transcript'
 import { knownPages, sameUrl, shortUrl, type KnownPage, type WebTools } from './web'
 import type { Screen, StepResult, World } from './world'
 
@@ -229,6 +229,8 @@ export class Agent {
   /** Jev's latest P(finished saying what's needed), with the words it saw. */
   private heard: { seen: TranscriptSnapshot; p: number } | null = null
   private held: Held | null = null
+  /** When the user's words last grew. */
+  private wordsAt = 0
   /** The latest thing Stanley says, from when thinking starts writing it. */
   private reply: Reply | null = null
   /** Replies handed to the host to say, most recent last, in case the user cuts in on one. */
@@ -357,15 +359,22 @@ export class Agent {
   /** `words` carry speech recognition's confidence; unsure ones are marked `(?)` for the models. */
   partial(text: string, words?: HeardWord[]): void {
     text = markUnsure(text, words, this.config.unsureWord)
+    this.noteWords({ ...this.transcript, partial: text })
     this.transcript = { ...this.transcript, previous: this.transcript.partial, partial: text }
     this.dropStale()
     this.request('words')
+  }
+
+  /** Notes when the user said more words than before (a revision of the same words isn't more). */
+  private noteWords(next: TranscriptSnapshot): void {
+    if (normalize(fullText(next)).length > normalize(fullText(this.transcript)).length) this.wordsAt = Date.now()
   }
 
   /** A VAD segment finalized. Logged as what the user said. */
   segment(text: string, words?: HeardWord[]): void {
     if (!text.trim()) return
     text = markUnsure(text, words, this.config.unsureWord)
+    this.noteWords({ finalized: [...this.transcript.finalized, text], partial: '' })
     this.transcript = { finalized: [...this.transcript.finalized, text], partial: '', previous: '' }
     this.history.heard(this.utteranceId, text)
     this.taskHeard.push(text)
@@ -637,7 +646,7 @@ export class Agent {
 
     // What pressing a button does decides when it may run, so it is judged first (once per kind of
     // button). Not when the decision is too unsure to act either way.
-    const sure = next.confidence >= (this.thoughtDone() ? c.act : Math.min(c.speakingAct, c.speakingChange))
+    const sure = next.confidence >= (this.thoughtDone() ? c.act : Math.min(c.speakingAct, c.speakingChange, c.speakingNav.act))
     const effect = button && sure ? (await this.judge(id, option, button, screen)).effect : null
     if (effect && changed() && (effect === 'commits' || !sureStep || !added())) {
       this.gate(id, 'stale', 'new words arrived while judging the button')
@@ -649,7 +658,9 @@ export class Agent {
     const finished = this.thoughtDone()
     const unsure: Next = finished ? 'think' : 'listen'
     if (mode === 'act') {
-      const [name, min] = finished ? ['act', c.act] : effect === 'changes' ? ['speakingChange', c.speakingChange] : ['speakingAct', c.speakingAct]
+      // Going somewhere Jev is sure of is cheap to get wrong, so it needs less certainty that now is the time.
+      const goes = (navigates(target) || effect === 'looks') && step.confidence >= c.speakingNav.step && (heardOf(d) ?? 0) >= c.speakingNav.heard
+      const [name, min] = finished ? ['act', c.act] : effect === 'changes' ? ['speakingChange', c.speakingChange] : goes ? ['speakingNav', c.speakingNav.act] : ['speakingAct', c.speakingAct]
       if (next.confidence < min) gate('act-confidence', `P(act) ${next.confidence.toFixed(2)} < ${name} ${min} → ${unsure}`, unsure)
       else if (step.confidence < c.stepConfidence) gate('step-confidence', `step "${option}" at ${step.confidence.toFixed(2)} < stepConfidence ${c.stepConfidence} → ${unsure}`, unsure)
     }
@@ -675,6 +686,12 @@ export class Agent {
       // Once the user has finished, listening is a dead end: think instead of going quiet.
       // A listen decided while they were still speaking is re-asked by the deferred `end`.
       if ((decidedEnded || finished) && fullText(this.transcript).trim()) {
+        // Having only gone where they asked, there's nothing to check or say.
+        if (this.onlyNavigated()) {
+          this.gate(id, 'only-navigated', 'the user has finished and Stanley only went somewhere: done, quietly')
+          await this.finishTask('done')
+          return 'done'
+        }
         this.gate(id, 'listen-ended', 'the user has finished, so thinking takes the turn')
         return this.think(id, 'the user finished and Jev only listened')
       }
@@ -683,7 +700,7 @@ export class Agent {
     }
 
     // Unsure whether it's finished once the user has: let thinking check (it may need to answer).
-    if (mode === 'done' && finished && next.confidence < c.done) {
+    if (mode === 'done' && finished && next.confidence < c.done && !this.onlyNavigated()) {
       this.report(id, d, 'think', 'gated')
       this.gate(id, 'done-confidence', `P(done) ${next.confidence.toFixed(2)} < done ${c.done} → think`)
       return this.think(id, `Jev was unsure it was done (P(done) ${next.confidence.toFixed(2)})`)
@@ -1287,6 +1304,20 @@ export class Agent {
   /** The user is mid-sentence: words are still being decoded and no pause has finalized them. */
   private midWord(): boolean {
     return !this.utteranceEnded && this.transcript.partial.trim() !== ''
+  }
+
+  /**
+   * This task only went somewhere: Stanley took steps, every one of them navigating, and looked
+   * nothing up. Then a `done` or `listen` Jev is unsure of has nothing for thinking to check.
+   */
+  private onlyNavigated(): boolean {
+    const entries = this.task().filter((e) => e.meta.results?.length)
+    const results = entries.flatMap((e) => e.meta.results!)
+    const went = (t: StepTarget) => t.kind === 'app' || t.kind === 'back' || t.kind === 'home' || t.kind === 'page' || (t.kind === 'element' && t.nodeKind === 'location')
+    const steps = results.flatMap((r) => (r.step && r.step.by !== 'user' ? [r.step] : []))
+    if (!steps.length || !steps.every((st) => went(st.target)) || !results.every((r) => r.step || (!r.lookup && !r.file))) return false
+    // A place gone to before the user's last words was a guess, which thinking checks.
+    return entries.every((e) => e.meta.at >= this.wordsAt)
   }
 
   /** What this task has done and said so far, from its start. */

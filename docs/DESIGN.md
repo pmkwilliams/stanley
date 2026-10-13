@@ -108,7 +108,7 @@ of certainty:
 
 | Step | Waits for |
 | --- | --- |
-| Open, navigate, scroll, list or read files, press a button that only looks | Nothing: runs mid-word |
+| Open, navigate, scroll, list or read files, press a button that only looks | Nothing: runs mid-word, with a lower bar (`speakingNav`) when Jev is sure of the place and has heard enough |
 | Press a button that changes something undoable (tick, add, move, save) | Jev to be sure (`speakingChange`) and to have heard what it needs (`heard` ≥ 0.6): runs mid-word |
 | Type the user's own words into a field | A pause (a field can be retyped) |
 | Type words Stanley composed, hand over to thinking | The thought to finish |
@@ -142,6 +142,11 @@ the inbox, retype). The conversation splits a turn at any change made before the
 Before closing a task where a button was pressed early, thinking checks those guesses against
 everything the user said, unless Jev's P(done) reaches `earlyGuessDone` (0.8): its `done` already
 means nothing Stanley did goes against what the user now wants.
+
+**Just going somewhere**: when the user has finished and everything Stanley did in the task was
+navigation, made after their last words, a `done` or `listen` Jev is unsure of closes the task
+quietly. Thinking would only say where they are, which they can see. A navigation made before
+their last words was a guess, so thinking still checks it.
 
 **What a button does** (looks, changes or commits) is judged before any of the gates, once per app
 and kind of button ("› Delete" on any to-do), and in the background for each kind on a screen as
@@ -257,6 +262,7 @@ count grew, or a segment finalized.
 | --- | --- |
 | `act` needs at least this P(act) while the user is speaking, else listen | 0.6 |
 | …for a button that changes something undoable (`speakingChange`) | 0.6 |
+| …for going somewhere, when the step ≥ 0.7 and `heard` ≥ 0.5 (`speakingNav`) | 0.4 |
 | …and after they finish, else thinking | 0.4 |
 | `done` after they finish needs at least this, else thinking checks | 0.5 |
 | …and after an early press, at least this, else thinking checks the guesses (`earlyGuessDone`) | 0.8 |
