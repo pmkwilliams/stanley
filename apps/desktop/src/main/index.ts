@@ -1,21 +1,29 @@
-import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { FULLSCREEN } from '@stanley/app-sdk'
 import { readSettings } from '@stanley/app-settings/core'
+import type { WebState } from '@stanley/app-web/core'
 import { parallelWeb } from '@stanley/app-web/parallel'
+import { livePage } from '@stanley/browser'
 import { localFiles } from '@stanley/files'
 import { Agent, BargeIn, createThinker, defaultConfig, findElement, named, screenVocabulary, scriptedTurn, SYSTEM_PROMPT, type AgentStatus, type FileTools, type Overheard, type Thinker } from '@stanley/agent'
 import { createJevClient, createMockJevClient, type DecisionClient } from '@stanley/jev'
 import { SAMPLE_RATE, Transcriber, writeWav, type HeardWord } from '@stanley/stt'
 import { KOKORO, loadKokoro, Speaker } from '@stanley/tts'
-import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, Menu, nativeTheme, session } from 'electron'
+import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, Menu, nativeTheme, protocol, session } from 'electron'
 import type { AppDebugEvent, CaptionWord, ReplayRequest, Snapshot } from '../shared/ipc'
 import { apps } from './apps'
 import { DebugRecorder } from './debug'
+import { Drafts } from './drafts'
+import { filePath, SCHEME, serveFile, serveLib } from './folder-pages'
+import { WebviewPage } from './page'
 import { Shell } from './shell'
 import { fileStore } from './store'
 
 app.setName('Stanley')
+// The user's folder and the page libraries, as the web view loads them (see folder-pages.ts).
+protocol.registerSchemesAsPrivileged([{ scheme: SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true, codeCache: true } }])
 
 const root = join(import.meta.dirname, '../../../..')
 const envFile = join(root, '.env')
@@ -83,10 +91,47 @@ let clipCount = 0
 /** The apps' state and what's on screen. Replaced whole when the user locks, which starts a new session. */
 let shell!: Shell
 
-/** Speech recognition favours the assistant's name, and the names and labels on the screen it is working on. */
-async function refreshHotwords() {
+/** Speech recognition favours the assistant's name, and the names and labels on the screen it is working on, as last read. */
+function refreshHotwords() {
   if (!transcriber) return
-  transcriber.setHotwords([...new Set([agentName(), ...screenVocabulary(await shell.screen(), shell.appList())])])
+  transcriber.setHotwords([...new Set([agentName(), ...screenVocabulary(shell.screenNow(), shell.appList())])])
+}
+
+/** The Web app's page, live in the main window: Stanley reads it and works it like a person in a browser. */
+/** Pages Stanley is writing, drawn in the web view as they come. */
+const drafts = new Drafts()
+const webview = new WebviewPage({
+  navigated: () => pageNavigated(),
+  fileOf: (url) => {
+    const path = folder && filePath(url)
+    return folder && path !== null && path !== undefined ? join(folder.root, path) : null
+  },
+  drafting: (url) => {
+    const path = filePath(url)
+    return path !== null && drafts.has(path)
+  },
+  // Escape leaves full screen, as in a browser, also when the page has the keyboard.
+  escape: () => {
+    if (shell.layout.fullscreen && shell.layout.visible === 'web' && !locked) void shell.performIn('web', FULLSCREEN, {})
+  },
+})
+const page = livePage(webview)
+let navigatedTimer: ReturnType<typeof setTimeout> | undefined
+
+/**
+ * The page changed by itself or by the user's hand (a link, a form, a new title): read it again.
+ * A page the user went to themselves is in the conversation, as their own step.
+ */
+function pageNavigated() {
+  clearTimeout(navigatedTimer)
+  navigatedTimer = setTimeout(async () => {
+    const world = shell
+    const moved = await world.refresh('web').catch(() => false)
+    if (!moved || world !== shell) return
+    const state = world.surfaces.get('web') as WebState
+    const opened = state.pages[Number(state.route.slice(5))]
+    if (opened) agent.recordUserStep({ kind: 'page', url: opened.url, title: opened.title }, { summary: `Opened "${opened.title}"` })
+  }, 100)
 }
 
 /** Offline, thinking types the user's last words and otherwise apologises. */
@@ -106,8 +151,10 @@ const sessionsDir = join(app.getPath('userData'), 'sessions')
  * The user's files: one real folder (`STANLEY_FILES`, else ~/Stanley), outlasting sessions. Every
  * version of it is kept next to the settings, where commands can read it but not change it.
  */
-const files: FileTools | undefined =
-  process.platform === 'darwin' ? localFiles({ root: process.env.STANLEY_FILES || join(homedir(), 'Stanley'), history: join(app.getPath('userData'), 'files-history.git') }) : undefined
+const filesRoot = process.env.STANLEY_FILES || join(homedir(), 'Stanley')
+const files: FileTools | undefined = process.platform === 'darwin' ? localFiles({ root: filesRoot, history: join(app.getPath('userData'), 'files-history.git') }) : undefined
+/** The folder as the web view shows it: its real path, and its name for people. */
+const folder = files && { root: realpathSync(filesRoot), shown: files.root }
 /** Settings, which outlast sessions: locking starts every app over, but not these. */
 const store = fileStore(join(app.getPath('userData'), 'settings.json'), applySettings)
 /** What the user calls the assistant (Settings). */
@@ -153,17 +200,19 @@ function startSession() {
   sessionName = new Date().toISOString().replace(/[:.]/g, '-')
   sessionFile = join(sessionsDir, `${sessionName}.jsonl`)
   debug = new DebugRecorder(sessionsDir, sessionName, (e) => debugWin?.webContents.send('debug:event', e))
-  const ctx = { env: process.env, fetch, store, get agentName() { return agentName() } }
+  webview.reset()
+  const ctx = { env: process.env, fetch, store, page, get agentName() { return agentName() } }
   const world: Shell = new Shell(
     apps,
     ctx,
     () => {
       if (world !== shell) return
       sendSnapshot()
-      void refreshHotwords()
+      refreshHotwords()
     },
     // The agent locks the way the lock button does.
     () => world === shell && lock(),
+    { folder, pages: { draft: (path) => drafts.begin(path), look: () => webview.look() } },
   )
   shell = world
   const self: Agent = new Agent({
@@ -213,7 +262,7 @@ function startSession() {
   appEvent({ type: 'session-start', session: sessionName, config: defaultConfig, systemPrompt: named(SYSTEM_PROMPT, agentName()), instructions: agent.instructions, mock })
   status = 'idle'
   said = null
-  void refreshHotwords()
+  refreshHotwords()
 }
 startSession()
 
@@ -449,7 +498,7 @@ async function loadStt() {
         debug: (event) => debug.record({ source: 'stt', event }),
       },
     )
-    await refreshHotwords()
+    refreshHotwords()
     setStt('ready')
   } catch (err) {
     console.error('STT failed to load', err)
@@ -520,6 +569,18 @@ function createWindow() {
   // The title is the assistant's name (see `applySettings`), not the page's.
   win.on('page-title-updated', (e) => e.preventDefault())
   win.webContents.on('did-finish-load', sendSnapshot)
+  // The Web app's view: a page with no access to Stanley or the computer, driven from here.
+  win.webContents.on('will-attach-webview', (_, prefs) => {
+    delete prefs.preload
+    prefs.nodeIntegration = false
+    prefs.contextIsolation = true
+    prefs.sandbox = true
+    // A page with no background of its own is white (or dark, by its color scheme), as in a browser.
+    prefs.transparent = false
+    // For PDFs.
+    prefs.plugins = true
+  })
+  win.webContents.on('did-attach-webview', (_, wc) => webview.attach(wc))
   win.on('closed', () => {
     win = null
     debugWin?.close()
@@ -637,6 +698,19 @@ ipcMain.handle('debug:replay', (_, req: ReplayRequest) => jev.decide(req))
 ipcMain.on('debug:copy', (_, text: string) => clipboard.writeText(text))
 
 app.whenReady().then(() => {
+  protocol.handle(SCHEME, async (request) => {
+    try {
+      const { host } = new URL(request.url)
+      const path = host === 'files' ? filePath(request.url) : null
+      const draft = path !== null && drafts.serve(path)
+      if (draft) return draft
+      if (host === 'files' && folder) return await serveFile(folder.root, request.url, request.headers)
+      if (host === 'lib') return await serveLib(request.url)
+    } catch (err) {
+      console.error('Serving', request.url, err)
+    }
+    return new Response('Not found', { status: 404 })
+  })
   // Only our own renderer gets the mic. Pages in the Web app's <webview> share this session and get nothing.
   session.defaultSession.setPermissionRequestHandler((contents, permission, cb, details) => {
     const audioOnly = 'mediaTypes' in details && !!details.mediaTypes?.length && details.mediaTypes.every((t) => t === 'audio')

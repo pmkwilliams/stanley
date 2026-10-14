@@ -13,6 +13,7 @@
       if (r.file) {
         const f = r.file
         if (f.kind === 'bash') return `ran \`${f.command}\`${f.exitCode ? ` → exit code ${f.exitCode}` : ''}`
+        if (f.kind === 'write') return `${f.edit ? 'changed' : 'wrote'} ${f.path}${f.error ? ` → ${f.error}` : ''}`
         if (f.kind === 'list') return `listed ${f.path || 'the files'} → ${f.error ? `failed: ${f.error}` : f.entries.join(' · ') || 'empty'}`
         return `read ${f.path}${f.error ? ` → failed: ${f.error}` : ''}`
       }

@@ -6,6 +6,7 @@ import { defineConfig } from 'electron-vite'
 // Workspace packages ship TS source, so they must be bundled rather than externalized.
 const bundled = [
   '@stanley/agent',
+  '@stanley/browser',
   '@stanley/app-sdk',
   '@stanley/jev',
   '@stanley/stt',

@@ -23,13 +23,18 @@
     "@stanley/app-ui": "workspace:*",
     "@stanley/app-weather": "workspace:*",
     "@stanley/app-web": "workspace:*",
+    "@stanley/browser": "workspace:*",
     "@stanley/files": "workspace:*",
     "@stanley/jev": "workspace:*",
     "@stanley/stt": "workspace:*",
     "@stanley/tts": "workspace:*",
     "ai": "7.0.137",
+    "chart.js": "^4.5.1",
+    "d3": "^7.9.0",
+    "mermaid": "^12.2.0",
     "onnxruntime-node": "^1.30.0",
-    "sherpa-onnx-node": "1.13.8"
+    "sherpa-onnx-node": "1.13.8",
+    "three": "^0.186.1"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "6.2.4",

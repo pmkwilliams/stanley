@@ -121,6 +121,8 @@ export const EXTRACT = String.raw`(function (opts) {
     return ''
   }
 
+  // A page that has only just started to arrive has nothing in it yet.
+  if (!document.documentElement) return { title: document.title, url: location.href, markdown: '', elements: [], more: { below: false, above: false } }
   var seen = Number(document.documentElement.getAttribute('data-stanley-next') || '1')
   var found = []
   document.querySelectorAll(SEL).forEach(function (el) {
@@ -200,7 +202,8 @@ export const EXTRACT = String.raw`(function (opts) {
       visit(c)
     }
   }
-  var root = document.querySelector('main, [role=main]') || document.body
+  // A page still arriving may have no body yet.
+  var root = document.querySelector('main, [role=main]') || document.body || document.documentElement
   children(root, window.scrollY > 0)
   flush()
   // Dialogs and banners sit on top of everything, often outside the main content: always read them.

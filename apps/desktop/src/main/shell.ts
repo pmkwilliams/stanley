@@ -1,7 +1,23 @@
-import type { AppEntry, Screen, StepResult, World } from '@stanley/agent'
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
+import type { AppEntry, PageDraft, PageLook, Screen, StepResult, World } from '@stanley/agent'
 import { FULLSCREEN, type ActionArgs, type AgentNode, type AppContext, type AppModule, type Layout } from '@stanley/app-sdk'
+import { fileUrl, inFolder, viewable } from './folder-pages'
 
 const SEP = ':'
+
+/** What the desktop does with the Web app's page that the app itself doesn't: drawing a page as it is written, and a picture of it. */
+export interface PageHost {
+  /** Serves the page at `path` in the user's folder as it is written, from now until it ends. */
+  draft(path: string): { write(content: string): void; end(content: string): void; cancel(): void }
+  look(): Promise<PageLook>
+}
+
+export interface ShellOptions {
+  /** The user's folder, whose files the app that shows web pages can show: its real path, and its name for people (`~/Stanley`). */
+  folder?: { root: string; shown: string }
+  pages?: PageHost
+}
 
 /**
  * Owns surfaces and layout, and exposes them to the agent as one node tree.
@@ -26,14 +42,35 @@ export class Shell implements World {
     private onChange: () => void,
     /** Goes to the lock screen, which ends the session. */
     private onLock?: () => void,
+    private opts: ShellOptions = {},
   ) {}
 
   /** The surface Stanley is working on (which may be hidden): what it reads and its elements. */
   async screen(): Promise<Screen> {
+    if (this.focus) await this.refresh(this.focus)
     return this.screenNow()
   }
 
-  /** `screen()`, synchronously: the shell's surfaces are in memory. */
+  /**
+   * Reads again an app whose screen changes without it (a live web page). A page reached from the
+   * one Stanley is working on goes into the history, as a link would. Returns whether that happened.
+   */
+  async refresh(appId: string): Promise<boolean> {
+    const app = this.app(appId)
+    if (!app.refresh || !this.surfaces.has(appId)) return false
+    return this.serial(appId, async () => {
+      const state = this.surfaces.get(appId)
+      const next = await app.refresh!(state, this.ctx)
+      if (next === state) return false
+      this.surfaces.set(appId, next)
+      const moved = app.current(next) !== app.current(state)
+      if (moved && this.focus === appId) this.navigate(appId)
+      this.onChange()
+      return moved
+    })
+  }
+
+  /** `screen()`, synchronously, as last read: the shell's surfaces are in memory. */
   screenNow(): Screen {
     if (!this.focus) {
       const list = this.appList().map((a) => `- ${a.title}: ${a.description}`).join('\n')
@@ -63,10 +100,55 @@ export class Shell implements World {
 
   /**
    * Apps Stanley can open. Not the one web pages open in: on its own it shows nothing, and the
-   * pages Stanley found are offered to open directly.
+   * pages Stanley found or opened are offered to open directly.
    */
   appList(): AppEntry[] {
     return this.apps.filter((a) => !a.openUrl).map(({ id, title, description }) => ({ id, title, description }))
+  }
+
+  /** Where the app that shows web pages shows a file from the user's folder, when it is there and can be shown. */
+  fileUrl(written: string): string | undefined {
+    const path = this.pagePath(written)
+    return path && viewable(path) && existsSync(join(this.opts.folder!.root, path)) ? fileUrl(path) : undefined
+  }
+
+  /**
+   * Puts a web page from the user's folder in front while it is still being written: the app that
+   * shows web pages opens it, and it is drawn as it comes. Stopped, the page comes off again, unless
+   * an earlier version of it is there to show.
+   */
+  async draft(written: string): Promise<PageDraft | undefined> {
+    const path = this.pagePath(written)
+    const { folder, pages } = this.opts
+    if (!path || !pages || !/\.html?$/i.test(path)) return undefined
+    const host = pages.draft(path)
+    // Opened as it is written, not before: a page can't be read until some of it has come.
+    const opening = this.openUrl(fileUrl(path)).then(
+      () => this.global('show'),
+      () => host.cancel(),
+    )
+    return {
+      write: (content) => host.write(content),
+      end: (content) => host.end(content),
+      cancel: () => {
+        host.cancel()
+        void opening.then(async () => {
+          if (!existsSync(join(folder!.root, path))) await this.global('back')
+        })
+      },
+    }
+  }
+
+  /** How the web page on screen came out. */
+  async look(): Promise<PageLook> {
+    return this.opts.pages ? this.opts.pages.look() : { errors: [] }
+  }
+
+  /** A path in the user's folder as written, when there is an app to show it in. */
+  private pagePath(written: string): string | null {
+    const { folder } = this.opts
+    if (!folder || !this.apps.some((a) => a.openUrl)) return null
+    return inFolder(written, folder.root, folder.shown)
   }
 
   async perform(node: AgentNode, args: ActionArgs) {
@@ -150,8 +232,11 @@ export class Shell implements World {
     return appId !== null && this.full.has(appId) && !!this.app(appId).fullscreen?.(this.surfaces.get(appId))
   }
 
+  /** The app's surface exists. A new one is shown to the renderer at once: a live page needs its view in place before it can load. */
   private async ensure(app: AppModule<any>) {
-    if (!this.surfaces.has(app.id)) this.surfaces.set(app.id, await app.init(this.ctx))
+    if (this.surfaces.has(app.id)) return
+    this.surfaces.set(app.id, await app.init(this.ctx))
+    this.onChange()
   }
 
   private serial<T>(appId: string, fn: () => Promise<T>): Promise<T> {

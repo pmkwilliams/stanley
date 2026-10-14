@@ -85,6 +85,7 @@ function describeLookup(l: LookupMeta, name: string): string[] {
 /** A listing names what is in the folder, so it can be opened next; a read gives how the file starts. */
 function describeFile(f: FileMeta, name: string): string {
   if (f.kind === 'bash') return `${name} ran \`${clip(f.command.replace(/\s+/g, ' ').trim(), 200)}\` on the user's files${f.exitCode ? `: failed (exit code ${f.exitCode})` : ''}.`
+  if (f.kind === 'write') return `${name} ${f.edit ? 'changed' : 'wrote'} the file "${f.path}"${f.error ? `: failed (${f.error})` : ''}.`
   if (f.kind === 'read') {
     const head = `${name} read the file "${f.path}"`
     if (f.error) return `${head}: failed (${f.error}).`

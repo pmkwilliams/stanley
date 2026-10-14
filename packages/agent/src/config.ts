@@ -50,6 +50,8 @@ export interface AgentConfig {
   endpoint: { fastMs: number; normalMs: number; slowMs: number; moreBelow: number; resumeMs: number }
   /** A word speech recognition gave less confidence than this is marked `(?)` for the models. */
   unsureWord: number
+  /** Words said while a thinking turn works stop it at this P(stop) (see `WORKING`); below it, the turn finishes first. */
+  working: { stop: number }
 }
 
 export const defaultConfig: AgentConfig = {
@@ -73,4 +75,5 @@ export const defaultConfig: AgentConfig = {
   finished: { heard: 0.6, voice: 0.5, heardAlone: 0.85 },
   endpoint: { fastMs: 250, normalMs: 1000, slowMs: 2600, moreBelow: 0.25, resumeMs: 2000 },
   unsureWord: 0.5,
+  working: { stop: 0.5 },
 }

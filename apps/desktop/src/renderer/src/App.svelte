@@ -9,7 +9,7 @@
   import Presence from './Presence.svelte'
   import StatusBar from './StatusBar.svelte'
   import { loudness, mic, voiceOut } from './presence'
-  import { backgrounds, surfaces } from './surfaces'
+  import { backgrounds, kept, surfaces } from './surfaces'
   import { setTheme } from './theme.svelte'
   import { startVoice } from './voice'
 
@@ -86,7 +86,7 @@
     {#if snapshot}
       <!-- Keyed on the app, so switching plays the old window's outro while the new one pops in over it. -->
       <!-- Windows share one cell, so an outgoing one sinks behind the incoming one instead of pushing it aside; Svelte marks it inert. -->
-      {#each visible && surfaces[visible] ? [visible] : [] as id (id)}
+      {#each visible && surfaces[visible] && !kept.has(visible) ? [visible] : [] as id (id)}
         {@const Surface = surfaces[id]}
         <div
           class={[appWindow, 'col-start-1 row-start-1 inert:z-0', fullscreen ? 'z-4' : 'z-1']}
@@ -95,6 +95,18 @@
           out:scale={{ start: 0.88, duration: 260, easing: cubicIn }}
         >
           <Surface data={snapshot.surfaces[id]} perform={(nodeId: string, args?: { text?: string }) => window.stanley.perform(id, nodeId, args)} agentName={snapshot.name} {fullscreen} />
+        </div>
+      {/each}
+      <!-- A kept window is never taken out: hidden, it stays laid out at full size, out of sight and out of reach, and pops in and out the same way. -->
+      {#each [...kept].filter((id) => snapshot!.surfaces[id] !== undefined) as id (id)}
+        {@const Surface = surfaces[id]}
+        {@const full = visible === id && fullscreen}
+        <div
+          class={[appWindow, 'col-start-1 row-start-1 transition-all', visible === id ? ['duration-340 ease-out', full ? 'z-4' : 'z-1'] : 'invisible z-0 scale-88 opacity-0 duration-260 ease-in']}
+          data-fullscreen={full || undefined}
+          inert={visible !== id}
+        >
+          <Surface data={snapshot.surfaces[id]} perform={(nodeId: string, args?: { text?: string }) => window.stanley.perform(id, nodeId, args)} agentName={snapshot.name} fullscreen={full} />
         </div>
       {/each}
     {/if}

@@ -79,6 +79,17 @@ export type AgentDebugEvent =
   /** The user cut in on reply `id`, or it was stopped: they heard only `spoken` of `text`. */
   | { type: 'cut'; id: number; spoken: string; text: string }
   /**
+   * Words said while a thinking turn worked (`heard`), and what came of them: Jev judged them, and
+   * the turn stopped for them or finishes first.
+   */
+  | {
+      type: 'working'
+      action: 'judged' | 'stop' | 'hold'
+      heard: string
+      verdict?: { choice: string; probabilities: Record<string, number>; latencyMs: number }
+      reason?: string
+    }
+  /**
    * Speech heard while Stanley was talking (`heard`, its own echo taken out), and what came of it:
    * Stanley lowered its voice, Jev judged the words, Stanley stopped for them, or went on.
    */

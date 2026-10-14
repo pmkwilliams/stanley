@@ -3,6 +3,7 @@ import type { Answer, DecisionClient, MultiChoiceResult, Question } from '@stanl
 import type { JSONValue } from 'ai'
 import { defaultConfig, type AgentConfig } from './config'
 import type { AgentDebugEvent, GateRule, RequestResult, TickReason } from './debug'
+import { WORKING, WORKING_INSTRUCTIONS, WORKING_PROMPT } from './barge'
 import { createEffectJudge, type EffectJudge, type EffectVerdict } from './effects'
 import { bashText, JEV_FILES, knownFiles, listCommand, readCommand, type BashResult, type FileMeta, type FileTools, type KnownFile } from './files'
 import {
@@ -23,10 +24,10 @@ import {
 import { anyUnsure, markUnsure, unmarked, type HeardWord } from './heard'
 import { describeStep, named, namedOptions, narrate } from './narrate'
 import { navigates, stepOptions, type OptionSet, type Target } from './options'
-import { confirmNote, DONE_CHECK, EARLY_GUESS, instructions, longDate, PartialTurn, writeNote, type ActCall, type PageOutput, type SearchOutput, type Thinker, type ThinkResult } from './think'
-import { extendsWords, fullText, hasNewWords, letters, type TranscriptSnapshot } from './transcript'
+import { confirmNote, DONE_CHECK, EARLY_GUESS, fileOutput, instructions, longDate, PartialTurn, writeNote, type ActCall, type FileOutput, type PageOutput, type SearchOutput, type Thinker, type ThinkResult } from './think'
+import { extendsWords, fullText, hasNewWords, letters, normalize, type TranscriptSnapshot } from './transcript'
 import { knownPages, sameUrl, shortUrl, type KnownPage, type WebTools } from './web'
-import type { Screen, StepResult, World } from './world'
+import type { PageDraft, Screen, StepResult, World } from './world'
 
 export type TickOutcome = 'executed' | 'stale-discarded' | 'gated' | 'forced-stop' | 'error'
 
@@ -223,8 +224,16 @@ export class Agent {
   private utteranceId = 0
   private stepCount = 0
   private abort?: AbortController
-  /** Set while the thinking model owns the turn; aborted when the user says more. */
+  /** Set while the thinking model owns the turn; aborted when the user says more that stops it (see `whileWorking`). */
   private thinking?: AbortController
+  /** What kind of thinking turn it is: a whole turn (`run`), or one step it decides (`write`, `confirm`). */
+  private thinkingMode: 'run' | 'write' | 'confirm' = 'run'
+  /** What thinking is doing right now, for judging words said while it works. */
+  private doing = ''
+  /** Jev judging words said while a thinking turn works; `again` when more came while it was asked. */
+  private judging: { thinking: AbortController; asking: boolean; again: boolean } | null = null
+  /** Web pages thinking is writing, by tool call: drawn on screen as they come (see `draw`). */
+  private drafts = new Map<string, { content: string; page?: PageDraft; ready: Promise<void> }>()
   /** Last report of the current tick; its outcome is the tick's outcome. */
   private outcome: { outcome: TickOutcome; detail?: string } | null = null
   /** The VAD hears the user right now. */
@@ -435,9 +444,9 @@ export class Agent {
   private request(reason: TickReason): void {
     const trace = (result: RequestResult) => this.events.debug?.({ type: 'request', reason, result })
     if (this.inFlight) {
-      // Thinking answers whole turns: if the user says more, its run is out of date.
-      // The deferred `words` tick re-decides with everything they said.
-      if (this.thinking && hasNewWords(this.transcript, this.seen)) this.thinking.abort()
+      // Words said while thinking works may stop it (see `whileWorking`). The deferred tick then
+      // decides with everything they said: at once if it stopped, once it's done if not.
+      if (this.thinking && hasNewWords(this.transcript, this.seen)) this.whileWorking(this.thinking)
       if (!this.deferred || PRIORITY[reason] > PRIORITY[this.deferred]) this.deferred = reason
       return trace('deferred')
     }
@@ -465,6 +474,61 @@ export class Agent {
     trace('tick')
     if (fresh) this.openTask()
     void this.tick(reason)
+  }
+
+  /**
+   * The user said more while thinking works. A step thinking decides alone (what to type, whether
+   * to send) hinges on exactly their words, so it is out of date. A whole turn may not be: Jev
+   * judges whether the words stop it ("no, the other one", "never mind") or wait for it to finish
+   * ("and make it blue"), and it goes on meanwhile. More words are judged again.
+   */
+  private whileWorking(thinking: AbortController): void {
+    if (this.thinkingMode !== 'run') return thinking.abort()
+    if (this.judging?.thinking !== thinking) this.judging = { thinking, asking: false, again: false }
+    if (this.judging.asking) this.judging.again = true
+    else void this.judgeWork(this.judging)
+  }
+
+  private async judgeWork(judging: { thinking: AbortController; asking: boolean; again: boolean }): Promise<void> {
+    const name = this.name()
+    const heard = this.saidSince()
+    const trace = (action: 'judged' | 'stop' | 'hold', extra: { verdict?: { choice: string; probabilities: Record<string, number>; latencyMs: number }; reason?: string }) =>
+      this.events.debug?.({ type: 'working', action, heard, ...extra })
+    const state = [named(WORKING_PROMPT, name), this.conversation(), `## What ${name} is doing`, `Working on what the user asked, not finished yet. Right now: ${this.doing}`, '## What the user said while it works', `"${heard}"`].join('\n\n')
+    judging.asking = true
+    const started = performance.now()
+    try {
+      const result = await this.jev.choose({ state, instructions: named(WORKING_INSTRUCTIONS, name), options: namedOptions(WORKING, name), signal: judging.thinking.signal })
+      const verdict = { choice: result.choice, probabilities: result.probabilities, latencyMs: performance.now() - started }
+      trace('judged', { verdict })
+      // It finished while Jev judged: the deferred tick has the words.
+      if (this.thinking !== judging.thinking) return
+      const stop = result.probabilities.stop ?? 0
+      if (stop >= this.config.working.stop) {
+        trace('stop', { reason: `P(stop) ${stop.toFixed(2)}` })
+        return judging.thinking.abort()
+      }
+      trace('hold', { reason: `P(stop) ${stop.toFixed(2)} < ${this.config.working.stop}: finishing first` })
+    } catch (err) {
+      if (judging.thinking.signal.aborted || this.thinking !== judging.thinking) return
+      // Deciding again with everything they said is safer than finishing what they may have stopped.
+      trace('stop', { reason: `Jev failed: ${err instanceof Error ? err.message : String(err)}` })
+      return judging.thinking.abort()
+    } finally {
+      judging.asking = false
+    }
+    if (judging.again) {
+      judging.again = false
+      void this.judgeWork(judging)
+    }
+  }
+
+  /** What the user said after the words the current decision was made on. */
+  private saidSince(): string {
+    const now = fullText(this.transcript)
+    const seen = this.seen
+    if (!seen || this.seenUtterance !== this.utteranceId || !extendsWords(this.transcript, seen)) return now
+    return normalize(now).slice(normalize(fullText(seen)).length).join(' ')
   }
 
   /** What the user is asking for now: the live utterance, else the last thing they said. */
@@ -495,7 +559,10 @@ export class Agent {
   private async knownFiles(): Promise<KnownFile[] | undefined> {
     if (!this.files) return undefined
     const paths = await this.files.paths().catch(() => [])
-    return knownFiles(recentEntries(this.view(), this.config.jevTurns), paths)
+    return knownFiles(recentEntries(this.view(), this.config.jevTurns), paths).map((f) => {
+      const url = f.path.endsWith('/') ? undefined : this.world.fileUrl?.(f.path)
+      return url ? { ...f, url } : f
+    })
   }
 
   /** The history as Jev reads it: committed, and what is staged placed as it would be now. */
@@ -1128,11 +1195,13 @@ export class Agent {
   ): Promise<{ result: ThinkResult; options: OptionSet; steps: number } | null> {
     const screen = await this.world.screen()
     const options = this.options(screen, this.config.thinkingElements)
-    const next = single ? (single.kind === 'write' ? writeNote(single.option) : confirmNote(single.option)) : note
+    const next = single ? (single.kind === 'write' ? writeNote(single.option, !!this.files) : confirmNote(single.option)) : note
     const sent = this.history.send(this.observe(screen, options, next ? [next] : []), this.live())
     this.events.debug?.({ type: 'think-start', tickId: id, mode, handover, option: single?.option, entries: sent.entries, cacheAt: sent.cacheAt })
     const controller = new AbortController()
     this.thinking = controller
+    this.thinkingMode = mode
+    this.doing = 'working out what to do or say.'
     const started = performance.now()
     const ran = new Map<string, Ran>()
     let steps = 0
@@ -1158,6 +1227,12 @@ export class Agent {
         }),
         ...(this.world.openUrl && { openPage: (url: string, toolCallId: string) => (steps++, this.openPage(id, url, toolCallId, signal, ran)) }),
         ...(this.files && { bash: (command: string, toolCallId: string) => (steps++, this.bash(id, command, toolCallId, signal, ran)) }),
+        ...(this.files?.write &&
+          this.files.read && {
+            writeFile: (path: string, content: string, toolCallId: string) => (steps++, this.writeFile(id, path, content, toolCallId, signal, ran)),
+            editFile: (path: string, old: string, replacement: string, all: boolean, toolCallId: string) => (steps++, this.editFile(id, path, old, replacement, all, toolCallId, signal, ran)),
+            onDraft: (toolCallId: string, path: string, content: string) => this.draw(path, content, toolCallId),
+          }),
       })
       const { final, toolCallIds } = this.history.appendTurn(result.messages, result.sent, ran, id)
       this.saw(ran, toolCallIds)
@@ -1172,6 +1247,10 @@ export class Agent {
       return null
     } finally {
       this.thinking = undefined
+      this.judging = null
+      // A page whose writing never finished (the turn stopped, or the call never ran) comes off the screen.
+      for (const draft of this.drafts.values()) void draft.ready.then(() => draft.page?.cancel())
+      this.drafts.clear()
     }
   }
 
@@ -1211,6 +1290,7 @@ export class Agent {
     const target = name && options.targets.get(name)
     if (!name || !target) return done(`There is no option [${option}] right now. Use a name exactly as listed.\n\n${await this.screenText(options)}`)
     option = name
+    this.doing = `a step on the screen, [${option}]${text ? `, typing "${text}"` : ''}.`
     const args: ActionArgs = {}
     const field = target.kind === 'element' && target.node.kind === 'input'
     if (field) {
@@ -1235,6 +1315,7 @@ export class Agent {
   /** A web search by thinking. It gets the full excerpts; Jev reads them cut to a line. */
   private async search(id: number, query: string, toolCallId: string, signal: AbortSignal, ran: Map<string, Ran>): Promise<SearchOutput> {
     signal.throwIfAborted()
+    this.doing = `searching the web for "${query}".`
     const utteranceId = this.utteranceId || undefined
     const trace = (result: string) => this.events.debug?.({ type: 'think-step', tickId: id, option: 'search', text: query, result })
     try {
@@ -1255,6 +1336,7 @@ export class Agent {
   /** A page read by thinking: it gets the page's text, and the history which page it was. */
   private async read(id: number, url: string, toolCallId: string, signal: AbortSignal, ran: Map<string, Ran>): Promise<PageOutput> {
     signal.throwIfAborted()
+    this.doing = `reading the web page ${url}.`
     const utteranceId = this.utteranceId || undefined
     const trace = (result: string) => this.events.debug?.({ type: 'think-step', tickId: id, option: 'fetch', text: url, result })
     try {
@@ -1272,29 +1354,42 @@ export class Agent {
     }
   }
 
-  /** Thinking puts a page on screen by its address: any page, not only ones offered as options. */
-  private async openPage(id: number, url: string, toolCallId: string, signal: AbortSignal, ran: Map<string, Ran>): Promise<string> {
+  /**
+   * Thinking puts a page on screen by its address: any page, not only ones offered as options. A
+   * path without an address is a file in the user's folder.
+   */
+  private async openPage(id: number, written: string, toolCallId: string, signal: AbortSignal, ran: Map<string, Ran>): Promise<string> {
     signal.throwIfAborted()
+    const address = /^[a-z][a-z\d+.-]*:/i.test(written) ? written : this.world.fileUrl?.(written)
+    if (!address) {
+      const result = `There is no file "${written}" in the user's folder that the screen can show.`
+      this.events.debug?.({ type: 'think-step', tickId: id, option: 'open_page', text: written, result })
+      return result
+    }
+    const url = address
+    this.doing = `opening ${written}.`
     const known = knownPages(this.view()).find((p) => sameUrl(p.url, url))
     this.events.status?.('acting')
     let step: StepMeta | undefined
     let outcome: string
     try {
-      outcome = (await this.step(id, `open page: ${url}`, { kind: 'page', url, title: known?.title ?? shortUrl(url) }, {}, 'thinking', { turn: (s) => (step = s) })).summary
+      const title = known?.title ?? (address === written ? shortUrl(url) : written.split('/').at(-1)!)
+      outcome = (await this.step(id, `open page: ${url}`, { kind: 'page', url, title }, {}, 'thinking', { turn: (s) => (step = s) })).summary
     } catch (err) {
       outcome = `That failed: ${err instanceof Error ? err.message : String(err)}`
     }
     this.events.status?.('thinking')
     const screen = await this.screenText()
     const result = `${outcome}\n\n${screen}`
-    if (step) ran.set(toolCallId, { tool: 'open_page', input: { url }, output: { type: 'text', value: result }, result: { toolCallId, step }, screen })
-    this.events.debug?.({ type: 'think-step', tickId: id, option: 'open_page', text: url, result })
+    if (step) ran.set(toolCallId, { tool: 'open_page', input: { url: written }, output: { type: 'text', value: result }, result: { toolCallId, step }, screen })
+    this.events.debug?.({ type: 'think-step', tickId: id, option: 'open_page', text: written, result })
     return result
   }
 
   /** A command thinking runs on the user's files. A command that fails is an answer too: what it printed, and how it exited. */
   private async bash(id: number, command: string, toolCallId: string, signal: AbortSignal, ran: Map<string, Ran>): Promise<string> {
     signal.throwIfAborted()
+    this.doing = `running \`${command}\` on the user's files.`
     const utteranceId = this.utteranceId || undefined
     let result: BashResult
     try {
@@ -1307,6 +1402,110 @@ export class Agent {
     ran.set(toolCallId, { tool: 'bash', input: { command }, output: { type: 'text', value: text }, result: { toolCallId, file: { kind: 'bash', command, exitCode: result.exitCode, utteranceId } } })
     this.events.debug?.({ type: 'think-step', tickId: id, option: 'bash', text: command, result: text })
     return text
+  }
+
+  /**
+   * A web page thinking is writing, as far as its input has come: on screen from its first words,
+   * drawn as the rest comes, so the user watches it being made instead of waiting for it.
+   */
+  private draw(path: string, content: string, toolCallId: string): void {
+    const draft = this.drafts.get(toolCallId)
+    if (draft) {
+      draft.content = content
+      return draft.page?.write(content)
+    }
+    if (!this.world.draft || !PAGE.test(path)) return
+    this.doing = `writing the page ${path}.`
+    this.events.status?.('writing')
+    const started: { content: string; page?: PageDraft; ready: Promise<void> } = { content, ready: Promise.resolve() }
+    started.ready = this.world.draft(path).then(
+      (page) => {
+        started.page = page
+        page?.write(started.content)
+      },
+      () => {},
+    )
+    this.drafts.set(toolCallId, started)
+  }
+
+  /** Thinking writes a file. A web page was drawn as it was written (`draw`): now it is complete, and looked at. */
+  private async writeFile(id: number, path: string, content: string, toolCallId: string, signal: AbortSignal, ran: Map<string, Ran>): Promise<FileOutput> {
+    signal.throwIfAborted()
+    this.doing = `writing the file ${path}.`
+    const draft = this.drafts.get(toolCallId)
+    this.drafts.delete(toolCallId)
+    await draft?.ready
+    const input = { path, content }
+    try {
+      await this.files!.write!(path, content)
+    } catch (err) {
+      draft?.page?.cancel()
+      return this.fileFailed(id, 'write_file', input, path, false, `Couldn't write it: ${errorText(err)}`, toolCallId, ran)
+    }
+    draft?.page?.end(content)
+    return this.wrote(id, 'write_file', input, path, false, `Wrote ${path}.`, toolCallId, ran)
+  }
+
+  /** Thinking changes part of a file: `old`, which must be in it exactly once (or `all`, anywhere), becomes `replacement`. */
+  private async editFile(id: number, path: string, old: string, replacement: string, all: boolean, toolCallId: string, signal: AbortSignal, ran: Map<string, Ran>): Promise<FileOutput> {
+    signal.throwIfAborted()
+    this.doing = `changing the file ${path}.`
+    const input = { path, old, new: replacement, ...(all && { all: 'true' }) }
+    const fail = (text: string) => this.fileFailed(id, 'edit_file', input, path, true, text, toolCallId, ran)
+    let before: string
+    try {
+      before = await this.files!.read!(path)
+    } catch (err) {
+      return fail(`Couldn't read it: ${errorText(err)}`)
+    }
+    const times = old ? before.split(old).length - 1 : 0
+    if (!times) return fail(`That text isn't in ${path}. Copy it exactly as it is in the file (read it with cat), or write the whole file again.`)
+    if (times > 1 && !all) return fail(`That text is in ${path} ${times} times: include more of what is around it so it is there once, or set all to change every one.`)
+    try {
+      await this.files!.write!(path, all ? before.split(old).join(replacement) : before.replace(old, () => replacement))
+    } catch (err) {
+      return fail(`Couldn't write it: ${errorText(err)}`)
+    }
+    return this.wrote(id, 'edit_file', input, path, true, `Changed ${path}.`, toolCallId, ran)
+  }
+
+  /**
+   * A file was written or changed. A web page comes to the front as it is now (reloaded where it
+   * was scrolled to), and thinking gets what it reported going wrong and a picture of it, so it can
+   * see a diagram that didn't draw and fix it.
+   */
+  private async wrote(id: number, tool: string, input: Record<string, string>, path: string, edit: boolean, outcome: string, toolCallId: string, ran: Map<string, Ran>): Promise<FileOutput> {
+    const file: FileMeta = { kind: 'write', path, edit, utteranceId: this.utteranceId || undefined }
+    const url = PAGE.test(path) ? this.world.fileUrl?.(path) : undefined
+    if (!url || !this.world.openUrl) {
+      ran.set(toolCallId, { tool, input, output: { type: 'text', value: outcome }, result: { toolCallId, file } })
+      this.events.debug?.({ type: 'think-step', tickId: id, option: tool, text: path, result: outcome })
+      return { text: outcome }
+    }
+    this.events.status?.('acting')
+    let shown: string
+    try {
+      shown = (await this.world.openUrl(url)).summary
+      await this.world.global('show')
+    } catch (err) {
+      shown = `It couldn't be shown: ${errorText(err)}`
+    }
+    const look = await this.world.look?.().catch(() => undefined)
+    this.events.status?.('thinking')
+    const errors = look?.errors.length ? `The page reported these errors:\n${look.errors.map((e) => `- ${e}`).join('\n')}` : 'The page reported no errors.'
+    const screen = await this.screenText()
+    const text = `${outcome} ${shown}.\n${errors}${look?.image ? '\nA picture of the screen follows.' : ''}\n\n${screen}`
+    const output: FileOutput = { text, image: look?.image }
+    ran.set(toolCallId, { tool, input, output: fileOutput(output), result: { toolCallId, file }, screen })
+    this.events.debug?.({ type: 'think-step', tickId: id, option: tool, text: path, result: text })
+    return output
+  }
+
+  private fileFailed(id: number, tool: string, input: Record<string, string>, path: string, edit: boolean, text: string, toolCallId: string, ran: Map<string, Ran>): FileOutput {
+    const file: FileMeta = { kind: 'write', path, edit, error: text, utteranceId: this.utteranceId || undefined }
+    ran.set(toolCallId, { tool, input, output: { type: 'error-text', value: text }, result: { toolCallId, file } })
+    this.events.debug?.({ type: 'think-step', tickId: id, option: tool, text: path, result: text })
+    return { text }
   }
 
   private async screenText(options?: OptionSet): Promise<string> {
@@ -1535,6 +1734,11 @@ interface Writing {
   /** What to say to the user: '' for nothing. */
   say: string
 }
+
+/** A web page: written, it is drawn on screen. */
+const PAGE = /\.html?$/i
+
+const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err))
 
 /** A tool output as the SDK sends it: plain JSON. */
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as JSONValue

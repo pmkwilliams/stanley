@@ -56,6 +56,35 @@ describe('createThinker', () => {
     expect(JSON.stringify(result.messages)).toContain('<silent/>')
   })
 
+  it('draws a page as its input comes, and gives the model a picture of how it came out', async () => {
+    const json = JSON.stringify({ path: 'Pages/rain.html', content: '<h1>Rain</h1><p>It falls.</p>' })
+    const write = [
+      { type: 'tool-input-start', id: 'w1', toolName: 'write_file' },
+      { type: 'tool-input-delta', id: 'w1', delta: json.slice(0, 44) },
+      { type: 'tool-input-delta', id: 'w1', delta: json.slice(44) },
+      { type: 'tool-input-end', id: 'w1' },
+      { type: 'tool-call', toolCallId: 'w1', toolName: 'write_file', input: json },
+      finish('tool-calls'),
+    ] as Part[]
+    const drawn: string[] = []
+    const written: string[] = []
+    const m = model([write, [...say('<silent/>'), finish('stop')]])
+    await createThinker({ model: m }).run(
+      request({
+        onDraft: (id, path, content) => drawn.push(`${id} ${path}: ${content}`),
+        writeFile: async (path, content) => (written.push(`${path}: ${content}`), { text: 'Wrote it.', image: { data: 'aGk=', mediaType: 'image/jpeg' } }),
+        editFile: async () => ({ text: '' }),
+      }),
+    )
+    expect(drawn).toEqual(['w1 Pages/rain.html: <h1>Rai'])
+    expect(written).toEqual(['Pages/rain.html: <h1>Rain</h1><p>It falls.</p>'])
+    const result = m.doStreamCalls[1]!.prompt.at(-1)!
+    expect(result.role).toBe('tool')
+    expect(result.content).toEqual([
+      { type: 'tool-result', toolCallId: 'w1', toolName: 'write_file', output: { type: 'content', value: [{ type: 'text', text: 'Wrote it.' }, { type: 'file', mediaType: 'image/jpeg', data: { type: 'data', data: 'aGk=' } }] } },
+    ])
+  })
+
   it("brings a single step's call back unrun, and holds its text until the end", async () => {
     const spoken: string[] = []
     let acted = false

@@ -1,8 +1,8 @@
 import { execFile, spawn } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
-import { readdir } from 'node:fs/promises'
+import { mkdir, readdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join, resolve, sep } from 'node:path'
 import type { BashResult, FileTools } from '@stanley/agent'
 
 export interface LocalFilesOptions {
@@ -80,8 +80,22 @@ export function localFiles(opts: LocalFilesOptions): FileTools {
       await git('commit', '-q', '--no-verify', '-m', message)
     }))
 
+  const shown = root.startsWith(`${home}/`) ? `~${root.slice(home.length)}` : root
+
+  /** A path as written (from the top, `./…`, `~/Stanley/…` or absolute) as a real path in the folder. */
+  const inside = async (written: string): Promise<string> => {
+    let path = written.trim()
+    for (const top of [`${shown}/`, `${root}/`]) if (path.startsWith(top)) path = path.slice(top.length)
+    const full = resolve(root, path.replace(/^(\.\/)+/, ''))
+    if (!full.startsWith(root + sep)) throw new Error(`${written} isn't in the user's folder`)
+    // Through a link, a path inside can lead outside.
+    const parent = await realpath(dirname(full)).catch(() => null)
+    if (parent && parent !== root && !parent.startsWith(root + sep)) throw new Error(`${written} isn't in the user's folder`)
+    return full
+  }
+
   return {
-    root: root.startsWith(`${home}/`) ? `~${root.slice(home.length)}` : root,
+    root: shown,
     async bash(command, signal) {
       signal?.throwIfAborted()
       // What changed since the last command is the user's own, kept apart from what Stanley does.
@@ -103,6 +117,19 @@ export function localFiles(opts: LocalFilesOptions): FileTools {
         else if (e.isFile()) paths.push(path)
       }
       return paths.sort().slice(0, maxPaths)
+    },
+    async write(path, content) {
+      const full = await inside(path)
+      await snapshot('Changes made outside Stanley')
+      try {
+        await mkdir(dirname(full), { recursive: true })
+        await writeFile(full, content)
+      } finally {
+        await snapshot(`Stanley wrote ${full.slice(root.length + 1)}`)
+      }
+    },
+    async read(path) {
+      return readFile(await inside(path), 'utf8')
     },
   }
 

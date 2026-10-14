@@ -18,6 +18,23 @@ export const OVERLAP_INSTRUCTIONS = 'Stanley is talking, and the microphone hear
 export const OVERLAP_PROMPT = `# Stanley
 Stanley is a voice assistant that operates apps and websites on the user's computer and talks to the user out loud. It is talking now, and the user said something over it. People do that to show they're following, to stop it, to answer it, or because they're talking to someone else. Stanley stops when the user wants to be heard, and goes on when they don't.`
 
+type Working = 'stop' | 'hold' | 'elsewhere'
+
+/**
+ * Words said while Stanley works on something without talking (thinking, a lookup, writing a page).
+ * The same judgement as speech over its voice, about its work instead: whether the words make
+ * what it's doing wrong, or can wait until it's done.
+ */
+export const WORKING: Record<Working, string> = {
+  stop: 'Stopping Stanley or changing what it is doing: "stop", "wait", "cancel", "never mind", "don\'t", "no", a correction, saying more exactly what they meant ("the Lakers game"), or asking for something else instead of it.',
+  hold: 'Something more for after what Stanley is doing, which can wait until it finishes: a change to the finished result ("and make it blue", "also add a title"), or another question or request.',
+  elsewhere: "Not talking to Stanley: talking to someone else or on the phone, reading something out, background speech or noise.",
+}
+export const WORKING_INSTRUCTIONS = 'Stanley is working on what the user asked, and the user said something while it works. What are they doing?'
+
+export const WORKING_PROMPT = `# Stanley
+Stanley is a voice assistant that operates apps and websites on the user's computer. It is working on something the user asked for, and the user said something while it works. People do that to stop it or change what it is doing, to add to it or ask for something more, or because they are talking to someone else. Stanley stops when what it is doing is no longer what the user wants. Otherwise it finishes, then does what they said.`
+
 /** What Stanley is saying right now. */
 export interface Speech {
   /** The reply being said. */

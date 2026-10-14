@@ -69,11 +69,13 @@ export const fixtures: Record<string, Record<string, unknown>> = {
     page: {
       route: 'page/0',
       error: null,
+      view: null,
       pages: [{ url: 'https://en.wikipedia.org/wiki/Eiffel_Tower', title: 'Eiffel Tower - Wikipedia', markdown: '# Eiffel Tower\n\nThe Eiffel Tower is a wrought-iron lattice tower in Paris.' }],
     } satisfies WebState,
     error: {
       route: 'page/0',
       error: 'Page reader unavailable: PARALLEL_API_KEY is not set',
+      view: null,
       pages: [{ url: 'https://www.bbc.com/news', title: 'bbc.com', markdown: '' }],
     } satisfies WebState,
   },

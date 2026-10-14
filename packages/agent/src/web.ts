@@ -1,4 +1,5 @@
-import { lookupsOf, type Entry } from './conversation'
+import { FILES_URL } from '@stanley/app-sdk'
+import type { Entry } from './conversation'
 
 /** A page found by a web search. */
 export interface WebResult {
@@ -48,12 +49,21 @@ export function sameUrl(a: string, b: string): boolean {
   return key(a) === key(b)
 }
 
-/** Pages from the searches and reads in `entries`, once each: most recent first, a search's in its order. */
+/**
+ * Pages from the searches, reads and pages opened in `entries`, once each: most recent first, a
+ * search's in its order. A page of the user's files is offered as a file instead.
+ */
 export function knownPages(entries: Entry[]): KnownPage[] {
+  const groups = entries
+    .flatMap((e) => e.meta.results ?? [])
+    .flatMap((r): { url: string; title: string }[][] => {
+      if (r.lookup) return [r.lookup.kind === 'search' ? r.lookup.results : !r.lookup.error ? [r.lookup] : []]
+      const target = r.step?.target
+      return target?.kind === 'page' && !r.step!.error && !target.url.startsWith(FILES_URL) ? [[{ url: target.url, title: target.title }]] : []
+    })
   const pages: KnownPage[] = []
   let latest = true
-  for (const l of lookupsOf(entries).reverse()) {
-    const found = l.kind === 'search' ? l.results : !l.error ? [l] : []
+  for (const found of groups.reverse()) {
     if (!found.length) continue
     for (const { url, title } of found) if (!pages.some((p) => sameUrl(p.url, url))) pages.push({ url, title, latest })
     latest = false

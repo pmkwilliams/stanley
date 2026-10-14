@@ -19,6 +19,19 @@ describe('knownPages', () => {
     ])
   })
 
+  it('knows the pages Stanley or the user opened too, but not pages of the user\'s files', () => {
+    const r = recorder()
+    r.lookup({ kind: 'search', query: 'a', results: [result('One', 'https://one.test/')] })
+    r.step({ target: { kind: 'page', url: 'https://shop.test/', title: 'Corner Shop' }, by: 'thinking' })
+    r.step({ target: { kind: 'page', url: 'stanley://files/Pages/rain.html', title: 'rain.html' }, by: 'thinking' })
+    r.userStep({ kind: 'page', url: 'https://shop.test/mug', title: 'Blue mug' }, 'Opened "Blue mug"')
+    expect(knownPages(r.h.view())).toEqual([
+      { url: 'https://shop.test/mug', title: 'Blue mug', latest: true },
+      { url: 'https://shop.test/', title: 'Corner Shop', latest: false },
+      { url: 'https://one.test/', title: 'One', latest: false },
+    ])
+  })
+
   it('treats protocol, www, fragment and a trailing slash as the same page', () => {
     expect(sameUrl('https://www.a.test/x/#top', 'http://a.test/x')).toBe(true)
     expect(sameUrl('https://a.test/x', 'https://a.test/y')).toBe(false)
