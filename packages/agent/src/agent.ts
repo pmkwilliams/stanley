@@ -3,6 +3,7 @@ import type { Answer, DecisionClient, MultiChoiceResult, Question } from '@stanl
 import type { JSONValue } from 'ai'
 import { defaultConfig, type AgentConfig } from './config'
 import type { AgentDebugEvent, GateRule, RequestResult, TickReason } from './debug'
+import { WORKING, WORKING_INSTRUCTIONS, WORKING_PROMPT } from './barge'
 import { createEffectJudge, type EffectJudge, type EffectVerdict } from './effects'
 import { bashText, JEV_FILES, knownFiles, listCommand, readCommand, type BashResult, type FileMeta, type FileTools, type KnownFile } from './files'
 import {
@@ -24,7 +25,7 @@ import { anyUnsure, markUnsure, unmarked, type HeardWord } from './heard'
 import { describeStep, named, namedOptions, narrate } from './narrate'
 import { navigates, stepOptions, type OptionSet, type Target } from './options'
 import { confirmNote, DONE_CHECK, EARLY_GUESS, instructions, longDate, PartialTurn, writeNote, type ActCall, type PageOutput, type SearchOutput, type Thinker, type ThinkResult } from './think'
-import { extendsWords, fullText, hasNewWords, letters, type TranscriptSnapshot } from './transcript'
+import { extendsWords, fullText, hasNewWords, letters, normalize, type TranscriptSnapshot } from './transcript'
 import { knownPages, sameUrl, shortUrl, type KnownPage, type WebTools } from './web'
 import type { Screen, StepResult, World } from './world'
 
@@ -223,8 +224,14 @@ export class Agent {
   private utteranceId = 0
   private stepCount = 0
   private abort?: AbortController
-  /** Set while the thinking model owns the turn; aborted when the user says more. */
+  /** Set while the thinking model owns the turn; aborted when the user says more that stops it (see `whileWorking`). */
   private thinking?: AbortController
+  /** What kind of thinking turn it is: a whole turn (`run`), or one step it decides (`write`, `confirm`). */
+  private thinkingMode: 'run' | 'write' | 'confirm' = 'run'
+  /** What thinking is doing right now, for judging words said while it works. */
+  private doing = ''
+  /** Jev judging words said while a thinking turn works; `again` when more came while it was asked. */
+  private judging: { thinking: AbortController; asking: boolean; again: boolean } | null = null
   /** Last report of the current tick; its outcome is the tick's outcome. */
   private outcome: { outcome: TickOutcome; detail?: string } | null = null
   /** The VAD hears the user right now. */
@@ -435,9 +442,9 @@ export class Agent {
   private request(reason: TickReason): void {
     const trace = (result: RequestResult) => this.events.debug?.({ type: 'request', reason, result })
     if (this.inFlight) {
-      // Thinking answers whole turns: if the user says more, its run is out of date.
-      // The deferred `words` tick re-decides with everything they said.
-      if (this.thinking && hasNewWords(this.transcript, this.seen)) this.thinking.abort()
+      // Words said while thinking works may stop it (see `whileWorking`). The deferred tick then
+      // decides with everything they said: at once if it stopped, once it's done if not.
+      if (this.thinking && hasNewWords(this.transcript, this.seen)) this.whileWorking(this.thinking)
       if (!this.deferred || PRIORITY[reason] > PRIORITY[this.deferred]) this.deferred = reason
       return trace('deferred')
     }
@@ -465,6 +472,61 @@ export class Agent {
     trace('tick')
     if (fresh) this.openTask()
     void this.tick(reason)
+  }
+
+  /**
+   * The user said more while thinking works. A step thinking decides alone (what to type, whether
+   * to send) hinges on exactly their words, so it is out of date. A whole turn may not be: Jev
+   * judges whether the words stop it ("no, the other one", "never mind") or wait for it to finish
+   * ("and make it blue"), and it goes on meanwhile. More words are judged again.
+   */
+  private whileWorking(thinking: AbortController): void {
+    if (this.thinkingMode !== 'run') return thinking.abort()
+    if (this.judging?.thinking !== thinking) this.judging = { thinking, asking: false, again: false }
+    if (this.judging.asking) this.judging.again = true
+    else void this.judgeWork(this.judging)
+  }
+
+  private async judgeWork(judging: { thinking: AbortController; asking: boolean; again: boolean }): Promise<void> {
+    const name = this.name()
+    const heard = this.saidSince()
+    const trace = (action: 'judged' | 'stop' | 'hold', extra: { verdict?: { choice: string; probabilities: Record<string, number>; latencyMs: number }; reason?: string }) =>
+      this.events.debug?.({ type: 'working', action, heard, ...extra })
+    const state = [named(WORKING_PROMPT, name), this.conversation(), `## What ${name} is doing`, `Working on what the user asked, not finished yet. Right now: ${this.doing}`, '## What the user said while it works', `"${heard}"`].join('\n\n')
+    judging.asking = true
+    const started = performance.now()
+    try {
+      const result = await this.jev.choose({ state, instructions: named(WORKING_INSTRUCTIONS, name), options: namedOptions(WORKING, name), signal: judging.thinking.signal })
+      const verdict = { choice: result.choice, probabilities: result.probabilities, latencyMs: performance.now() - started }
+      trace('judged', { verdict })
+      // It finished while Jev judged: the deferred tick has the words.
+      if (this.thinking !== judging.thinking) return
+      const stop = result.probabilities.stop ?? 0
+      if (stop >= this.config.working.stop) {
+        trace('stop', { reason: `P(stop) ${stop.toFixed(2)}` })
+        return judging.thinking.abort()
+      }
+      trace('hold', { reason: `P(stop) ${stop.toFixed(2)} < ${this.config.working.stop}: finishing first` })
+    } catch (err) {
+      if (judging.thinking.signal.aborted || this.thinking !== judging.thinking) return
+      // Deciding again with everything they said is safer than finishing what they may have stopped.
+      trace('stop', { reason: `Jev failed: ${err instanceof Error ? err.message : String(err)}` })
+      return judging.thinking.abort()
+    } finally {
+      judging.asking = false
+    }
+    if (judging.again) {
+      judging.again = false
+      void this.judgeWork(judging)
+    }
+  }
+
+  /** What the user said after the words the current decision was made on. */
+  private saidSince(): string {
+    const now = fullText(this.transcript)
+    const seen = this.seen
+    if (!seen || this.seenUtterance !== this.utteranceId || !extendsWords(this.transcript, seen)) return now
+    return normalize(now).slice(normalize(fullText(seen)).length).join(' ')
   }
 
   /** What the user is asking for now: the live utterance, else the last thing they said. */
@@ -1136,6 +1198,8 @@ export class Agent {
     this.events.debug?.({ type: 'think-start', tickId: id, mode, handover, option: single?.option, entries: sent.entries, cacheAt: sent.cacheAt })
     const controller = new AbortController()
     this.thinking = controller
+    this.thinkingMode = mode
+    this.doing = 'working out what to do or say.'
     const started = performance.now()
     const ran = new Map<string, Ran>()
     let steps = 0
@@ -1175,6 +1239,7 @@ export class Agent {
       return null
     } finally {
       this.thinking = undefined
+      this.judging = null
     }
   }
 
@@ -1214,6 +1279,7 @@ export class Agent {
     const target = name && options.targets.get(name)
     if (!name || !target) return done(`There is no option [${option}] right now. Use a name exactly as listed.\n\n${await this.screenText(options)}`)
     option = name
+    this.doing = `a step on the screen, [${option}]${text ? `, typing "${text}"` : ''}.`
     const args: ActionArgs = {}
     const field = target.kind === 'element' && target.node.kind === 'input'
     if (field) {
@@ -1238,6 +1304,7 @@ export class Agent {
   /** A web search by thinking. It gets the full excerpts; Jev reads them cut to a line. */
   private async search(id: number, query: string, toolCallId: string, signal: AbortSignal, ran: Map<string, Ran>): Promise<SearchOutput> {
     signal.throwIfAborted()
+    this.doing = `searching the web for "${query}".`
     const utteranceId = this.utteranceId || undefined
     const trace = (result: string) => this.events.debug?.({ type: 'think-step', tickId: id, option: 'search', text: query, result })
     try {
@@ -1258,6 +1325,7 @@ export class Agent {
   /** A page read by thinking: it gets the page's text, and the history which page it was. */
   private async read(id: number, url: string, toolCallId: string, signal: AbortSignal, ran: Map<string, Ran>): Promise<PageOutput> {
     signal.throwIfAborted()
+    this.doing = `reading the web page ${url}.`
     const utteranceId = this.utteranceId || undefined
     const trace = (result: string) => this.events.debug?.({ type: 'think-step', tickId: id, option: 'fetch', text: url, result })
     try {
@@ -1288,6 +1356,7 @@ export class Agent {
       return result
     }
     const url = address
+    this.doing = `opening ${written}.`
     const known = knownPages(this.view()).find((p) => sameUrl(p.url, url))
     this.events.status?.('acting')
     let step: StepMeta | undefined
@@ -1309,6 +1378,7 @@ export class Agent {
   /** A command thinking runs on the user's files. A command that fails is an answer too: what it printed, and how it exited. */
   private async bash(id: number, command: string, toolCallId: string, signal: AbortSignal, ran: Map<string, Ran>): Promise<string> {
     signal.throwIfAborted()
+    this.doing = `running \`${command}\` on the user's files.`
     const utteranceId = this.utteranceId || undefined
     let result: BashResult
     try {

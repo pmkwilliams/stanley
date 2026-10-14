@@ -55,10 +55,14 @@ interface Pick {
 }
 type Script = (req: DecideRequest, call: number) => Pick | Promise<Pick>
 
-function scripted(script: Script, effect: Effect = 'changes'): DecisionClient & { calls: number; effectCalls: number } {
+/** Jev's judgement of words said while thinking works, by the words: P(stop), P(hold), P(elsewhere). */
+type Working = (heard: string) => Partial<Record<'stop' | 'hold' | 'elsewhere', number>>
+
+function scripted(script: Script, effect: Effect = 'changes', working: Working = () => ({ stop: 1 })): DecisionClient & { calls: number; effectCalls: number; heardWhileWorking: string[] } {
   const client = {
     calls: 0,
     effectCalls: 0,
+    heardWhileWorking: [] as string[],
     async decide(req: DecideRequest): Promise<MultiChoiceResult> {
       const { next, step = 'home', nextConfidence = 0.9, stepConfidence = 0.9, heard = 0.9 } = await script(req, client.calls++)
       if (!(step in req.questions.step!.options)) throw new Error(`"${step}" not in options: ${Object.keys(req.questions.step!.options).join(', ')}`)
@@ -71,7 +75,14 @@ function scripted(script: Script, effect: Effect = 'changes'): DecisionClient & 
         latencyMs: 1,
       }
     },
-    async choose(_req: ChoiceRequest): Promise<ChoiceResult> {
+    async choose(req: ChoiceRequest): Promise<ChoiceResult> {
+      if ('hold' in req.options) {
+        const heard = req.state.split('## What the user said while it works\n\n')[1]!.replace(/"/g, '')
+        client.heardWhileWorking.push(heard)
+        const probabilities = { stop: 0, hold: 0, elsewhere: 0, ...working(heard) }
+        const choice = Object.entries(probabilities).sort(([, a], [, b]) => b - a)[0]![0]
+        return { choice, probabilities, confidence: probabilities[choice as 'stop'], latencyMs: 1 }
+      }
       client.effectCalls++
       return { choice: effect, probabilities: { [effect]: 1 }, confidence: 1, latencyMs: 1 }
     },
@@ -144,9 +155,9 @@ const say = (agent: Agent, text: string) => {
   agent.partial(text)
 }
 
-function setup(script: Script, opts: { world?: Parameters<typeof fakeWorld>[0]; thinker?: FakeThinking; effect?: Effect; deps?: Partial<AgentDeps> } = {}) {
+function setup(script: Script, opts: { world?: Parameters<typeof fakeWorld>[0]; thinker?: FakeThinking; effect?: Effect; working?: Working; deps?: Partial<AgentDeps> } = {}) {
   const { world, performed } = fakeWorld(opts.world)
-  const jev = scripted(script, opts.effect)
+  const jev = scripted(script, opts.effect, opts.working)
   const thinker = fakeThinker(opts.thinker)
   const ticks: TickReport[] = []
   const statuses: AgentStatus[] = []
@@ -841,10 +852,10 @@ describe('Agent thinking', () => {
     expect(debug.some((e) => e.type === 'gate' && e.rule === 'mid-speech')).toBe(true)
   })
 
-  it('drops its run when the user says more, and re-decides with the whole turn', async () => {
+  it('drops its run when what the user says next stops it, and re-decides with the whole turn', async () => {
     let release!: () => void
     const gate = new Promise<void>((r) => (release = r))
-    const { agent, said, jev } = setup((_, i) => (i === 0 ? { next: 'think' } : { next: 'listen' }), {
+    const { agent, said, jev, debug } = setup((_, i) => (i === 0 ? { next: 'think' } : { next: 'listen' }), {
       thinker: {
         run: async ({ signal }) => {
           await gate
@@ -854,13 +865,77 @@ describe('Agent thinking', () => {
       },
     })
     agent.utteranceStart()
-    agent.segment('what is')
+    agent.segment("what's the weather")
+    agent.utteranceEnd()
     await settle()
-    agent.segment('the weather')
+    agent.utteranceStart()
+    agent.segment('no wait, in Paris')
+    await settle()
     release()
     await settle()
     expect(said).toEqual([])
     expect(jev.calls).toBe(2)
+    expect(jev.heardWhileWorking).toEqual(['no wait, in Paris'])
+    expect(debug.some((e) => e.type === 'working' && e.action === 'stop')).toBe(true)
+  })
+
+  it('finishes its run when what the user says next can wait, then decides on those words', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((r) => (release = r))
+    const decided: string[] = []
+    const { agent, said, jev, debug } = setup(
+      (req, i) => {
+        decided.push(req.state.split('## Conversation')[1] ?? '')
+        return i === 0 ? { next: 'think' } : { next: 'done' }
+      },
+      {
+        thinker: {
+          run: async ({ signal }) => {
+            await gate
+            signal.throwIfAborted()
+            return { text: 'Here is your diagram.' }
+          },
+        },
+        working: (heard) => (heard.includes('blue') ? { hold: 0.8, stop: 0.2 } : { stop: 1 }),
+      },
+    )
+    agent.utteranceStart()
+    agent.segment('draw me the water cycle')
+    agent.utteranceEnd()
+    await settle()
+    agent.utteranceStart()
+    agent.segment('and make it blue')
+    await settle()
+    expect(jev.calls).toBe(1)
+    release()
+    await settle()
+    expect(said).toEqual(['Here is your diagram.'])
+    expect(jev.calls).toBe(2)
+    expect(decided[1]).toContain('make it blue')
+    expect(debug.find((e) => e.type === 'working' && e.action === 'hold')).toMatchObject({ heard: 'and make it blue' })
+  })
+
+  it('stops a step it decides alone at once when the user says more, without asking', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((r) => (release = r))
+    const { agent, jev, debug } = setup((_, i) => (i === 0 ? { next: 'act', step: 'Add a task' } : { next: 'listen' }), {
+      thinker: {
+        write: async ({ signal }) => {
+          await gate
+          signal.throwIfAborted()
+          return { source: 'user', text: 'Buy', say: '' }
+        },
+      },
+      working: () => ({ hold: 1 }),
+    })
+    agent.utteranceStart()
+    agent.segment('add buy')
+    await settle()
+    agent.segment('eggs')
+    release()
+    await settle()
+    expect(jev.heardWhileWorking).toEqual([])
+    expect(debug.some((e) => e.type === 'think-end' && e.aborted)).toBe(true)
   })
 })
 

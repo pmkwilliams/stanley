@@ -74,6 +74,11 @@
       const text = `${ev.action}${ev.heard ? `: "${ev.heard}"` : ''}${ev.echo ? ` · echo "${ev.echo}"` : ''}${verdict}${ev.reason ? ` · ${ev.reason}` : ''}`
       return { who: 'overlap', text, tone: ev.action === 'cut' ? 'strong' : ev.action === 'duck' ? 'muted' : undefined }
     }
+    if (e.source === 'agent' && e.event.type === 'working') {
+      const ev = e.event
+      const verdict = ev.verdict ? ` · ${ev.verdict.choice} ${(ev.verdict.probabilities[ev.verdict.choice]! * 100).toFixed(0)}% in ${ms(ev.verdict.latencyMs)}` : ''
+      return { who: 'working', text: `${ev.action}: "${ev.heard}"${verdict}${ev.reason ? ` · ${ev.reason}` : ''}`, tone: ev.action === 'stop' ? 'strong' : undefined }
+    }
     if (e.source === 'tts') {
       const ev = e.event
       if (ev.type === 'synth') return { who: 'voice', text: `"${ev.text}" · ${ms(ev.audioMs)} audio in ${ms(ev.synthMs)} · ${ms(ev.queuedMs)} queued ahead`, tone: 'muted' }

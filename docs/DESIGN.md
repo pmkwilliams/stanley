@@ -206,9 +206,15 @@ returned. Three ways in, all with the same tools and `toolChoice: 'auto'`:
   ("show me that", "the Wikipedia one") without searching again. With the user's files it also
   has `bash` (see **Files**).
 
-Whatever thinking is doing is dropped if the user says more while it works: it says nothing, and the
-steps it already took stay done and in the history (a step that ran in a step cut short goes in as
-Stanley's own call and result). Jev then re-decides with everything they said. After a `run`, the
+When the user says more while thinking works, a single step (write, confirm) is dropped at once: it
+hinges on exactly their words. A whole turn is judged: one Jev question (`WORKING` in `barge.ts`,
+like the barge-in judge for speech over Stanley's voice) asks whether the words stop it (`stop`,
+`no, the other one`, `never mind`, saying more exactly what they meant) or can wait until it
+finishes (`and make it blue`, another question), with what thinking is doing right now. The turn
+goes on while Jev judges, and more words are judged again. Stopped, it says nothing, and the steps
+it already took stay done and in the history (a step that ran in a step cut short goes in as
+Stanley's own call and result). Either way Jev then decides with everything they said: at once when
+it stopped, after it finishes when not. `pnpm eval:working` checks the judgement. After a `run`, the
 task ends; what was said is in the history, so a follow-up ("yes, send it") is Jev's. Why thinking
 was called is for the debug window only: the instructions say what to do in each case.
 

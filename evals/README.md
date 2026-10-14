@@ -8,6 +8,7 @@
 | `pnpm eval <filter>` | Agent behaviour on typed scenarios, demo apps | Paid (Jev + Sonnet) |
 | `pnpm eval:web <filter>` | The same agent on fixture websites in headless Chromium | Paid (Jev + Sonnet) |
 | `pnpm eval:web --live <filter>` | Read-only scenarios on real websites (they change, so not in the default set) | Paid (Jev + Sonnet) |
+| `pnpm eval:working` | Whether words said while Stanley works stop it or wait for it to finish (`WORKING`) | 15 Jev calls |
 | `pnpm smoke:desktop` | Builds and launches the real app, types two utterances, screenshots both windows | A few paid calls |
 
 The paid evals run nothing without a filter or `--all`. They list what they would run instead, and

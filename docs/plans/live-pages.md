@@ -5,7 +5,7 @@ write an HTML page (a diagram, a small app), show it, and change it while it's o
 one mechanism: an HTML file in the user's folder, shown in the Web app, reloaded when it changes.
 Writing a page is writing that file; changing it live is editing the file while it is on screen.
 
-Status: stages 1 and 2 implemented. See **Notes** under each stage for where the code differs from the plan.
+Status: stages 1 to 3 implemented. See **Notes** under each stage for where the code differs from the plan.
 
 ## Decisions
 
@@ -107,6 +107,21 @@ said while thinking works, like the barge-in judge does for words said while Sta
 - **elsewhere**: not said to Stanley: ignored.
 
 Thinking keeps going until the judge is sure, with thresholds like `BargeInConfig`'s.
+
+**Notes**
+- Only whole turns (`run`) are judged. A single step thinking decides (what to type, whether to
+  press Send) depends on exactly the user's words, so new words still drop it at once.
+- The question gets the conversation, what thinking is doing right now (its latest step: a
+  search, a command, a page being written) and the words said since the decision it is working
+  on. P(stop) at `config.working.stop` (0.5) aborts the turn; below, it finishes first and the
+  deferred tick decides on the words. Verdicts come back in about 250 ms and are decisive, so
+  there is no unsure band. If Jev fails, the turn stops.
+- `hold` and `elsewhere` act the same: either way Jev decides on the words afterwards, and can
+  decide nothing.
+- A turn whose answer hadn't been released (the user paused but hadn't finished) still loses its
+  answer to new words, as before: it is said only if the words don't change the turn.
+- `pnpm eval:working`: 15 interjections (stop, wait, a correction, a clarification, "and make it
+  blue", another question, talking to someone else), 15/15.
 
 ## 4. Writing pages
 
