@@ -324,6 +324,9 @@ importers:
       sherpa-onnx-node:
         specifier: 1.13.8
         version: 1.13.8
+      wordlist-english:
+        specifier: 1.2.1
+        version: 1.2.1
 
   packages/tts:
     dependencies:
@@ -2180,6 +2183,9 @@ packages:
     engines: {node: '>=8'}
     hasBin: true
 
+  wordlist-english@1.2.1:
+    resolution: {integrity: sha512-vaiQQiu95UeON0WZFtiTrWfZmIiUd2rhrhMCBeEzwq3oTVzHCX8naGCqv/smSspE9kH2sN+E8lZyV0JZjqSzGw==}
+
   yallist@3.1.1:
     resolution: {integrity: sha512-a4UGQaWPH59mOXUYnAG2ewncQS4i4F43Tv3JoAM+s2VDAmS9NsK8GpDMLrCHPksFT7h3K6TOoUNn2pb7RoXx4g==}
 
@@ -3890,6 +3896,8 @@ snapshots:
     dependencies:
       siginfo: 2.0.0
       stackback: 0.0.2
+
+  wordlist-english@1.2.1: {}
 
   yallist@3.1.1: {}
 

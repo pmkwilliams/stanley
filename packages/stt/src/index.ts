@@ -3,6 +3,17 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { OfflineRecognizer, Vad } from 'sherpa-onnx-node'
+// Each size holds only the words new at it, so a level is the sizes up to it together.
+import american10 from 'wordlist-english/american-words-10.json' with { type: 'json' }
+import american20 from 'wordlist-english/american-words-20.json' with { type: 'json' }
+import american35 from 'wordlist-english/american-words-35.json' with { type: 'json' }
+import american40 from 'wordlist-english/american-words-40.json' with { type: 'json' }
+import american50 from 'wordlist-english/american-words-50.json' with { type: 'json' }
+import english10 from 'wordlist-english/english-words-10.json' with { type: 'json' }
+import english20 from 'wordlist-english/english-words-20.json' with { type: 'json' }
+import english35 from 'wordlist-english/english-words-35.json' with { type: 'json' }
+import english40 from 'wordlist-english/english-words-40.json' with { type: 'json' }
+import english50 from 'wordlist-english/english-words-50.json' with { type: 'json' }
 import { SMART_TURN, TurnDetector } from './turn'
 
 export { parseWav, readWav, writeWav } from './wav'
@@ -156,17 +167,19 @@ export class Transcriber {
 
   /**
    * Words to favour, usually names and labels on screen. Only rare words are kept: not one of the
-   * model's pieces and not in the dictionary. Common ones need no help, and favouring them
+   * model's pieces and not a common English word. Common ones need no help, and favouring them
    * distorts: with "Music" on screen, a little background noise before "play music" was heard as
-   * "Music Music Music Music Music Previous Play Music".
+   * "Music Music Music Music Music Previous Play Music", and with "Archived" on screen "Alex" was
+   * heard as "Archived".
    */
   setHotwords(candidates: Iterable<string>): void {
     const vocab = this.vocab()
-    const common = dictionary()
+    const common = commonWords()
     const kept = new Set<string>()
     for (const raw of candidates) {
       const word = raw.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '')
-      if (word.length < 3 || vocab.has(`▁${word}`) || vocab.has(`▁${word.toLowerCase()}`) || common.has(word.toLowerCase())) continue
+      const lower = word.toLowerCase().replace(/’/g, "'")
+      if (word.length < 3 || vocab.has(`▁${word}`) || vocab.has(`▁${lower}`) || common.has(lower)) continue
       kept.add(word)
       if (kept.size >= MAX_HOTWORDS) break
     }
@@ -430,18 +443,19 @@ export async function transcribe(modelsDir: string, samples: Float32Array): Prom
   return (await recognizer.decodeAsync(stream)).text.trim()
 }
 
-let dictionaryCache: Set<string> | undefined
+let commonCache: Set<string> | undefined
 
-/** English words, lowercased, from the list macOS ships; empty where there is none. */
-function dictionary(): Set<string> {
-  if (!dictionaryCache) {
-    try {
-      dictionaryCache = new Set(readFileSync('/usr/share/dict/words', 'utf8').toLowerCase().split('\n'))
-    } catch {
-      dictionaryCache = new Set()
-    }
-  }
-  return dictionaryCache
+/**
+ * Common English words, lowercased: SCOWL's up to size 50, every form ("archived", "emails") and no
+ * names. The dictionary macOS ships was used before, but it has only base forms and does have
+ * first names, so it passed "Archived" as rare and "Alex" as common.
+ */
+function commonWords(): Set<string> {
+  return (commonCache ??= new Set(
+    [english10, english20, english35, english40, english50, american10, american20, american35, american40, american50]
+      .flat()
+      .map((w) => w.toLowerCase()),
+  ))
 }
 
 /** The model's pieces, as in tokens.txt (`▁` starts a word). */

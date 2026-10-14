@@ -173,8 +173,9 @@ Speech recognition is not exact, so Stanley treats the user's words as heard, no
   not be looking.
 - **Heard better in the first place.** Beam search (4 paths, ~7% slower than greedy) favours rare
   words on the screen and the app names (`screenVocabulary`, at most 30, only words the model
-  splits into several pieces). At strength 1.5 "Okonkwo" on screen is heard instead of "Aconquo";
-  at 2.5 it started replacing other words.
+  splits into several pieces that aren't common English, any form, per SCOWL size 50). At strength
+  1.5 "Okonkwo" on screen is heard instead of "Aconquo"; at 2.5 it started replacing other words.
+  Favouring a common word does harm: with "Archived" on screen, "Alex" was heard as "Archived".
 
 ### Thinking
 
