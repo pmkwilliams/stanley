@@ -18,6 +18,7 @@ import { DebugRecorder } from './debug'
 import { Drafts } from './drafts'
 import { filePath, SCHEME, serveFile, serveLib } from './folder-pages'
 import { WebviewTabs } from './page'
+import { Previewer } from './preview'
 import { Shell } from './shell'
 import { fileStore } from './store'
 
@@ -50,6 +51,8 @@ let transitions = Promise.resolve()
 let status: AgentStatus = 'idle'
 /** What Stanley last said, until the user has answered it. */
 let said: Snapshot['said'] = null
+/** Background tasks working now. */
+let tasks: Snapshot['tasks'] = []
 let utteranceStartedAt = 0
 let stt: Snapshot['stt'] = 'loading'
 let transcriber: Transcriber | null = null
@@ -99,6 +102,8 @@ function refreshHotwords() {
 
 /** Pages Stanley is writing, drawn in the web view as they come. */
 const drafts = new Drafts()
+/** Pages background tasks made, drawn out of sight for them to check. */
+const previewer = new Previewer()
 /** The Web app's pages, live in the main window, a tab each: Stanley reads them and works them like a person in a browser. */
 const tabs = new WebviewTabs({
   navigated: (tab) => pageNavigated(tab),
@@ -110,10 +115,7 @@ const tabs = new WebviewTabs({
     const path = filePath(url)
     return path !== null && drafts.has(path)
   },
-  backdrop: (url) => {
-    const path = filePath(url)
-    return path !== null && themed(path) ? GLASS[readSettings(store).theme] : '#ffffff'
-  },
+  backdrop: (url) => backdrop(url, readSettings(store).theme),
   // Escape leaves full screen, as in a browser, also when the page has the keyboard.
   escape: () => {
     if (shell.layout.fullscreen && shell.layout.visible === 'web' && !locked) void shell.performIn('web', FULLSCREEN, {})
@@ -229,7 +231,17 @@ function startSession() {
     },
     // The agent locks the way the lock button does.
     () => world === shell && lock(),
-    { folder, pages: { draft: (path) => drafts.begin(path), look: () => tabs.look() } },
+    {
+      folder,
+      pages: {
+        draft: (path) => drafts.begin(path),
+        look: () => tabs.look(),
+        preview: (url, opts) => {
+          const appearance = opts.appearance ?? readSettings(store).theme
+          return previewer.preview(url, { ...opts, appearance, size: pageSize(), backdrop: backdrop(url, appearance) })
+        },
+      },
+    },
   )
   shell = world
   const self: Agent = new Agent({
@@ -243,6 +255,11 @@ function startSession() {
         if (self !== agent) return
         status = s
         appEvent({ type: 'status', status: s })
+        sendSnapshot()
+      },
+      tasks: (working) => {
+        if (self !== agent) return
+        tasks = working
         sendSnapshot()
       },
       // Shown as it is written, and spoken as it comes.
@@ -276,11 +293,17 @@ function startSession() {
       appendFileSync(sessionFile, JSON.stringify(record) + '\n')
       debug.record({ source: 'history', event: record })
     },
+    // Each background task's own log, next to the session's.
+    taskSink: (record) => {
+      if (self !== agent) return
+      appendFileSync(sessionFile.replace(/\.jsonl$/, `.${record.id}.jsonl`), JSON.stringify(record) + '\n')
+    },
   })
   agent = self
   appEvent({ type: 'session-start', session: sessionName, config: profile.config, systemPrompt: named(SYSTEM_PROMPT, agentName()), instructions: agent.instructions, mock })
   status = 'idle'
   said = null
+  tasks = []
   refreshHotwords()
 }
 startSession()
@@ -345,6 +368,7 @@ function sendSnapshot() {
     said,
     talking: !!speaker?.speaking,
     ducked: !!speaker?.ducked,
+    tasks,
     stt,
     tts,
     mock,
@@ -546,6 +570,8 @@ async function loadTts() {
         // The user may already be talking as Stanley starts: it starts quietly, and judges them.
         if (on && speaking) bargeIn.voice(true)
         if (!on) bargeIn.speechEnded()
+        // A background task's result waits until Stanley has stopped talking.
+        agent.talking(on)
         sendSnapshot()
       },
       debug: (event) => debug.record({ source: 'tts', event }),
@@ -573,6 +599,12 @@ function pageSize(): PageSize {
 
 /** About what the Web app's glass looks like under a page Stanley wrote, per theme: the background, half over itself. */
 const GLASS = { light: '#ffffff', dark: '#0c0a09' }
+
+/** What the user sees behind a page where it has no background: Stanley's glass behind its own pages, white behind others, as in a browser. */
+function backdrop(url: string, theme: 'light' | 'dark'): string {
+  const path = filePath(url)
+  return path !== null && themed(path) ? GLASS[theme] : '#ffffff'
+}
 
 /**
  * Matches the window and web pages (through prefers-color-scheme) to the theme, and the window

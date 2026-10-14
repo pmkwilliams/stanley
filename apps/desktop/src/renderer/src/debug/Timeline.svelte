@@ -79,6 +79,15 @@
       const verdict = ev.verdict ? ` · ${ev.verdict.choice} ${(ev.verdict.probabilities[ev.verdict.choice]! * 100).toFixed(0)}% in ${ms(ev.verdict.latencyMs)}` : ''
       return { who: 'working', text: `${ev.action}: "${ev.heard}"${verdict}${ev.reason ? ` · ${ev.reason}` : ''}`, tone: ev.action === 'stop' ? 'strong' : undefined }
     }
+    if (e.source === 'agent' && e.event.type === 'task') {
+      const ev = e.event
+      const head = `${ev.taskId} "${ev.title}"`
+      if (ev.action === 'start') return { who: 'task', text: `${head} started: ${ev.text}`, tone: 'strong' }
+      if (ev.action === 'step') return { who: 'task', text: `${head} · ${ev.tool} ${ev.text}${ev.result ? ` → ${ev.result.split('\n')[0]}` : ''}`, tone: 'muted' }
+      if (ev.action === 'end') return { who: 'task', text: `${head} ${ev.state === 'failed' ? 'failed' : 'finished'}: ${ev.text}`, tone: ev.state === 'failed' ? 'bad' : 'strong' }
+      if (ev.action === 'cancel') return { who: 'task', text: `${head} stopped` }
+      return { who: 'task', text: `${head}: telling the user (tick #${ev.tickId})` }
+    }
     if (e.source === 'tts') {
       const ev = e.event
       if (ev.type === 'synth') return { who: 'voice', text: `"${ev.text}" · ${ms(ev.audioMs)} audio in ${ms(ev.synthMs)} · ${ms(ev.queuedMs)} queued ahead`, tone: 'muted' }

@@ -235,6 +235,48 @@ the input, moved forward each step. Nothing that was sent is ever changed. The o
 is to what was never input: the final output of the last turn (its text goes in as what Stanley
 said, as far as the user heard it), a single step's call that wasn't applied, a reply not yet sent.
 
+### Background tasks
+
+Some requests take minutes: research across many sources, going through many files, a page made
+while the user gets on with something else. Thinking hands these to a **background task**
+(`background.ts`) with `delegate(task, title)`, says in a few words what it set going, and the turn
+ends. The design follows T3 Code's delegation:
+
+- **A task starts from its brief alone.** It doesn't get the conversation: `task` has to carry
+  every name, address, path and detail it needs, and what to give back. A fork of the history would
+  read the user's turns and "your text is speech" as its own and talk to the user; a brief keeps
+  it on one job, and makes what was asked inspectable. A new round is a new task whose brief carries
+  what the last one found; a task is never messaged.
+- **It has no screen.** Its tools are `search` and `fetch`, `bash`, `write_file` and `edit_file`,
+  and `preview_page`: no `act`, `open_page` or `delegate` (no nesting). Its instructions
+  (`taskInstructions`) say no one hears it until it finishes, that it can't ask the user (it stops
+  with "Needs: …" instead), never to send, delete or overwrite what the task didn't ask for, and to
+  finish with a result for Stanley: the facts and sources an answer needs, or what it made and where.
+  It runs thinking's tool loop on Claude Opus 5.5 at high effort, whatever thinking itself runs on
+  (`TASK_MODEL`, `TASK_EFFORT`), up to 40 steps, at most 3 at once (`config.background`).
+- **It checks its pages out of sight.** `preview_page(path, appearance?, width?)` draws a page from
+  the folder in an offscreen window of its own (`Previewer`, `apps/desktop/src/main/preview.ts`),
+  as the Web app would show it: the same `stanley://files` protocol, Stanley's look, the libraries
+  and no network, at the page size, dark or light (`prefers-color-scheme` emulated through the
+  DevTools protocol). It gives back a picture, the height the page needs, and its whole console:
+  errors with their line, warnings and logs, so a page can report its own checks with
+  `console.log`. Like T3's `html_preview` and `html_render`, checking and showing are apart:
+  only thinking shows anything, with `open_page`.
+- **Its result is queued, not steered in.** When a task ends by itself, its result goes into the
+  history as a note (`Background task task-1, "…" finished: …`), which Jev reads too. The next whole
+  thinking turn has it, whatever it was called for; reading it there, or with `task_status`,
+  delivers it. If no turn comes, the agent starts one to tell the user (`deliver`, with
+  `TASK_DONE`) once everything is quiet for 400 ms: no utterance open, the user not speaking,
+  nothing held or running, and Stanley not talking (the host reports its voice with `talking`). It
+  is never spoken over the user, and never put into a turn already running.
+- **Thinking knows what is working.** Each whole turn's observation lists the tasks still working.
+  `task_status` says what one is doing right now, or its result; `task_cancel` stops one, keeps what
+  it did, and its result is never told. A task's own words never reach the conversation.
+- **A file a working task wrote is its own** until it ends: thinking's `write_file` or `edit_file` on
+  it is refused, saying which task has it.
+- Each task's brief, instructions and messages go to `userData/sessions/<session>.task-N.jsonl`,
+  and its start, steps, end and delivery are rows in the debug timeline. Locking cancels them all.
+
 ### Effects: what a button does
 
 Real apps and pages don't label their buttons, so the agent judges. The first time a button is
@@ -443,8 +485,8 @@ writes there is usable outside it.
   history, so a page shown once doesn't stay in the user's folder. A page the user wants kept goes
   in `Pages/`, written there or moved there with `mv`; when is thinking's call. The page comes to
   the front as soon as it starts and is drawn as it is written: the tool's input is read as it streams and served to the view at the file's address as
-  a streaming response. Then thinking gets the page's console errors and a picture of it, so it can
-  fix what didn't work. "Make it blue" is an `edit_file`, and the page reloads where it was.
+  a streaming response. Then thinking gets everything the page's console printed (errors with their
+  line, warnings, logs) and a picture of it, so it can fix what didn't work. "Make it blue" is an `edit_file`, and the page reloads where it was.
   A page in `Pages/` or scratch takes Stanley's look: it is served with the shell's tokens from `theme.css`
   as CSS variables (dark, or light with the user's theme, live) and its background, text colour
   and font (Inter, served with the libraries) set from them, in a cascade layer the page's own CSS wins over
@@ -614,7 +656,8 @@ diagnosing agent behaviour. It is driven by one structured stream (`DebugEvent`)
 guardrail gates with thresholds, button effects, each thinking call with why, step results), STT
 timing (VAD, decode latency, dropped partials, silence), app events (mic, status, typed/manual input)
 and the history's records. Each session's stream is written to
-`userData/sessions/<session>.debug.jsonl` next to the history JSONL.
+`userData/sessions/<session>.debug.jsonl` next to the history JSONL, and each background task's
+own log to `<session>.task-N.jsonl`.
 
 - **Timeline** grouped by task; optional rows for partials, VAD, skipped requests, status.
 - **Tick inspector**: what was heard and why the tick ran, what Jev decided vs what took effect,

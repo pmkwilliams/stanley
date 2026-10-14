@@ -160,7 +160,7 @@ replacement), on the user's folder through `FileTools`, so every change is kept 
 - **Streaming.** A page is thousands of tokens: as `write_file`'s input streams, its `content`
   so far is written into the view (`document.write`), so the page draws as it is written. The
   page comes to the front when writing starts; when the call ends the file is saved and loaded.
-- **Seeing the result.** After a write or an edit, the page's console errors and a screenshot go
+- **Seeing the result.** After a write or an edit, what the page's console printed and a screenshot go
   back to thinking with the tool result, so it can see a diagram that didn't render and fix it.
 
 **Notes**
@@ -176,8 +176,9 @@ replacement), on the user's folder through `FileTools`, so every change is kept 
   the page is opened as written.
 - Opening the page on screen again reloads it, where it was scrolled to (`WebviewPage.goto`), and
   the file watcher stays quiet for a second so it doesn't reload it twice.
-- `World.look` waits for the page to load and its scripts to draw (600 ms more), then gives the
-  console errors since it loaded (uncaught exceptions and blocked requests come through as errors)
+- `World.look` waits for the page to load and its scripts to draw (600 ms more), then gives what
+  the console printed since it loaded, each line with its level and line number (uncaught
+  exceptions and blocked requests come through as errors; Electron's own warnings are left out)
   and a JPEG of the view, at most 1280 wide. The result goes to the model as text plus an image
   part (`toModelOutput`).
 - `edit_file` replaces `old` once, or everywhere with `all`; text that isn't there, or is there

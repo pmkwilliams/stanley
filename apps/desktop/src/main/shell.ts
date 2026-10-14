@@ -1,16 +1,21 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import type { AppEntry, PageDraft, PageLook, Screen, StepResult, World } from '@stanley/agent'
+import type { AppEntry, PageDraft, PageLook, PagePreview, PreviewOptions, Screen, StepResult, World } from '@stanley/agent'
 import { FULLSCREEN, type ActionArgs, type AgentNode, type AppContext, type AppModule, type Layout } from '@stanley/app-sdk'
 import { fileUrl, inFolder, viewable } from './folder-pages'
 
 const SEP = ':'
 
-/** What the desktop does with the Web app's page that the app itself doesn't: drawing a page as it is written, and a picture of it. */
+/**
+ * What the desktop does with the Web app's page that the app itself doesn't: drawing a page as it
+ * is written, a picture of it, and drawing one out of sight.
+ */
 export interface PageHost {
   /** Serves the page at `path` in the user's folder as it is written, from now until it ends. */
   draft(path: string): { write(content: string): void; end(content: string): void; cancel(): void }
   look(): Promise<PageLook>
+  /** Draws the page at `url` in a window of its own, out of sight, and says how it came out. */
+  preview?(url: string, opts: PreviewOptions): Promise<PagePreview>
 }
 
 export interface ShellOptions {
@@ -147,7 +152,16 @@ export class Shell implements World {
 
   /** How the web page on screen came out. */
   async look(): Promise<PageLook> {
-    return this.opts.pages ? this.opts.pages.look() : { errors: [] }
+    return this.opts.pages ? this.opts.pages.look() : { console: [] }
+  }
+
+  /** Draws a web page from the user's folder out of sight: the screen stays as it is. */
+  async preview(written: string, opts: PreviewOptions = {}): Promise<PagePreview> {
+    const path = this.pagePath(written)
+    const preview = this.opts.pages?.preview
+    if (!preview) throw new Error("Pages can't be drawn out of sight here.")
+    if (!path || !/\.html?$/i.test(path) || !existsSync(join(this.opts.folder!.root, path))) throw new Error(`There is no web page "${written}" in the user's folder.`)
+    return preview(fileUrl(path), opts)
   }
 
   /** A path in the user's folder as written, when there is an app to show it in. */

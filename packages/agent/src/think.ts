@@ -4,6 +4,7 @@ import { filesPrompt, type PageSize } from './files'
 import { named } from './narrate'
 import { skillsPrompt, type SkillScan } from './skills'
 import type { WebResult } from './web'
+import type { PreviewOptions } from './world'
 
 /** One `act` call: an option, and for fields the text and whose words it is. */
 export interface ActCall {
@@ -44,8 +45,8 @@ export interface ThinkRequest {
   cacheAt?: number
   /** A turn that decides one step: its calls come back unrun, for the agent to apply. */
   single?: { kind: 'write' | 'confirm'; option: string }
-  /** Runs one option and returns what comes of it: the outcome, the screen and the new options. */
-  act(call: ActCall, toolCallId: string): Promise<string>
+  /** Runs one option and returns what comes of it: the outcome, the screen and the new options. Absent without a screen (a background task). */
+  act?(call: ActCall, toolCallId: string): Promise<string>
   /** Searches the web in the background. Absent without web access. Throws when it fails. */
   search?(query: string, toolCallId: string): Promise<SearchOutput>
   /** Reads a web page in the background. Absent without web access. Throws when it fails. */
@@ -60,6 +61,14 @@ export interface ThinkRequest {
   editFile?(path: string, old: string, replacement: string, all: boolean, toolCallId: string): Promise<FileOutput>
   /** A file being written, as far as its input has come: for drawing a page as it is written. */
   onDraft?(toolCallId: string, path: string, content: string): void
+  /** Draws a web page from the user's folder out of sight, and says how it came out. Only for background tasks, which have no screen. */
+  preview?(path: string, opts: PreviewOptions, toolCallId: string): Promise<FileOutput>
+  /** Starts a background task with `task` as its whole brief, and returns at once. Absent without background tasks. */
+  delegate?(task: string, title: string, toolCallId: string): Promise<string>
+  /** What a background task is doing, or its result. */
+  taskStatus?(taskId: string, toolCallId: string): Promise<string>
+  /** Stops a background task. */
+  taskCancel?(taskId: string, toolCallId: string): Promise<string>
   maxSteps: number
   signal: AbortSignal
   /** Each piece of text as it is written, so it can be spoken before the turn is over. Not for single-step turns. */
@@ -139,6 +148,13 @@ You can also look things up in the background: \`search\` searches the web and \
 
 A question only needs an answer: look it up in the background and say it. When the user wants to see something, put it on screen: open the page about exactly what they mean, searching first if no page in the conversation is about it. "That" or "it" is what you just told them about (the thing your answer named), not the question or the list it came from.`
 
+/** For sessions that can start background tasks (see background.ts). */
+export const BACKGROUND = `## Background tasks
+\`delegate\` starts a task in the background, worked on by another agent while you go on with the user. Use it when what the user asks for will take a while (looking into something across many sources, going through many of their files, making a page while they get on with something else) or when they ask for it to be done in the background. Say in a few words what you've set going, then stop: don't wait for it. Do anything quick yourself.
+- It knows nothing but what you write in \`task\`: put in everything it needs from the conversation (names, addresses, file paths, what the user said they want) and what to give back. It can search the web, read pages, and work on the user's files, including making web pages, but it has no screen and can't ask the user anything.
+- When it finishes, its result comes to you in a note. Tell the user, briefly, what it found or made, as you would your own answer. A page it made isn't on screen: put it there with \`open_page\` when the user wanted to see it. A result starting with "Needs:" is a question for the user: ask it.
+- Tasks still working are listed in a note each time you're needed. \`task_status\` says how one is going, only when the user asks; \`task_cancel\` stops one, when the user no longer wants it.`
+
 export const MISHEARD = `## Speech recognition
 The user's words come from speech recognition, which marks a word it was unsure of with (?).`
 
@@ -154,9 +170,9 @@ export function longDate(d: Date): string {
  * files are, when the session has them, `skills` the skills in them when it started, and `page`
  * the size pages are shown at then (a change arrives as a note too).
  */
-export function instructions(opts: { web: boolean; files?: string; skills?: SkillScan; today: Date; name?: string; page?: PageSize }): string {
+export function instructions(opts: { web: boolean; files?: string; skills?: SkillScan; background?: boolean; today: Date; name?: string; page?: PageSize }): string {
   const files = opts.files ? [filesPrompt(opts.files, opts.page), ...(opts.skills ? [skillsPrompt(opts.skills)] : [])] : []
-  const text = [THINKING_PROMPT, MISHEARD, ...(opts.web ? [WEB] : []), ...files, `Today is ${longDate(opts.today)}.`].join('\n\n')
+  const text = [THINKING_PROMPT, MISHEARD, ...(opts.web ? [WEB] : []), ...files, ...(opts.background ? [BACKGROUND] : []), `Today is ${longDate(opts.today)}.`].join('\n\n')
   return named(text, opts.name ?? DEFAULT_AGENT_NAME)
 }
 
@@ -202,35 +218,44 @@ const urlInput = jsonSchema<{ url: string }>({
   additionalProperties: false,
 })
 
+const taskInput = jsonSchema<{ taskId: string }>({
+  type: 'object',
+  properties: { taskId: { type: 'string', description: 'The task\'s id, as `delegate` gave it: task-1.' } },
+  required: ['taskId'],
+  additionalProperties: false,
+})
+
 /**
- * The same tools on every call, so the cached prefix holds: `act`, and the web and file tools the
- * session has. A single-step turn's tools don't run, except `bash`: it may look at the user's files
+ * The same tools on every call, so the cached prefix holds: `act`, and the web, file and
+ * background-task tools the session has (a background task has no `act`, and `preview_page` instead). A single-step turn's tools don't run, except `bash`: it may look at the user's files
  * first (a skill, or a list they named), and then decide.
  */
 function tools(req: ThinkRequest): ToolSet {
   const set: ToolSet = {
-    act: tool({
-      description: 'Run one of the listed options. Pass `text` for options that type into a field, and `wrote` to say whose words they are.',
-      inputSchema: jsonSchema<ActCall>({
-        type: 'object',
-        properties: {
-          option: { type: 'string', description: 'The option name: the text inside the brackets, exactly as listed.' },
-          text: {
-            type: 'string',
-            description:
-              "What to type, for fields: exactly what goes in it, nothing else. The user's own words are tidied (filler words dropped, capitals and punctuation fixed), never reworded or added to: no greeting, sign-off or extra words they didn't say.",
+    ...(req.act && {
+      act: tool({
+        description: 'Run one of the listed options. Pass `text` for options that type into a field, and `wrote` to say whose words they are.',
+        inputSchema: jsonSchema<ActCall>({
+          type: 'object',
+          properties: {
+            option: { type: 'string', description: 'The option name: the text inside the brackets, exactly as listed.' },
+            text: {
+              type: 'string',
+              description:
+                "What to type, for fields: exactly what goes in it, nothing else. The user's own words are tidied (filler words dropped, capitals and punctuation fixed), never reworded or added to: no greeting, sign-off or extra words they didn't say.",
+            },
+            wrote: {
+              type: 'string',
+              enum: ['user', 'stanley'],
+              description:
+                'For fields. user: the user said these words (tidied), or the value follows directly from what they asked (a search query, a city, a number, a name, a choice from a list). stanley: you composed the wording, because the user gave only a description, a tone or a gist.',
+            },
           },
-          wrote: {
-            type: 'string',
-            enum: ['user', 'stanley'],
-            description:
-              'For fields. user: the user said these words (tidied), or the value follows directly from what they asked (a search query, a city, a number, a name, a choice from a list). stanley: you composed the wording, because the user gave only a description, a tone or a gist.',
-          },
-        },
-        required: ['option'],
-        additionalProperties: false,
+          required: ['option'],
+          additionalProperties: false,
+        }),
+        execute: (call: ActCall, { toolCallId }: { toolCallId: string }) => req.act!(call, toolCallId),
       }),
-      execute: (call: ActCall, { toolCallId }: { toolCallId: string }) => req.act(call, toolCallId),
     }),
     ...(req.search && {
       search: tool({
@@ -311,6 +336,58 @@ function tools(req: ThinkRequest): ToolSet {
         toModelOutput: ({ output }: { output: FileOutput }) => fileOutput(output),
       }),
     }),
+    ...(req.preview && {
+      preview_page: tool({
+        description:
+          "Draw a web page from the user's folder out of sight, as it would be shown, and see how it came out: a picture of it, the height it needs, and everything its console printed (errors, warnings and logs, with the line each came from). Nothing is shown to the user.",
+        inputSchema: jsonSchema<{ path: string; appearance?: 'dark' | 'light'; width?: number }>({
+          type: 'object',
+          properties: {
+            path: { type: 'string', description: "The page's path in the user's folder." },
+            appearance: { type: 'string', enum: ['dark', 'light'], description: "Light or dark. The user's theme when left out." },
+            width: { type: 'integer', minimum: 320, maximum: 2560, description: 'The window\'s width in CSS pixels. As wide as pages are shown when left out.' },
+          },
+          required: ['path'],
+          additionalProperties: false,
+        }),
+        execute: ({ path, appearance, width }: { path: string; appearance?: 'dark' | 'light'; width?: number }, { toolCallId }: { toolCallId: string }) =>
+          req.preview!(path, { ...(appearance && { appearance }), ...(width && { width }) }, toolCallId),
+        toModelOutput: ({ output }: { output: FileOutput }) => fileOutput(output),
+      }),
+    }),
+    ...(req.delegate && {
+      delegate: tool({
+        description:
+          'Start a task in the background, worked on by another agent while you go on with the user. It gets nothing but `task`: none of the conversation. Returns at once; its result comes to you in a note when it finishes.',
+        inputSchema: jsonSchema<{ task: string; title: string }>({
+          type: 'object',
+          properties: {
+            task: {
+              type: 'string',
+              description: 'The whole brief: what to do and why, every name, address, file path and detail it needs from the conversation, and what to give back (an answer, or a page and where to write it).',
+            },
+            title: { type: 'string', description: 'A few words naming it, as you would to the user: "rainfall chart".' },
+          },
+          required: ['task', 'title'],
+          additionalProperties: false,
+        }),
+        execute: ({ task, title }: { task: string; title: string }, { toolCallId }: { toolCallId: string }) => req.delegate!(task, title, toolCallId),
+      }),
+    }),
+    ...(req.taskStatus && {
+      task_status: tool({
+        description: "What a background task is doing now, or its result once it has finished. Its result comes to you by itself when it does: check only when the user asks how it's going.",
+        inputSchema: taskInput,
+        execute: ({ taskId }: { taskId: string }, { toolCallId }: { toolCallId: string }) => req.taskStatus!(taskId, toolCallId),
+      }),
+    }),
+    ...(req.taskCancel && {
+      task_cancel: tool({
+        description: 'Stop a background task the user no longer wants. What it already did stays done.',
+        inputSchema: taskInput,
+        execute: ({ taskId }: { taskId: string }, { toolCallId }: { toolCallId: string }) => req.taskCancel!(taskId, toolCallId),
+      }),
+    }),
   }
   if (!req.single) return set
   // Without `execute`, a call comes back unrun, and the turn ends there. What the model is sent stays the same.
@@ -352,6 +429,8 @@ export type ThinkEffort = 'provider-default' | 'low' | 'medium' | 'high'
 /** GPT through Vercel AI Gateway, driving the same options as Jev. */
 export function createThinker(opts: { model?: LanguageModel; singleModel?: LanguageModel; effort?: ThinkEffort } = {}): Thinker {
   const model = opts.model ?? 'openai/gpt-6.1-sol'
+  // The gateway serves each model from its own maker: `openai/…` from OpenAI, `anthropic/…` from Anthropic.
+  const order = (m: LanguageModel) => (typeof m === 'string' ? [m.split('/')[0]!] : undefined)
   // Deciding one step (typing a field, pressing a button that commits) uses a quicker model.
   const singleModel = opts.singleModel ?? 'openai/gpt-6-luna'
   // One effort for the whole session: changing it between calls would lose the messages cache.
@@ -370,7 +449,7 @@ export function createThinker(opts: { model?: LanguageModel; singleModel?: Langu
           toolChoice: 'auto',
           reasoning,
           stopWhen: stepCountIs(req.single ? SINGLE_STEPS : req.maxSteps),
-          providerOptions: { gateway: { order: ['openai'] } },
+          providerOptions: { gateway: { order: order(req.single ? singleModel : model) } },
           // Read the cache where the previous call ended, and write it at the end of this step's input.
           prepareStep: ({ initialMessages, responseMessages }) => {
             captured = responseMessages

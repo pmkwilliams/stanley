@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { AgentNode } from '@stanley/app-sdk'
 import type { ChoiceRequest, ChoiceResult, DecideRequest, DecisionClient, MultiChoiceResult } from '@stanley/jev'
 import { Agent, type AgentDeps, type AgentStatus, type TickReport } from '../src/agent'
+import type { TaskRecord } from '../src/background'
 import { defaultConfig } from '../src/config'
 import { validate } from '../src/conversation'
 import type { AgentDebugEvent } from '../src/debug'
@@ -156,7 +157,7 @@ const say = (agent: Agent, text: string) => {
   agent.partial(text)
 }
 
-function setup(script: Script, opts: { world?: Parameters<typeof fakeWorld>[0]; thinker?: FakeThinking; effect?: Effect; working?: Working; deps?: Partial<AgentDeps> } = {}) {
+function setup(script: Script, opts: { world?: Parameters<typeof fakeWorld>[0]; thinker?: FakeThinking; effect?: Effect; working?: Working; deps?: Partial<AgentDeps>; events?: Partial<AgentDeps['events']> } = {}) {
   const { world, performed } = fakeWorld(opts.world)
   const jev = scripted(script, opts.effect, opts.working)
   const thinker = fakeThinker(opts.thinker)
@@ -168,7 +169,7 @@ function setup(script: Script, opts: { world?: Parameters<typeof fakeWorld>[0]; 
     world,
     jev,
     thinker,
-    events: { tick: (t) => ticks.push(t), status: (s) => statuses.push(s), debug: (e) => debug.push(e), said: (t) => said.push(t) },
+    events: { tick: (t) => ticks.push(t), status: (s) => statuses.push(s), debug: (e) => debug.push(e), said: (t) => said.push(t), ...opts.events },
     ...opts.deps,
   })
   return { agent, jev, thinker, performed, ticks, statuses, debug, said }
@@ -1483,7 +1484,7 @@ describe('Agent files', () => {
     })
     const world = (agent as unknown as { world: World }).world
     world.draft = async (path) => ({ write: (c) => drawn.push(`write ${path}: ${c}`), end: (c) => drawn.push(`end ${path}: ${c}`), cancel: () => drawn.push(`cancel ${path}`) })
-    world.look = async () => ({ errors: ['Uncaught ReferenceError: mermaid is not defined'], image: { data: 'aGk=', mediaType: 'image/jpeg' } })
+    world.look = async () => ({ console: ['error (line 3): Uncaught ReferenceError: mermaid is not defined'], image: { data: 'aGk=', mediaType: 'image/jpeg' } })
     agent.utteranceStart()
     agent.segment('draw the sea')
     agent.utteranceEnd()
@@ -1493,7 +1494,7 @@ describe('Agent files', () => {
     expect(drawn).toEqual(['write Pages/sea.html: <h1>Sea</h1>', 'end Pages/sea.html: <h1>Sea</h1><p>Waves.</p>'])
     expect(stored.get('Pages/sea.html')).toBe('<h1>Sea</h1><p>Waves.</p>')
     expect(performed).toContain('url stanley://files/Pages/sea.html')
-    expect(output!.text).toContain('Wrote Pages/sea.html. Opened stanley://files/Pages/sea.html.\nThe page reported these errors:\n- Uncaught ReferenceError: mermaid is not defined')
+    expect(output!.text).toContain('Wrote Pages/sea.html. Opened stanley://files/Pages/sea.html.\nIts console printed:\n- error (line 3): Uncaught ReferenceError: mermaid is not defined')
     expect(output!.image).toEqual({ data: 'aGk=', mediaType: 'image/jpeg' })
     expect(debug.some((e) => e.type === 'working')).toBe(false)
     expect(await agent.context()).toContain('Wren wrote the file "Pages/sea.html".')
@@ -1521,7 +1522,7 @@ describe('Agent files', () => {
     agent.utteranceEnd()
     await settle()
     expect(outputs[0]!.text).toBe("That text isn't in Pages/rain.html. Copy it exactly as it is in the file (read it with cat), or write the whole file again.")
-    expect(outputs[1]!.text).toMatch(/^Changed Pages\/rain.html. Opened stanley:\/\/files\/Pages\/rain.html.\nThe page reported no errors./)
+    expect(outputs[1]!.text).toMatch(/^Changed Pages\/rain.html. Opened stanley:\/\/files\/Pages\/rain.html.\nIts console printed nothing./)
     expect(outputs[3]!.text).toBe('That text is in Pages/rain.html 2 times: include more of what is around it so it is there once, or set all to change every one.')
     expect(stored.get('Pages/rain.html')).toBe('<h1 style="color: navy">Rain</h1><p style="color: navy">Drops</p>')
     expect(performed).toContain('url stanley://files/Pages/rain.html')
@@ -1853,5 +1854,198 @@ describe('Agent skills', () => {
     await settle()
     expect(thinker.runs[1]!.instructions).toBe(thinker.runs[0]!.instructions)
     expect(observation(thinker.runs[1]!)).toContain('<note>The skills changed: added "focus": When the user wants to focus.</note>')
+  })
+})
+
+describe('Agent background tasks', () => {
+  /** A folder that keeps what is written to it, a world that can draw its pages out of sight, and quick delivery. */
+  function backgroundSetup(run: (req: ThinkRequest, main: boolean) => Promise<{ text: string } | ThinkResult>, script: Script = () => ({ next: 'think' })) {
+    const stored = new Map<string, string>()
+    const files: FileTools = {
+      root: '~/Wren',
+      paths: async () => [],
+      bash: async () => ({ output: '', exitCode: 0 }),
+      write: async (path, content) => void stored.set(path, content),
+      read: async (path) => {
+        if (!stored.has(path)) throw new Error(`no ${path}`)
+        return stored.get(path)!
+      },
+    }
+    const { world } = fakeWorld()
+    const previews: { path: string; appearance?: string }[] = []
+    world.preview = async (path, opts) => {
+      previews.push({ path, appearance: opts?.appearance })
+      return { console: ['log: bars: 12'], image: { data: 'aGk=', mediaType: 'image/png' }, width: 1850, height: 885, contentHeight: 600, appearance: opts?.appearance ?? 'dark' }
+    }
+    const records: TaskRecord[] = []
+    const working: string[][] = []
+    // The main thinking turns have a screen to act on; a background task has none. Both go through
+    // the same stand-in, so a test sees every run.
+    let env!: ReturnType<typeof setup>
+    const taskThinker: Thinker = { run: (req) => env.thinker.run(req) }
+    env = setup(script, {
+      thinker: { run: (req) => run(req, !!req.act) },
+      deps: { world, files, taskThinker, config: { ...defaultConfig, background: { ...defaultConfig.background, quietMs: 5 } }, taskSink: (r) => records.push(r) },
+      events: { tasks: (tasks) => working.push(tasks.map((t) => t.title)) },
+    })
+    const mainRuns = () => env.thinker.runs.filter((r) => r.act)
+    return { ...env, stored, previews, records, working, mainRuns }
+  }
+
+  const ask = async (agent: Agent, words: string) => {
+    agent.utteranceStart()
+    agent.segment(words)
+    agent.utteranceEnd()
+    await settle()
+  }
+
+  /** Something to wait on, and to let go of. */
+  function gate() {
+    let open!: () => void
+    const opened = new Promise<void>((resolve) => (open = resolve))
+    return { opened, open }
+  }
+
+  it('starts a task from its brief alone, with no screen, and tells the user its result once things are quiet', async () => {
+    const finish = gate()
+    let started = ''
+    let task: ThinkRequest | undefined
+    const outputs: FileOutput[] = []
+    const { agent, mainRuns, said, stored, previews, records, debug, working } = backgroundSetup(async (req, main) => {
+      if (main && !started) {
+        started = await req.delegate!('Make a chart of monthly rainfall in Denver for 2025 as .stanley/scratch/rain.html.', 'rainfall chart', 'd1')
+        return { text: "Sure, I'll make that in the background." }
+      }
+      if (main) return { text: 'Your rainfall chart is ready.' }
+      task = req
+      outputs.push(await req.writeFile!('.stanley/scratch/rain.html', '<svg></svg>', 'w1'))
+      outputs.push(await req.preview!('.stanley/scratch/rain.html', { appearance: 'light' }, 'p1'))
+      await finish.opened
+      return { text: 'Wrote .stanley/scratch/rain.html: monthly rainfall in Denver, 2025, wettest in May.' }
+    })
+    await ask(agent, 'make me a chart of rainfall in Denver in the background')
+    expect(started).toBe('Started task-1, "rainfall chart", in the background. Its result comes to you in a note when it finishes: go on with the user meanwhile.')
+    expect(said).toEqual(["Sure, I'll make that in the background."])
+    expect(mainRuns()[0]!.instructions).toContain('## Background tasks')
+
+    // The task knows only its brief, and has no screen, no tasks of its own, and its own instructions.
+    expect(task!.messages).toEqual([{ role: 'user', content: 'Make a chart of monthly rainfall in Denver for 2025 as .stanley/scratch/rain.html.' }])
+    expect(task!.act).toBeUndefined()
+    expect(task!.openPage).toBeUndefined()
+    expect(task!.delegate).toBeUndefined()
+    expect(task!.instructions).toContain('# Background task')
+    expect(task!.instructions).toContain('preview_page')
+    expect(stored.get('.stanley/scratch/rain.html')).toBe('<svg></svg>')
+    expect(outputs[0]!.text).toBe('Wrote .stanley/scratch/rain.html. Check it with preview_page.')
+    expect(previews).toEqual([{ path: '.stanley/scratch/rain.html', appearance: 'light' }])
+    expect(outputs[1]).toEqual({
+      text: 'Drew .stanley/scratch/rain.html out of sight, light, in a window 1850 by 885. It fits without scrolling.\nIts console printed:\n- log: bars: 12\nA picture of it follows.',
+      image: { data: 'aGk=', mediaType: 'image/png' },
+    })
+    expect(await agent.context()).toContain('Wren started a background task: "rainfall chart".')
+
+    finish.open()
+    await settle()
+    await settle()
+    // Told in a thinking turn of its own, which reads the result as a note.
+    expect(mainRuns()).toHaveLength(2)
+    const told = mainRuns()[1]!
+    expect(told.messages.some((m) => m.role === 'user' && m.content === '<note>Background task task-1, "rainfall chart" finished:\nWrote .stanley/scratch/rain.html: monthly rainfall in Denver, 2025, wettest in May.</note>')).toBe(true)
+    expect(observation(told)).toContain('A background task ended: its result is in the note above.')
+    expect(said).toEqual(["Sure, I'll make that in the background.", 'Your rainfall chart is ready.'])
+    expect(await agent.context()).toContain('Wren\'s background task "rainfall chart" finished: Wrote .stanley/scratch/rain.html')
+    expect(debug.filter((e) => e.type === 'task').map((e) => (e as { action: string }).action)).toEqual(['start', 'step', 'step', 'end', 'deliver'])
+    expect(records.map((r) => r.type)).toEqual(['start', 'end'])
+    // The status bar shows a task working from when it starts until it ends.
+    expect(working).toEqual([['rainfall chart'], []])
+  })
+
+  it('holds a result while the user is mid-turn, and a whole turn that reads it tells it, once', async () => {
+    const finish = gate()
+    const { agent, mainRuns } = backgroundSetup(async (req, main) => {
+      if (main && mainRuns().length === 1) {
+        await req.delegate!('Find the best-reviewed ramen in Denver.', 'ramen', 'd1')
+        return { text: 'On it.' }
+      }
+      if (main) return { text: 'The best-reviewed ramen is Uncle.' }
+      await finish.opened
+      return { text: 'Uncle, in Highland: 4.7 from 2,100 reviews.' }
+    })
+    await ask(agent, 'find me good ramen in the background')
+    agent.utteranceStart()
+    agent.segment('and what')
+    finish.open()
+    await settle()
+    await settle()
+    // The user is still talking: nothing is told yet.
+    expect(mainRuns()).toHaveLength(1)
+    agent.utteranceEnd()
+    await settle()
+    await settle()
+    // The turn the user's words went to had the result, so it isn't told again.
+    expect(mainRuns()).toHaveLength(2)
+    expect(mainRuns()[1]!.messages.some((m) => m.role === 'user' && typeof m.content === 'string' && m.content.includes('Uncle, in Highland'))).toBe(true)
+  })
+
+  it('reports how a task is going, stops it when asked, and never tells a stopped task\'s result', async () => {
+    const replies: string[] = []
+    let turn = 0
+    const { agent, mainRuns, debug, working } = backgroundSetup(async (req, main) => {
+      if (main) {
+        turn++
+        if (turn === 1) replies.push(await req.delegate!('Go through every receipt in Receipts/ and total them by month.', 'receipts', 'd1'))
+        if (turn === 2) replies.push(await req.taskStatus!('task-1', 's1'))
+        if (turn === 3) replies.push(await req.taskCancel!('1', 'c1'))
+        return { text: '' }
+      }
+      // Works until it is stopped.
+      await new Promise<void>((_, reject) => req.signal.addEventListener('abort', () => reject(req.signal.reason)))
+      return { text: 'Never got here.' }
+    })
+    await ask(agent, 'total my receipts in the background')
+    await ask(agent, 'how is that going')
+    expect(observation(mainRuns()[1]!)).toContain('<note>Background tasks still working: task-1, "receipts".</note>')
+    expect(replies[1]).toMatch(/^task-1, "receipts", is still working: \d+ s and 0 steps so far\. Right now it is starting\.$/)
+    await ask(agent, 'never mind the receipts')
+    expect(replies[2]).toBe('Stopped task-1, "receipts".')
+    await settle()
+    await settle()
+    expect(mainRuns()).toHaveLength(3)
+    expect(debug.some((e) => e.type === 'task' && e.action === 'end')).toBe(false)
+    expect(working).toEqual([['receipts'], []])
+    expect(await agent.context()).not.toContain('finished')
+  })
+
+  it("won't let thinking write a file a working task wrote, and lets it once the task is done", async () => {
+    const finish = gate()
+    const outputs: FileOutput[] = []
+    let turn = 0
+    const { agent } = backgroundSetup(async (req, main) => {
+      if (main) {
+        turn++
+        if (turn === 1) await req.delegate!('Make a page about tides at .stanley/scratch/tides.html.', 'tides page', 'd1')
+        if (turn === 2) outputs.push(await req.writeFile!('~/Wren/.stanley/scratch/tides.html', '<h1>Mine</h1>', 'w1'))
+        if (turn === 4) outputs.push(await req.editFile!('.stanley/scratch/tides.html', 'Tides', 'Tide times', false, 'e1'))
+        return { text: '' }
+      }
+      await req.writeFile!('.stanley/scratch/tides.html', '<h1>Tides</h1>', 'w1')
+      await finish.opened
+      return { text: 'Wrote .stanley/scratch/tides.html.' }
+    })
+    await ask(agent, 'make a tides page in the background')
+    await ask(agent, 'actually write it yourself')
+    expect(outputs[0]!.text).toBe('Background task task-1, "tides page", is working on ~/Wren/.stanley/scratch/tides.html: wait for it to finish, or stop it with task_cancel first.')
+    finish.open()
+    await settle()
+    await settle()
+    await ask(agent, 'call it tide times')
+    expect(outputs[1]!.text).toMatch(/^Changed \.stanley\/scratch\/tides\.html\./)
+  })
+
+  it('has no background tasks without the web or files to work with', async () => {
+    const { agent, thinker } = setup(() => ({ next: 'think' }))
+    await ask(agent, 'look into something')
+    expect(thinker.runs[0]!.delegate).toBeUndefined()
+    expect(thinker.runs[0]!.instructions).not.toContain('## Background tasks')
   })
 })

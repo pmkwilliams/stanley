@@ -54,6 +54,11 @@ export interface AgentConfig {
   unsureWord: number
   /** Words said while a thinking turn works stop it at this P(stop) (see `WORKING`); below it, the turn finishes first. */
   working: { stop: number }
+  /**
+   * Background tasks (see background.ts): how many work at once, the tool steps each takes at most,
+   * and how long things must be quiet before one's result is told.
+   */
+  background: { max: number; steps: number; quietMs: number }
 }
 
 export const defaultConfig: AgentConfig = {
@@ -79,6 +84,7 @@ export const defaultConfig: AgentConfig = {
   endpoint: { fastMs: 250, normalMs: 1000, slowMs: 2600, moreBelow: 0.25, resumeMs: 2000 },
   unsureWord: 0.5,
   working: { stop: 0.5 },
+  background: { max: 3, steps: 40, quietMs: 400 },
 }
 
 /** How the agent is tuned for a decision model: config over `defaultConfig`, and lines added to what it is asked. */

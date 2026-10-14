@@ -3,7 +3,8 @@ import { basename, dirname } from 'node:path'
 import { FILES_URL } from '@stanley/app-sdk'
 import type { PageLook } from '@stanley/agent'
 import { DROPDOWN, EXTRACT, type Extracted, type PageDriver } from '@stanley/browser'
-import { nativeImage, type NativeImage, type WebContents } from 'electron'
+import type { WebContents } from 'electron'
+import { consoleLine, MAX_CONSOLE, picture } from './preview'
 
 /** How long a page may take to become readable before Stanley works with what is there. */
 const LOAD_MS = 15_000
@@ -11,30 +12,8 @@ const LOAD_MS = 15_000
 const ATTACH_MS = 10_000
 /** A script in the page that doesn't answer in this long has hung. */
 const SCRIPT_MS = 5_000
-/** Errors a page reported since it loaded, kept for looking at it. */
-const MAX_ERRORS = 10
-/** How wide a picture of the page is, at most. */
-const LOOK_WIDTH = 1280
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
-
-/**
- * A picture of a view laid on `color` (`#rrggbb`), as the user sees it: where the page is clear, a
- * JPEG would otherwise be black. Its pixels are BGRA, with alpha premultiplied.
- */
-function onto(image: NativeImage, color: string): NativeImage {
-  const [r, g, b] = [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16))
-  const px = image.toBitmap()
-  for (let i = 0; i < px.length; i += 4) {
-    const clear = 255 - px[i + 3]!
-    if (!clear) continue
-    px[i] = px[i]! + Math.round((b! * clear) / 255)
-    px[i + 1] = px[i + 1]! + Math.round((g! * clear) / 255)
-    px[i + 2] = px[i + 2]! + Math.round((r! * clear) / 255)
-    px[i + 3] = 255
-  }
-  return nativeImage.createFromBitmap(px, image.getSize())
-}
 
 /** Where an element is, or why it can't be used: run in the page, after scrolling it into view. */
 const LOCATE = String.raw`(function (id) {
@@ -154,8 +133,8 @@ export class WebviewPage implements PageDriver {
   private reloading?: ReturnType<typeof setTimeout>
   /** Until then, the watcher leaves the page alone: Stanley has just loaded it itself. */
   private quietUntil = 0
-  /** What the page reported going wrong since it started loading. */
-  private errors: string[] = []
+  /** What the page printed to its console since it started loading. */
+  private console: string[] = []
   private muted = false
 
   constructor(
@@ -200,13 +179,14 @@ export class WebviewPage implements PageDriver {
       this.navigations++
       if (e.isSameDocument) return
       this.domReady = false
-      this.errors = []
+      this.console = []
     })
     wc.on('before-input-event', (_, input) => {
       if (input.type === 'keyDown' && input.key === 'Escape') this.events.escape()
     })
     wc.on('console-message', (e) => {
-      if (e.level === 'error' && this.errors.length < MAX_ERRORS) this.errors.push(e.message.length > 300 ? `${e.message.slice(0, 299)}…` : e.message)
+      const line = consoleLine(e)
+      if (line && this.console.length < MAX_CONSOLE) this.console.push(line)
     })
     wc.on('dom-ready', () => (this.domReady = true))
     wc.on('did-navigate', () => {
@@ -266,8 +246,8 @@ export class WebviewPage implements PageDriver {
   }
 
   /**
-   * How the page came out: once it has loaded and its scripts have had a moment to draw, what it
-   * reported going wrong and a picture of it. A view out of sight gives no picture.
+   * How the page came out: once it has loaded and its scripts have had a moment to draw, what its
+   * console printed and a picture of it. A view out of sight gives no picture.
    */
   async look(): Promise<PageLook> {
     const wc = await this.contents()
@@ -275,11 +255,8 @@ export class WebviewPage implements PageDriver {
     const deadline = Date.now() + LOAD_MS
     while (wc.isLoading() && Date.now() < deadline) await sleep(50)
     await sleep(600)
-    const errors = [...this.errors]
-    const image = await wc.capturePage().catch(() => null)
-    if (!image || image.isEmpty()) return { errors }
-    const small = onto(image.getSize().width > LOOK_WIDTH ? image.resize({ width: LOOK_WIDTH }) : image, this.events.backdrop(wc.getURL()))
-    return { errors, image: { data: small.toJPEG(80).toString('base64'), mediaType: 'image/jpeg' } }
+    const image = picture(await wc.capturePage().catch(() => null), this.events.backdrop(wc.getURL()))
+    return { console: [...this.console], ...(image && { image }) }
   }
 
   extract(maxText: number): Promise<Extracted> {
@@ -503,7 +480,7 @@ export class WebviewTabs {
 
   /** How the page in the tab shown came out. */
   look(): Promise<PageLook> {
-    return this.shown === null ? Promise.resolve({ errors: [] }) : this.page(this.shown).look()
+    return this.shown === null ? Promise.resolve({ console: [] }) : this.page(this.shown).look()
   }
 
   /** A new session: its tabs start over. */

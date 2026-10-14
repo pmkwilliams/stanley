@@ -1,6 +1,7 @@
 import type { ActionArgs } from '@stanley/app-sdk'
 import type { MultiChoiceResult, Question } from '@stanley/jev'
 import type { TickOutcome } from './agent'
+import type { TaskMeta } from './conversation'
 import type { EffectVerdict } from './effects'
 import type { UnrunCall } from './think'
 import type { TranscriptSnapshot } from './transcript'
@@ -32,7 +33,8 @@ export type AgentDebugEvent =
   | {
       type: 'tick-start'
       tickId: number
-      reason: TickReason
+      /** `task`: no decision, a thinking turn telling the user what background tasks found or made. */
+      reason: TickReason | 'task'
       utteranceId: number
       transcript: TranscriptSnapshot
       utteranceEnded: boolean
@@ -102,3 +104,9 @@ export type AgentDebugEvent =
       verdict?: { choice: string; probabilities: Record<string, number>; latencyMs: number }
       reason?: string
     }
+  /**
+   * A background task (see background.ts): started with its brief (`text`), a tool step it took,
+   * how it ended (`text` is its result), stopped, or its result told to the user once they and
+   * Stanley were quiet (`deliver`).
+   */
+  | { type: 'task'; action: 'start' | 'step' | 'end' | 'cancel' | 'deliver'; taskId: string; title: string; text?: string; tool?: string; result?: string; state?: TaskMeta['state']; tickId?: number }

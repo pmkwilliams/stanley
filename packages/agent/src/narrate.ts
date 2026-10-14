@@ -1,5 +1,5 @@
 import { DEFAULT_AGENT_NAME } from '@stanley/app-sdk'
-import type { Entry, LiveUtterance, LookupMeta, StepMeta, StepTarget } from './conversation'
+import type { Entry, LiveUtterance, LookupMeta, StepMeta, StepTarget, TaskMeta } from './conversation'
 import type { FileMeta } from './files'
 import { shortUrl } from './web'
 import type { Screen } from './world'
@@ -56,6 +56,7 @@ export function narrate(entries: Entry[], screen: Screen | null, live?: LiveUtte
         if (r.step) lines.push(describeStep(r.step, name))
         else if (r.lookup) lines.push(...describeLookup(r.lookup, name))
         else if (r.file) lines.push(describeFile(r.file, name, lastRead.get(r.file.kind === 'skill' ? r.file.name : '') === r.file))
+        else if (r.task) lines.push(describeTask(r.task, name))
       }
     }
   }
@@ -83,6 +84,16 @@ function describeLookup(l: LookupMeta, name: string): string[] {
       return `- "${r.title}" (${shortUrl(r.url)})${excerpt ? `: ${excerpt}` : ''}`
     }),
   ]
+}
+
+/** A background task started, or how it ended: what it found or made is what Stanley tells the user. */
+function describeTask(t: TaskMeta, name: string): string {
+  const head = `${name}'s background task "${t.title}"`
+  if (t.state === 'working') return `${name} started a background task: "${t.title}".`
+  if (t.state === 'cancelled') return `${head} was stopped.`
+  const summary = t.summary ? clip(t.summary.replace(/\s+/g, ' ').trim(), 300) : ''
+  if (t.state === 'failed') return `${head} failed${summary ? ` (${summary})` : ''}.`
+  return summary ? `${head} finished: ${summary}` : `${head} finished.`
 }
 
 /**

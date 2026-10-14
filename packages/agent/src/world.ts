@@ -25,10 +25,35 @@ export interface PageDraft {
   cancel(): void
 }
 
-/** How the page on screen came out: what it reported going wrong since it loaded, and a picture of it. */
+/**
+ * What a page printed to its console since it loaded, a line each with its level: `error: …`,
+ * `warning: …`, `log: …`. An uncaught exception is an error, with the line it was on.
+ */
+export type ConsoleLines = string[]
+
+/** How the page on screen came out: what its console printed since it loaded, and a picture of it. */
 export interface PageLook {
-  errors: string[]
+  console: ConsoleLines
   image?: { data: string; mediaType: string }
+}
+
+/** How a page came out drawn out of sight (`World.preview`): its console, a picture of it, and its size. */
+export interface PagePreview {
+  console: ConsoleLines
+  image?: { data: string; mediaType: string }
+  /** The window it was drawn in, in CSS pixels. */
+  width: number
+  height: number
+  /** The height the page needs at that width: more than `height` means it scrolls. */
+  contentHeight: number
+  appearance: 'dark' | 'light'
+}
+
+export interface PreviewOptions {
+  /** Light or dark: the user's theme when not given. */
+  appearance?: 'dark' | 'light'
+  /** The window's width in CSS pixels: as wide as a page is shown when not given. */
+  width?: number
 }
 
 export interface AppEntry {
@@ -72,6 +97,12 @@ export interface World {
   draft?(path: string): Promise<PageDraft | undefined>
   /** How the web page on screen came out, once it has loaded and drawn. */
   look?(): Promise<PageLook>
+  /**
+   * Draws a web page from the user's folder (its path, as `fileUrl` takes one) out of sight, in a
+   * window of its own, and says how it came out. Nothing on screen changes. Throws when it isn't a
+   * web page in the folder.
+   */
+  preview?(path: string, opts?: PreviewOptions): Promise<PagePreview>
   global(option: 'show' | 'home' | 'back'): Promise<void>
   /** Goes to the lock screen, ending the session. Without it, the agent can't lock. */
   lock?(): Promise<void>

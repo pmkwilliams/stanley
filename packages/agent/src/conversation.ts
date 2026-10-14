@@ -47,6 +47,17 @@ export type LookupMeta =
   | { kind: 'search'; query: string; results: WebResult[]; error?: string; utteranceId?: number }
   | { kind: 'read'; url: string; title: string; error?: string; utteranceId?: number }
 
+/**
+ * A background task (see background.ts): started by thinking's `delegate`, then ended, in a note
+ * from the computer. `summary` is its result, or why it failed.
+ */
+export interface TaskMeta {
+  id: string
+  title: string
+  state: 'working' | 'done' | 'failed' | 'cancelled'
+  summary?: string
+}
+
 /** What one tool result did, joined to its call by `toolCallId`. */
 export interface ResultMeta {
   toolCallId?: string
@@ -54,6 +65,7 @@ export interface ResultMeta {
   lookup?: LookupMeta
   /** A command on the user's files. */
   file?: FileMeta
+  task?: TaskMeta
 }
 
 export interface EntryMeta {

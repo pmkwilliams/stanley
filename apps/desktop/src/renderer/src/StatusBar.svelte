@@ -4,10 +4,13 @@
   import type { MusicState } from '@stanley/app-music/core'
   import { fade } from 'svelte/transition'
   import { clock, time, weekday } from './clock.svelte'
+  import CometTrail from './CometTrail.svelte'
 
   let { snapshot, onlock }: { snapshot: Snapshot | null; onlock: () => void } = $props()
 
   const music = $derived(snapshot?.surfaces.music as MusicState | undefined)
+  /** What the background-work icon says it is, for its tooltip and screen readers. */
+  const working = $derived(`Working in the background: ${snapshot?.tasks.map((t) => t.title).join(', ') ?? ''}`)
 </script>
 
 <!--
@@ -58,6 +61,12 @@
           {/if}
         </button>
       </span>
+      <!-- Working in the background: there only while a background task is. -->
+      {#if snapshot?.tasks.length}
+        <span class="grid size-5 place-items-center" transition:fade={{ duration: 180 }}>
+          <CometTrail label={working} />
+        </span>
+      {/if}
       <span class="grid size-5 place-items-center" aria-label="Wi-Fi">
         <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round">
           <path d="M1.6 7.6a12 12 0 0 1 16.8 0M4.6 10.6a7.8 7.8 0 0 1 10.8 0M7.6 13.6a3.6 3.6 0 0 1 4.8 0" /><circle cx="10" cy="16.4" r="1.3" fill="currentColor" stroke="none" />

@@ -18,6 +18,7 @@
     action: 'the previous step finished',
     end: 'the utterance ended',
     pause: 'the user paused',
+    task: 'a background task ended: telling the user',
   }
 
   /** The outcome pill: green when it went through, amber when held back, red when it failed. */

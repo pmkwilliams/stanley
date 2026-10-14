@@ -3,9 +3,10 @@ import type { Answer, DecisionClient, MultiChoiceResult, Question } from '@stanl
 import type { JSONValue } from 'ai'
 import { defaultConfig, type AgentConfig, type DeciderProfile } from './config'
 import type { AgentDebugEvent, GateRule, RequestResult, TickReason } from './debug'
+import { Background, describe, TASK_DONE, TASK_EFFORT, TASK_MODEL, taskInstructions, type BackgroundTask, type TaskRecord } from './background'
 import { WORKING, WORKING_INSTRUCTIONS, WORKING_PROMPT } from './barge'
 import { createEffectJudge, type EffectJudge, type EffectVerdict } from './effects'
-import { bashText, JEV_FILES, knownFiles, listCommand, pageResized, PAGE_SIZE, pageSizeText, readCommand, topFiles, type BashResult, type FileMeta, type FileTools, type KnownFile, type PageSize } from './files'
+import { bashText, editText, JEV_FILES, knownFiles, listCommand, pageResized, PAGE_SIZE, pageSizeText, readCommand, topFiles, type BashResult, type FileMeta, type FileTools, type KnownFile, type PageSize } from './files'
 import {
   Conversation,
   filesOf,
@@ -21,12 +22,13 @@ import {
   type Ran,
   type StepMeta,
   type StepTarget,
+  type TaskMeta,
 } from './conversation'
 import { anyUnsure, markUnsure, unmarked, type HeardWord } from './heard'
 import { describeStep, named, namedOptions, narrate } from './narrate'
 import { navigates, stepOptions, type OptionSet, type Target } from './options'
 import { JEV_SKILLS, NO_SKILLS, skillBody, skillChanges, type Skill, type SkillScan } from './skills'
-import { confirmNote, DONE_CHECK, EARLY_GUESS, fileOutput, instructions, longDate, PartialTurn, writeNote, type ActCall, type FileOutput, type PageOutput, type SearchOutput, type Thinker, type ThinkResult } from './think'
+import { confirmNote, createThinker, DONE_CHECK, EARLY_GUESS, fileOutput, instructions, longDate, PartialTurn, writeNote, type ActCall, type FileOutput, type PageOutput, type SearchOutput, type Thinker, type ThinkResult } from './think'
 import { extendsWords, fullText, hasNewWords, letters, normalize, type TranscriptSnapshot } from './transcript'
 import { knownPages, sameUrl, shortUrl, type KnownPage, type WebTools } from './web'
 import type { PageDraft, Screen, StepResult, World } from './world'
@@ -86,6 +88,8 @@ export interface AgentEvents {
   hush(id: number): void
   /** Stanley said something: a whole reply, once complete. */
   said(text: string): void
+  /** The background tasks working changed: these are working now (none, once the last one ends). */
+  tasks(working: { id: string; title: string }[]): void
   /**
    * The agent judged the user finished, and ended the utterance before the silence backstop.
    * The host stops treating later speech as part of it (`Transcriber.endUtterance`).
@@ -116,6 +120,10 @@ export interface AgentDeps {
   name?: () => string
   /** The size pages Stanley writes are shown at now, read for each thinking call. Defaults to `PAGE_SIZE`. */
   pageSize?: () => PageSize
+  /** Runs background tasks. Defaults to Claude Opus 5.5 at high effort (`TASK_MODEL`, `TASK_EFFORT`). */
+  taskThinker?: Thinker
+  /** Receives each background task's own log: its brief, then how it ended and everything it did. */
+  taskSink?: (record: TaskRecord) => void
 }
 
 export const SYSTEM_PROMPT = `# Stanley
@@ -294,6 +302,11 @@ export class Agent {
   private web?: WebTools
   private files?: FileTools
   private events: Partial<AgentEvents>
+  /** Work handed off with `delegate`, in sessions that can look things up or have files. */
+  private background?: Background
+  /** Stanley's voice is playing, as the host reports it (`talking`). */
+  private talkingNow = false
+  private deliverTimer?: ReturnType<typeof setTimeout>
 
   constructor(deps: AgentDeps) {
     this.world = deps.world
@@ -311,6 +324,21 @@ export class Agent {
     this.pageSize = deps.pageSize ?? (() => PAGE_SIZE)
     this.started = this.clock()
     this.today = longDate(this.started)
+    if (deps.web || deps.files) {
+      this.background = new Background({
+        thinker: deps.taskThinker ?? createThinker({ model: TASK_MODEL, effort: TASK_EFFORT }),
+        web: deps.web,
+        files: deps.files,
+        preview: deps.world.preview?.bind(deps.world),
+        instructions: () => taskInstructions({ web: !!this.web, files: this.files?.root, page: this.pageSize(), today: this.started, name: this.name() }),
+        max: this.config.background.max,
+        steps: this.config.background.steps,
+        ended: (task) => this.taskEnded(task),
+        changed: () => this.events.tasks?.(this.background!.working().map(({ id, title }) => ({ id, title }))),
+        debug: (event) => this.events.debug?.(event),
+        sink: deps.taskSink,
+      })
+    }
     this.skillsReady = this.scanSkills().then((scan) => {
       this.sessionSkills = scan
       this.skillsKnown = scan
@@ -323,7 +351,7 @@ export class Agent {
     // The size when the session's instructions were first made; a change comes as a note (`observe`).
     this.sessionPage ??= this.pageSize()
     this.pageKnown ??= this.sessionPage
-    return instructions({ web: !!this.web, files: this.files?.root, skills, today: this.started, name: this.name(), page: this.sessionPage })
+    return instructions({ web: !!this.web, files: this.files?.root, skills, today: this.started, name: this.name(), page: this.sessionPage, background: !!this.background })
   }
 
   /** An utterance is open: the user is speaking, or paused without having finished. */
@@ -440,6 +468,7 @@ export class Agent {
       else this.drop(reply)
     }
     this.request('end')
+    this.scheduleDelivery()
   }
 
   /** The VAD started or stopped hearing the user. */
@@ -468,6 +497,14 @@ export class Agent {
   cancel(): void {
     this.abort?.abort()
     this.thinking?.abort()
+    this.background?.cancelAll()
+    clearTimeout(this.deliverTimer)
+  }
+
+  /** Stanley's voice started or stopped playing. A background task's result waits until it stops. */
+  talking(on: boolean): void {
+    this.talkingNow = on
+    if (!on) this.scheduleDelivery()
   }
 
   // ── Scheduling ──────────────────────────────────────────────────────────
@@ -1274,7 +1311,11 @@ export class Agent {
     const next = single ? (single.kind === 'write' ? writeNote(single.option, !!this.files) : confirmNote(single.option)) : note
     const news = await this.skillNews()
     const files = await this.topFiles()
-    const sent = this.history.send(this.observe(screen, options, files, [...(news ? [news] : []), ...(next ? [next] : [])]), this.live())
+    const working = mode === 'run' ? (this.background?.working() ?? []) : []
+    const tasks = working.length ? [`Background tasks still working: ${working.map((t) => `${t.id}, "${t.title}"`).join('; ')}.`] : []
+    const sent = this.history.send(this.observe(screen, options, files, [...(news ? [news] : []), ...tasks, ...(next ? [next] : [])]), this.live())
+    // A whole turn has every result noted in the history: it tells the user, so none is told again.
+    if (mode === 'run') this.background?.sent()
     this.events.debug?.({ type: 'think-start', tickId: id, mode, handover, option: single?.option, entries: sent.entries, cacheAt: sent.cacheAt })
     const controller = new AbortController()
     this.thinking = controller
@@ -1311,6 +1352,11 @@ export class Agent {
             editFile: (path: string, old: string, replacement: string, all: boolean, toolCallId: string) => (steps++, this.editFile(id, path, old, replacement, all, toolCallId, signal, ran)),
             onDraft: (toolCallId: string, path: string, content: string) => this.draw(path, content, toolCallId),
           }),
+        ...(this.background && {
+          delegate: (task: string, title: string, toolCallId: string) => (steps++, this.delegate(id, task, title, toolCallId, signal, ran)),
+          taskStatus: (taskId: string, toolCallId: string) => (steps++, this.taskTool(id, 'task_status', taskId, toolCallId, signal, ran)),
+          taskCancel: (taskId: string, toolCallId: string) => (steps++, this.taskTool(id, 'task_cancel', taskId, toolCallId, signal, ran)),
+        }),
       })
       const { final, toolCallIds } = this.history.appendTurn(result.messages, result.sent, ran, id)
       this.saw(ran, toolCallIds)
@@ -1527,6 +1573,11 @@ export class Agent {
     this.drafts.delete(toolCallId)
     await draft?.ready
     const input = { path, content }
+    const held = this.heldBy(path)
+    if (held) {
+      draft?.page?.cancel()
+      return this.fileFailed(id, 'write_file', input, path, false, held, toolCallId, ran)
+    }
     try {
       await this.files!.write!(path, content)
     } catch (err) {
@@ -1543,17 +1594,18 @@ export class Agent {
     this.doing = `changing the file ${path}.`
     const input = { path, old, new: replacement, ...(all && { all: 'true' }) }
     const fail = (text: string) => this.fileFailed(id, 'edit_file', input, path, true, text, toolCallId, ran)
+    const held = this.heldBy(path)
+    if (held) return fail(held)
     let before: string
     try {
       before = await this.files!.read!(path)
     } catch (err) {
       return fail(`Couldn't read it: ${errorText(err)}`)
     }
-    const times = old ? before.split(old).length - 1 : 0
-    if (!times) return fail(`That text isn't in ${path}. Copy it exactly as it is in the file (read it with cat), or write the whole file again.`)
-    if (times > 1 && !all) return fail(`That text is in ${path} ${times} times: include more of what is around it so it is there once, or set all to change every one.`)
+    const edit = editText(before, path, old, replacement, all)
+    if ('error' in edit) return fail(edit.error)
     try {
-      await this.files!.write!(path, all ? before.split(old).join(replacement) : before.replace(old, () => replacement))
+      await this.files!.write!(path, edit.text)
     } catch (err) {
       return fail(`Couldn't write it: ${errorText(err)}`)
     }
@@ -1583,13 +1635,97 @@ export class Agent {
     }
     const look = await this.world.look?.().catch(() => undefined)
     this.events.status?.('thinking')
-    const errors = look?.errors.length ? `The page reported these errors:\n${look.errors.map((e) => `- ${e}`).join('\n')}` : 'The page reported no errors.'
+    const printed = look?.console.length ? `Its console printed:\n${look.console.map((line) => `- ${line}`).join('\n')}` : 'Its console printed nothing.'
     const screen = await this.screenText()
-    const text = `${outcome} ${shown}.\n${errors}${look?.image ? '\nA picture of the screen follows.' : ''}\n\n${screen}`
+    const text = `${outcome} ${shown}.\n${printed}${look?.image ? '\nA picture of the screen follows.' : ''}\n\n${screen}`
     const output: FileOutput = { text, image: look?.image }
     ran.set(toolCallId, { tool, input, output: fileOutput(output), result: { toolCallId, file }, screen })
     this.events.debug?.({ type: 'think-step', tickId: id, option: tool, text: path, result: text })
     return output
+  }
+
+  /** Why thinking can't write `path` now: a background task still working wrote it, and may write it again. */
+  private heldBy(path: string): string | null {
+    const task = this.background?.holding(path, this.files?.root)
+    return task ? `Background task ${task.id}, "${task.title}", is working on ${path}: wait for it to finish, or stop it with task_cancel first.` : null
+  }
+
+  /** Thinking hands work to a background task: it starts at once, and its result comes in a note (`taskEnded`). */
+  private async delegate(id: number, task: string, title: string, toolCallId: string, signal: AbortSignal, ran: Map<string, Ran>): Promise<string> {
+    signal.throwIfAborted()
+    const started = this.background!.start(task, title)
+    const input = { task, title }
+    if (typeof started === 'string') {
+      ran.set(toolCallId, { tool: 'delegate', input, output: { type: 'error-text', value: started }, result: { toolCallId } })
+      this.events.debug?.({ type: 'think-step', tickId: id, option: 'delegate', text: title, result: started })
+      return started
+    }
+    const text = `Started ${started.id}, "${started.title}", in the background. Its result comes to you in a note when it finishes: go on with the user meanwhile.`
+    const meta: TaskMeta = { id: started.id, title: started.title, state: 'working' }
+    ran.set(toolCallId, { tool: 'delegate', input, output: { type: 'text', value: text }, result: { toolCallId, task: meta } })
+    this.events.debug?.({ type: 'think-step', tickId: id, option: 'delegate', text: title, result: text })
+    return text
+  }
+
+  /** `task_status` or `task_cancel`. */
+  private async taskTool(id: number, tool: 'task_status' | 'task_cancel', taskId: string, toolCallId: string, signal: AbortSignal, ran: Map<string, Ran>): Promise<string> {
+    signal.throwIfAborted()
+    const text = tool === 'task_status' ? this.background!.status(taskId) : this.background!.cancel(taskId)
+    ran.set(toolCallId, { tool, input: { taskId }, output: { type: 'text', value: text }, result: { toolCallId } })
+    this.events.debug?.({ type: 'think-step', tickId: id, option: tool, text: taskId, result: text })
+    return text
+  }
+
+  /**
+   * A background task ended by itself. Its result goes into the history as a note, which the next
+   * whole thinking turn reads. If none comes, one is started to tell the user once things are quiet.
+   */
+  private taskEnded(task: BackgroundTask): void {
+    const meta: TaskMeta = { id: task.id, title: task.title, state: task.state, summary: task.summary }
+    this.history.stage({ kind: 'note', by: 'agent', results: [{ task: meta }] }, note(`Background task ${describe(task)}`))
+    task.noted = true
+    this.scheduleDelivery()
+  }
+
+  private scheduleDelivery(): void {
+    if (!this.background) return
+    clearTimeout(this.deliverTimer)
+    this.deliverTimer = setTimeout(() => void this.deliver(), this.config.background.quietMs)
+  }
+
+  /** Nothing is going on: the user isn't mid-turn or speaking, Stanley isn't working or talking. */
+  private quiet(): boolean {
+    return !this.inFlight && !this.held && !this.turnOpen && !this.voiceOn && !this.talkingNow
+  }
+
+  /**
+   * Tells the user what background tasks found or made, in a thinking turn of its own, once things
+   * are quiet. Results a whole turn already had (it read them, or was sent them) aren't told again.
+   */
+  private async deliver(): Promise<void> {
+    const waiting = this.background?.undelivered() ?? []
+    if (!waiting.length || !this.quiet()) return
+    this.inFlight = true
+    this.halted = false
+    this.outcome = null
+    const id = ++this.tickId
+    this.openTask()
+    const screen = await this.world.screen().catch(() => null)
+    this.events.debug?.({ type: 'tick-start', tickId: id, reason: 'task', utteranceId: this.utteranceId, transcript: this.transcript, utteranceEnded: this.utteranceEnded, screenId: screen?.id ?? '', state: narrate(this.view(), screen, this.live(), this.config.jevTurns, this.name()), questions: {} })
+    for (const task of waiting) this.events.debug?.({ type: 'task', action: 'deliver', taskId: task.id, title: task.title, tickId: id })
+    let effective = 'error'
+    try {
+      effective = await this.think(id, `background task ${waiting.map((t) => t.id).join(', ')} ended`, named(TASK_DONE, this.name()))
+      this.events.debug?.({ type: 'tick-end', tickId: id, effective, ...(this.outcome ?? { outcome: 'executed' }) })
+    } catch (err) {
+      this.fail(id, null, err)
+    } finally {
+      this.inFlight = false
+    }
+    this.lastEffective = effective
+    const deferred = this.deferred
+    this.deferred = null
+    if (deferred) this.request(deferred)
   }
 
   /** What a write reports, and how the skills changed with it. */
@@ -1682,7 +1818,7 @@ export class Agent {
    * for this; navigation and the user's own words don't.
    */
   private thoughtDone(): boolean {
-    if (this.utteranceEnded) return true
+    if (this.utteranceEnded || !this.utteranceId) return true
     if (this.voiceOn || this.midWord() || !this.paused) return false
     const f = this.config.finished
     const heard = this.heardNow()
@@ -1728,7 +1864,8 @@ export class Agent {
     if (this.reply && !this.reply.released) this.drop(this.reply)
     const reply: Reply = { id: ++this.replyCount, text: '', done: false, released: false, dropped: false, logged: false, seen: structuredClone(this.transcript), utteranceId: this.utteranceId }
     this.reply = reply
-    if (this.utteranceEnded) this.release(reply)
+    // Nothing the user says can make it moot when they aren't mid-turn (a background task's result).
+    if (!this.turnOpen) this.release(reply)
     return reply
   }
 
@@ -1796,6 +1933,7 @@ export class Agent {
   private halt(status: AgentStatus): void {
     this.halted = true
     this.events.status?.(status)
+    this.scheduleDelivery()
   }
 
   private report(id: number, d: MultiChoiceResult | null, effective: string, outcome: TickOutcome, detail?: string): void {

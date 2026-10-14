@@ -72,6 +72,14 @@ export function pageResized(told: PageSize, now: PageSize): boolean {
   return Math.abs(now.width - told.width) >= 50 || Math.abs(now.height - told.height) >= 50
 }
 
+/** How a page Stanley makes should look and work, wherever it is made: it is shown at `page`, and `changes` says how a change of size is told. */
+function pageLook(page: PageSize, changes = ''): string {
+  return `- It is shown in a window ${pageSizeText(page)}${changes}, larger when the user makes it full screen: lay it out to fit without scrolling (an SVG with a viewBox that scales to the window does).
+- A page in either folder takes Stanley's look, light or dark as the user's theme is: it sits on Stanley's frosted glass, and its text colour and font are set already. Give html and body no background, and don't set your own text colour or font; a picture, map, video or 3D scene that fills the window can have a background of its own. Colour it with these CSS variables: --foreground, --muted-foreground (secondary text), --card and --border (a panel that stands apart), --primary, --destructive, --warning, --success, and --chart-1 to --chart-6, in that order, for things that differ by kind (series, categories); text stays in the text colours, with the colour it names beside it. Also --radius, --font-sans and --font-mono.
+- The page is the whole window: no card, border or title banner around all of it. A panel with its own background has at least 16px of padding inside and var(--radius) corners.
+- A page can't reach the internet. Mermaid, Three.js, D3 and Chart.js load from their usual addresses (https://cdn.jsdelivr.net/npm/mermaid, …/three, …/d3, …/chart.js); a page can fetch the user's files by their path from the folder's top, starting with / (/budget.csv). Write everything else into the page itself.`
+}
+
 /** For thinking, when the session has the user's files: pages are shown at `page`. */
 export function filesPrompt(root: string, page: PageSize = PAGE_SIZE): string {
   return `## Files
@@ -86,13 +94,35 @@ The user's files are in a folder on their computer, ${root}. \`bash\` runs a com
 ## Pages
 When the user asks you to make something to look at (a diagram, a chart, a timeline, a small app), make it a web page: one .html file in ${SCRATCH_DIR}/, named for what it shows, written with \`write_file\`. Anything else they ask about is answered as before: from the screen, their files or a lookup.
 - ${SCRATCH_DIR}/ is scratch: it is emptied when Stanley restarts and isn't kept in the folder's history. A page the user wants to keep goes in Pages/: write it there if they asked for one to keep, or move it there with \`mv\` when they say so.
-- It comes on screen as you write it, and is drawn as it comes. Then you get the errors it reported and a picture of it. If something is broken (an error, something missing, overlapping or cut off), fix that part with \`edit_file\`; otherwise leave it as it is: the user is waiting.
+- It comes on screen as you write it, and is drawn as it comes. Then you get what its console printed (errors, warnings, and anything it logs) and a picture of it. If something is broken (an error, something missing, overlapping or cut off), fix that part with \`edit_file\`; otherwise leave it as it is: the user is waiting.
 - To change a page the user is looking at, use \`edit_file\` on just the part that changes: the page reloads where they were looking. Write the whole page again only when most of it changes.
-- It is shown in a window ${pageSizeText(page)} (a note says when that changes), larger when the user makes it full screen: lay it out to fit without scrolling (an SVG with a viewBox that scales to the window does).
-- A page in either folder takes Stanley's look, light or dark as the user's theme is: it sits on Stanley's frosted glass, and its text colour and font are set already. Give html and body no background, and don't set your own text colour or font; a picture, map, video or 3D scene that fills the window can have a background of its own. Colour it with these CSS variables: --foreground, --muted-foreground (secondary text), --card and --border (a panel that stands apart), --primary, --destructive, --warning, --success, and --chart-1 to --chart-6, in that order, for things that differ by kind (series, categories); text stays in the text colours, with the colour it names beside it. Also --radius, --font-sans and --font-mono.
-- The page is the whole window: no card, border or title banner around all of it. A panel with its own background has at least 16px of padding inside and var(--radius) corners.
-- A page can't reach the internet. Mermaid, Three.js, D3 and Chart.js load from their usual addresses (https://cdn.jsdelivr.net/npm/mermaid, …/three, …/d3, …/chart.js); a page can fetch the user's files by their path from the folder's top, starting with / (/budget.csv). Write everything else into the page itself.
+${pageLook(page, ' (a note says when that changes)')}
 - Pages are seen, not heard. Making one takes a while, so it starts with a few words about what you'll make; once it is on screen, never describe it out loud, and say nothing more about it.`
+}
+
+/** For a background task (see background.ts), when the session has the user's files: as thinking's, without a screen. Pages are shown at `page`. */
+export function taskFilesPrompt(root: string, page: PageSize = PAGE_SIZE): string {
+  return `## Files
+The user's files are in a folder on their computer, ${root}. \`bash\` runs a command there: the folder is your working directory and your home.
+- Look before you change anything. Only overwrite, move or delete the user's files when the task says to; making new files is fine.
+- Commands have no network access.
+- \`write_file\` writes a file and \`edit_file\` changes part of one.
+
+## Pages
+When the task is to make something to look at (a diagram, a chart, a timeline, a small app), make it a web page: one .html file in ${SCRATCH_DIR}/ unless the task says where, named for what it shows, written with \`write_file\`.
+- No one sees it while you work. \`preview_page\` draws it out of sight and gives you a picture of it, how tall it is, and everything its console printed: errors, warnings and what it logs (console.log is a good way to check your own work). Preview it once it is written, fix what is broken (an error, something missing, overlapping or cut off) with \`edit_file\`, and preview it again, until it is right. Check it in light as well as dark when its colours matter.
+${pageLook(page)}`
+}
+
+/**
+ * `before` with `old` replaced by `replacement`: once, where it is the only one, or everywhere
+ * with `all`; or why it can't be.
+ */
+export function editText(before: string, path: string, old: string, replacement: string, all: boolean): { text: string } | { error: string } {
+  const times = old ? before.split(old).length - 1 : 0
+  if (!times) return { error: `That text isn't in ${path}. Copy it exactly as it is in the file (read it with cat), or write the whole file again.` }
+  if (times > 1 && !all) return { error: `That text is in ${path} ${times} times: include more of what is around it so it is there once, or set all to change every one.` }
+  return { text: all ? before.split(old).join(replacement) : before.replace(old, () => replacement) }
 }
 
 /** How many paths at the top of the folder thinking is shown. */
