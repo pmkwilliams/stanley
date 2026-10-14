@@ -18,7 +18,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { defaultConfig, HEARD, HEARD_INSTRUCTIONS } from '@stanley/agent'
-import { createJevClient } from '@stanley/jev'
+import { createDecisionClient } from '@stanley/jev'
 import { parseWav, TurnDetector } from '@stanley/stt'
 import { asyncBufferFromFile, parquetReadObjects } from 'hyparquet'
 import { flag, loadEnv } from './harness.mts'
@@ -58,7 +58,7 @@ if (!existsSync(FILE)) {
 const limit = flag('limit', 400)
 const jevClips = flag('jev', 0)
 if (jevClips) loadEnv()
-const jev = jevClips ? createJevClient() : null
+const jev = jevClips ? createDecisionClient() : null
 const detector = await TurnDetector.create(MODELS_DIR)
 const rows = (await parquetReadObjects({ file: await asyncBufferFromFile(FILE), columns: ['id', 'audio', 'silence_spans', 'words', 'messages'], rowEnd: limit, utf8: false })) as Row[]
 

@@ -7,8 +7,8 @@ import { shownTab, type WebState } from '@stanley/app-web/core'
 import { parallelWeb } from '@stanley/app-web/parallel'
 import { livePage } from '@stanley/browser'
 import { localFiles } from '@stanley/files'
-import { Agent, BargeIn, createThinker, defaultConfig, findElement, named, screenVocabulary, scriptedTurn, SYSTEM_PROMPT, type AgentStatus, type FileTools, type Overheard, type Thinker } from '@stanley/agent'
-import { createJevClient, createMockJevClient, type DecisionClient } from '@stanley/jev'
+import { Agent, BargeIn, createThinker, deciderProfile, defaultConfig, findElement, named, screenVocabulary, scriptedTurn, SYSTEM_PROMPT, type AgentStatus, type FileTools, type Overheard, type Thinker } from '@stanley/agent'
+import { createDecisionClient, createMockJevClient, type DecisionClient } from '@stanley/jev'
 import { SAMPLE_RATE, Transcriber, writeWav, type HeardWord } from '@stanley/stt'
 import { KOKORO, loadKokoro, Speaker } from '@stanley/tts'
 import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, Menu, nativeTheme, protocol, session } from 'electron'
@@ -175,7 +175,8 @@ let sessionFile = ''
 let debug!: DebugRecorder
 const appEvent = (event: AppDebugEvent) => debug.record({ source: 'app', event })
 
-const jev = mock ? offlineJev() : createJevClient()
+const jev = mock ? offlineJev() : createDecisionClient()
+const profile = deciderProfile(mock ? 'jev' : process.env.STANLEY_DECIDER)
 
 /**
  * Offline stand-in for Jev: picks the step whose words overlap most with the conversation, takes
@@ -262,7 +263,8 @@ function startSession() {
           sendSnapshot()
         }),
     },
-    config: defaultConfig,
+    config: profile.config,
+    jevNotes: profile.notes,
     name: agentName,
     sink: (record) => {
       if (self !== agent) return
@@ -271,7 +273,7 @@ function startSession() {
     },
   })
   agent = self
-  appEvent({ type: 'session-start', session: sessionName, config: defaultConfig, systemPrompt: named(SYSTEM_PROMPT, agentName()), instructions: agent.instructions, mock })
+  appEvent({ type: 'session-start', session: sessionName, config: profile.config, systemPrompt: named(SYSTEM_PROMPT, agentName()), instructions: agent.instructions, mock })
   status = 'idle'
   said = null
   refreshHotwords()

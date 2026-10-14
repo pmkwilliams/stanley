@@ -5,11 +5,11 @@
  *   pnpm eval:working
  */
 import { WORKING, WORKING_INSTRUCTIONS, WORKING_PROMPT, named, namedOptions } from '@stanley/agent'
-import { createJevClient } from '@stanley/jev'
+import { createDecisionClient } from '@stanley/jev'
 import { loadEnv } from './harness.mts'
 
 loadEnv()
-const jev = createJevClient()
+const jev = createDecisionClient()
 
 const PAGE = ['draw me a diagram of the water cycle', 'writing the file water-cycle.html.'] as const
 /** What the user asked, what Stanley is doing, what they said meanwhile, and the verdict wanted. */

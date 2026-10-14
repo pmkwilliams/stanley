@@ -24,6 +24,12 @@ Options for `eval` and `eval:web`:
   effect, the top "what now" answers and the chosen step with its runners-up.
 - `--jev-turns N` sets how many user turns Jev reads (default 50), to compare its input size and
   latency on long scenarios (`long-session`).
+- `--set key=value` (repeatable; dotted for nested keys, e.g. `--set finished.heard=0.7`) runs with
+  one config value changed, to try a threshold without editing `config.ts`.
+
+`STANLEY_DECIDER=subq` runs any eval (and the app) with SubQ Snap instead of Jev (`SUBQ_API_KEY`),
+using `deciderProfile('subq')`: the prompts and thresholds were fitted to Jev, so SubQ gets a few
+of its own. Compare the two by running the same eval under each.
 
 Every run also reports thinking's input: tokens, the share read from the prompt cache, and the
 largest single call.

@@ -80,3 +80,26 @@ export const defaultConfig: AgentConfig = {
   unsureWord: 0.5,
   working: { stop: 0.5 },
 }
+
+/** How the agent is tuned for a decision model: config over `defaultConfig`, and lines added to what it is asked. */
+export interface DeciderProfile {
+  config: AgentConfig
+  /** Added to the decision model's questions: what to do now (`next`) and which step (`step`). */
+  notes?: { next?: string; step?: string }
+}
+
+/**
+ * Jev's is the default, which the prompts and thresholds were fitted to. SubQ Snap spreads its
+ * confidence wider (a skill it means to read rarely reaches 0.9), and weighs a question's own
+ * instructions over the shared prompt.
+ */
+export function deciderProfile(decider = 'jev'): DeciderProfile {
+  if (decider !== 'subq') return { config: defaultConfig }
+  return {
+    config: { ...defaultConfig, skillStep: 0.7 },
+    notes: {
+      next: 'An email or message about a web page is not that page: when the user asks to go to a page or a site, it is done only once that page itself is open.',
+      step: 'When the user gives the exact words to type ("saying …"), the step is the field they go in.',
+    },
+  }
+}

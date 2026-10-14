@@ -1,7 +1,7 @@
 import { DEFAULT_AGENT_NAME, FILES_URL, type ActionArgs, type AgentNode } from '@stanley/app-sdk'
 import type { Answer, DecisionClient, MultiChoiceResult, Question } from '@stanley/jev'
 import type { JSONValue } from 'ai'
-import { defaultConfig, type AgentConfig } from './config'
+import { defaultConfig, type AgentConfig, type DeciderProfile } from './config'
 import type { AgentDebugEvent, GateRule, RequestResult, TickReason } from './debug'
 import { WORKING, WORKING_INSTRUCTIONS, WORKING_PROMPT } from './barge'
 import { createEffectJudge, type EffectJudge, type EffectVerdict } from './effects'
@@ -106,6 +106,8 @@ export interface AgentDeps {
   files?: FileTools
   events?: Partial<AgentEvents>
   config?: AgentConfig
+  /** Added to Jev's questions (`DeciderProfile.notes`). */
+  jevNotes?: DeciderProfile['notes']
   /** Receives the history as it changes; replaying it rebuilds what thinking was sent. */
   sink?: (record: HistoryRecord) => void
   /** Today, for the instructions and Jev's state. Defaults to the system clock. */
@@ -153,6 +155,8 @@ export const HEARD: Record<Heard, string> = {
   more: 'The user is partway through: the words stop before something the request needs (what to call it, what to write, who or which one), or trail off on a word like "called", "saying", "to", "and", "that" or "um".',
 }
 export const HEARD_INSTRUCTIONS = 'Has the user finished saying what the next part needs, or are words still coming that it depends on?'
+const withNote = (instructions: string, note?: string) => (note ? `${instructions} ${note}` : instructions)
+
 export const STEP_INSTRUCTIONS =
   'If Stanley takes a step on the screen now, which one moves toward what the user asked for? Whether to take a step at all is a separate question.'
 
@@ -204,6 +208,7 @@ type StepRecord =
 export class Agent {
   readonly history: Conversation
   readonly config: AgentConfig
+  private readonly jevNotes?: DeciderProfile['notes']
   /** The user's words as said: what all the agent's own logic reads. */
   private transcript: TranscriptSnapshot = { finalized: [], partial: '' }
   /** Speech recognition's confidence in the transcript's words: only for marking unsure ones where the models read them. */
@@ -289,6 +294,7 @@ export class Agent {
     this.files = deps.files
     this.events = deps.events ?? {}
     this.config = deps.config ?? defaultConfig
+    this.jevNotes = deps.jevNotes
     this.effects = deps.effects ?? createEffectJudge(deps.jev, this.config.commits)
     this.history = new Conversation(deps.sink)
     this.clock = deps.clock ?? (() => new Date())
@@ -647,8 +653,8 @@ export class Agent {
       const prompt = [SYSTEM_PROMPT, ...(this.files ? [JEV_FILES] : []), ...(skills.skills.length ? [JEV_SKILLS] : [])].join('\n\n')
       const state = `${named(prompt, name)}\n\nToday is ${longDate(this.clock())}.\n\n${narrate(this.view(), screen, this.live(), this.config.jevTurns, name)}`
       const questions: Record<string, Question> = {
-        next: { instructions: named(NEXT_INSTRUCTIONS, name), options: namedOptions(NEXT, name) },
-        step: { instructions: named(STEP_INSTRUCTIONS, name), options: options.criteria },
+        next: { instructions: named(withNote(NEXT_INSTRUCTIONS, this.jevNotes?.next), name), options: namedOptions(NEXT, name) },
+        step: { instructions: named(withNote(STEP_INSTRUCTIONS, this.jevNotes?.step), name), options: options.criteria },
         heard: { instructions: named(HEARD_INSTRUCTIONS, name), options: namedOptions(HEARD, name) },
       }
       this.events.debug?.({

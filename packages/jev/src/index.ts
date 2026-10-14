@@ -84,6 +84,64 @@ export function createJevClient(opts: { model?: string } = {}): DecisionClient {
   }
 }
 
+/** SubQ Snap through Subquadratic's Decisions API (`subq-snap-preview`). Reads SUBQ_API_KEY. */
+export function createSubqClient(opts: { model?: string } = {}): DecisionClient {
+  const model = opts.model ?? 'subq-snap-preview'
+  const decide = async ({ state, questions, signal }: DecideRequest): Promise<MultiChoiceResult> => {
+    const key = process.env.SUBQ_API_KEY
+    if (!key) throw new Error('SUBQ_API_KEY not set')
+    for (const [id, q] of Object.entries(questions)) {
+      const count = Object.keys(q.options).length
+      if (count < 2) throw new Error(`SubQ: ${count} options for "${id}", needs at least 2`)
+      if (count > MAX_OPTIONS) throw new Error(`SubQ: ${count} options for "${id}" exceeds limit of ${MAX_OPTIONS}`)
+    }
+    const started = performance.now()
+    const res = await fetch('https://api.subq.ai/v1/systemone', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      signal,
+      body: JSON.stringify({
+        model,
+        state,
+        questions: Object.fromEntries(
+          Object.entries(questions).map(([id, q]) => [id, { type: 'choice', instructions: q.instructions, criteria: q.options }]),
+        ),
+      }),
+    })
+    if (!res.ok) throw new Error(`SubQ: ${res.status} ${await res.text()}`)
+    const body = (await res.json()) as {
+      answers: Record<string, { choice: string; probabilities?: Record<string, number>; confidence?: number }>
+      usage?: { input_tokens?: number; output_tokens?: number }
+    }
+    const answers: Record<string, Answer> = {}
+    for (const id of Object.keys(questions)) {
+      const answer = body.answers[id]!
+      answers[id] = {
+        choice: answer.choice,
+        probabilities: answer.probabilities ?? { [answer.choice]: 1 },
+        confidence: answer.confidence ?? answer.probabilities?.[answer.choice] ?? 0,
+      }
+    }
+    const usage = { inputTokens: body.usage?.input_tokens, outputTokens: body.usage?.output_tokens }
+    return { answers, latencyMs: performance.now() - started, usage }
+  }
+  return {
+    decide,
+    async choose({ state, instructions, options, signal }) {
+      const { answers, latencyMs, usage } = await decide({ state, questions: { q: { instructions, options } }, signal })
+      return { ...answers.q!, latencyMs, usage }
+    },
+  }
+}
+
+/** The decision model `STANLEY_DECIDER` names: `jev` (default) or `subq`. */
+export function createDecisionClient(): DecisionClient {
+  const decider = process.env.STANLEY_DECIDER ?? 'jev'
+  if (decider === 'subq') return createSubqClient()
+  if (decider === 'jev') return createJevClient()
+  throw new Error(`STANLEY_DECIDER: unknown decision model "${decider}"`)
+}
+
 /** Several choice questions about one state in a single Jev call. */
 export function chooseMany(req: DecideRequest & { model?: string }): Promise<MultiChoiceResult> {
   return createJevClient({ model: req.model }).decide(req)

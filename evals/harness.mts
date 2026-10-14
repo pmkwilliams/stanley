@@ -1,10 +1,10 @@
 import { cpSync, existsSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Agent, createThinker, defaultConfig, type AgentDeps, type FileTools, type HeardWord, type ThinkEffort, type Thinker, type TickReport, type WebTools, type World } from '@stanley/agent'
+import { Agent, createThinker, deciderProfile, defaultConfig, type AgentConfig, type AgentDeps, type FileTools, type HeardWord, type ThinkEffort, type Thinker, type TickReport, type WebTools, type World } from '@stanley/agent'
 import { parallelWeb } from '@stanley/app-web/parallel'
 import { localFiles } from '@stanley/files'
-import { createJevClient, type DecisionClient } from '@stanley/jev'
+import { createDecisionClient, type DecisionClient } from '@stanley/jev'
 import { Shell } from '../apps/desktop/src/main/shell'
 import { apps } from '../apps/desktop/src/main/apps'
 import type { Check, Scenario } from './scenarios.mts'
@@ -56,7 +56,7 @@ export function loadEnv() {
  */
 export function select<T>(items: T[], name: (t: T) => string, command: string): T[] | null {
   const args = process.argv.slice(2)
-  const filters = args.filter((a, i) => !a.startsWith('-') && !/^--(runs|concurrency|jev-turns|word-ms|effort|single-model)$/.test(args[i - 1] ?? ''))
+  const filters = args.filter((a, i) => !a.startsWith('-') && !/^--(runs|concurrency|jev-turns|word-ms|effort|single-model|set)$/.test(args[i - 1] ?? ''))
   if (!filters.length && !args.includes('--all')) {
     console.log(`${items.length} available — each makes several paid Jev/Sonnet calls:`)
     for (const t of items) console.log(`  ${name(t)}`)
@@ -68,7 +68,7 @@ export function select<T>(items: T[], name: (t: T) => string, command: string): 
 
 export function printUsage() {
   const ratio = usage.thinkingInputTokens ? `${Math.round((usage.thinkingCachedTokens / usage.thinkingInputTokens) * 100)}%` : '—'
-  console.log(`Paid calls: ${usage.jev} Jev (${usage.jevInputTokens.toLocaleString()} input tokens, p50 ${median(usage.jevMs)}s), ${usage.thinking} thinking turns, ${usage.writing} writes, ${usage.confirming} confirms (${usage.singleFallbacks} handed over to a whole turn) (Sonnet: ${usage.thinkingInputTokens.toLocaleString()} input tokens, ${ratio} read from cache, largest call ${usage.largestThinkingInput.toLocaleString()}), ${usage.searches} searches, ${usage.reads} page reads (Parallel)`)
+  console.log(`Paid calls: ${usage.jev} ${process.env.STANLEY_DECIDER ?? 'jev'} (${usage.jevInputTokens.toLocaleString()} input tokens, p50 ${median(usage.jevMs)}s), ${usage.thinking} thinking turns, ${usage.writing} writes, ${usage.confirming} confirms (${usage.singleFallbacks} handed over to a whole turn) (Sonnet: ${usage.thinkingInputTokens.toLocaleString()} input tokens, ${ratio} read from cache, largest call ${usage.largestThinkingInput.toLocaleString()}), ${usage.searches} searches, ${usage.reads} page reads (Parallel)`)
   const t = usage.thinkMs
   console.log(`Thinking latency p50: run ${median(t.run)}s (${t.run.length}), write ${median(t.write)}s (${t.write.length}), confirm ${median(t.confirm)}s (${t.confirm.length})`)
   for (const f of usage.fallbacks) console.log(`  handed over: ${f}`)
@@ -206,15 +206,32 @@ export async function drive(world: World, utterances: string[], speak: Speak, fi
 
 function makeAgent(world: World, events: AgentDeps['events'], files?: FileTools): Agent {
   const key = process.env.PARALLEL_API_KEY
+  // `STANLEY_DECIDER=subq`: SubQ Snap instead of Jev, with the config and notes tuned for it.
+  const profile = deciderProfile(process.env.STANLEY_DECIDER)
   // `--jev-turns N`: how many user turns Jev reads, to compare its input and latency.
-  const config = process.argv.includes('--jev-turns') ? { ...defaultConfig, jevTurns: flag('jev-turns', defaultConfig.jevTurns) } : defaultConfig
+  const base = process.argv.includes('--jev-turns') ? { ...profile.config, jevTurns: flag('jev-turns', defaultConfig.jevTurns) } : profile.config
+  // `--set key=value` (repeatable, dotted for nested keys): try a config value without editing it.
+  const config = overrides(base)
   // `--effort low|medium|high`: thinking's effort, to compare speed and results.
   const i = process.argv.indexOf('--effort')
   const effort = i === -1 ? undefined : (process.argv[i + 1] as ThinkEffort)
   // `--single-model <gateway id>`: the model for single-step writes and confirms.
   const j = process.argv.indexOf('--single-model')
   const singleModel = j === -1 ? undefined : process.argv[j + 1]
-  return new Agent({ world, jev: countedJev(createJevClient()), thinker: countedThinker(createThinker({ effort, singleModel })), web: key ? countedWeb(parallelWeb(key)) : undefined, files, events, config })
+  return new Agent({ world, jev: countedJev(createDecisionClient()), thinker: countedThinker(createThinker({ effort, singleModel })), web: key ? countedWeb(parallelWeb(key)) : undefined, files, events, config, jevNotes: profile.notes })
+}
+
+function overrides(config: AgentConfig): AgentConfig {
+  const out = structuredClone(config) as unknown as Record<string, unknown>
+  process.argv.forEach((a, i) => {
+    if (a !== '--set') return
+    const [path, value] = process.argv[i + 1]!.split('=') as [string, string]
+    const keys = path.split('.')
+    const parent = keys.slice(0, -1).reduce((o, k) => o[k] as Record<string, unknown>, out)
+    if (!(keys.at(-1)! in parent)) throw new Error(`--set: no config key "${path}"`)
+    parent[keys.at(-1)!] = JSON.parse(value)
+  })
+  return out as unknown as AgentConfig
 }
 
 /** Runs `tasks` with at most `limit` in flight. */
