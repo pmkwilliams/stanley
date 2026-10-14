@@ -1,9 +1,9 @@
 import { execFile, spawn } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
-import { mkdir, readdir, readFile, realpath, writeFile } from 'node:fs/promises'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync, type Stats } from 'node:fs'
+import { mkdir, readdir, readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, resolve, sep } from 'node:path'
-import { parseSkill, SCRATCH_DIR, skillPath, SKILLS_DIR, type BashResult, type FileTools, type SkillScan } from '@stanley/agent'
+import { parseSkill, SCRATCH_DIR, skillPath, SKILLS_DIR, type BashResult, type FileChange, type FileTools, type SkillScan } from '@stanley/agent'
 
 export interface LocalFilesOptions {
   /** The user's folder. Made if it isn't there. */
@@ -41,6 +41,9 @@ const PROFILE = `(version 1)
 
 const PATH = '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin'
 
+/** Git's tree with nothing in it: what the folder's first commit is compared with. */
+const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
+
 /**
  * The user's files as one real folder. Commands run with bash inside it, sandboxed, and every
  * change is kept: the folder is committed to a git directory of its own before and after each
@@ -68,10 +71,10 @@ export function localFiles(opts: LocalFilesOptions): FileTools {
       )
     })
 
-  /** Commits the folder as it is, if anything changed. One at a time. */
-  let snapshots = Promise.resolve()
+  /** Commits the folder as it is, if anything changed, and gives the commit it is now (`''` before there is one). One at a time. */
+  let snapshots = Promise.resolve('')
   let excluded = false
-  const snapshot = (message: string) =>
+  const snapshot = (message: string): Promise<string> =>
     (snapshots = snapshots.then(async () => {
       if (!existsSync(join(history, 'HEAD'))) {
         await git('init', '-q')
@@ -83,10 +86,54 @@ export function localFiles(opts: LocalFilesOptions): FileTools {
         writeFileSync(join(history, 'info', 'exclude'), `.DS_Store\n/${SCRATCH_DIR}/\n`)
         excluded = true
       }
-      if (!(await git('status', '--porcelain')).stdout.trim()) return
-      await git('add', '-A')
-      await git('commit', '-q', '--no-verify', '-m', message)
+      if ((await git('status', '--porcelain')).stdout.trim()) {
+        await git('add', '-A')
+        await git('commit', '-q', '--no-verify', '-m', message)
+      }
+      return (await git('rev-parse', '-q', '--verify', 'HEAD')).stdout.trim()
     }))
+
+  /** The files in scratch, which the history leaves out, by path from the folder's top. */
+  const scratchFiles = async (): Promise<Map<string, Stats>> => {
+    const files = new Map<string, Stats>()
+    const entries = await readdir(join(root, SCRATCH_DIR), { recursive: true, withFileTypes: true }).catch(() => [])
+    for (const e of entries) {
+      if (!e.isFile() || e.name === '.DS_Store') continue
+      const path = join(e.parentPath, e.name).slice(root.length + 1)
+      const s = await stat(join(root, path)).catch(() => null)
+      if (s) files.set(path, s)
+    }
+    return files
+  }
+
+  /**
+   * What changed in the folder from commit `before` to `after`, and in scratch since it was
+   * `scratch`. A file that left scratch is moved when one with its inode arrived, as `mv` keeps it.
+   */
+  const changed = async (before: string, after: string, scratch: Map<string, Stats>): Promise<FileChange[]> => {
+    const changes: FileChange[] = []
+    if (after && after !== before) {
+      const fields = (await git('diff-tree', '-r', '-M', '-z', '--name-status', before || EMPTY_TREE, after)).stdout.split('\0')
+      for (let i = 0; fields[i]; ) {
+        const status = fields[i++]!
+        if (status.startsWith('R')) changes.push({ kind: 'moved', from: fields[i++]!, path: fields[i++]! })
+        else changes.push({ kind: status === 'A' ? 'added' : status === 'D' ? 'deleted' : 'changed', path: fields[i++]! })
+      }
+    }
+    const now = await scratchFiles()
+    for (const [path, s] of now) {
+      const was = scratch.get(path)
+      if (!was) changes.push({ kind: 'added', path })
+      else if (was.ino !== s.ino || was.size !== s.size || was.mtimeMs !== s.mtimeMs) changes.push({ kind: 'changed', path })
+    }
+    for (const [from, was] of scratch) {
+      if (now.has(from)) continue
+      const i = changes.findIndex((c) => c.kind === 'added' && (now.get(c.path) ?? statSync(join(root, c.path), { throwIfNoEntry: false }))?.ino === was.ino)
+      if (i < 0) changes.push({ kind: 'deleted', path: from })
+      else changes[i] = { kind: 'moved', from, path: changes[i]!.path }
+    }
+    return changes
+  }
 
   const shown = root.startsWith(`${home}/`) ? `~${root.slice(home.length)}` : root
 
@@ -110,12 +157,17 @@ export function localFiles(opts: LocalFilesOptions): FileTools {
     async bash(command, signal) {
       signal?.throwIfAborted()
       // What changed since the last command is the user's own, kept apart from what Stanley does.
-      await snapshot('Changes made outside Stanley')
+      const before = await snapshot('Changes made outside Stanley')
+      const scratch = await scratchFiles()
+      let result: BashResult
+      let after = before
       try {
-        return await run(command, signal)
+        result = await run(command, signal)
       } finally {
-        await snapshot(`Stanley ran: ${command}`)
+        after = await snapshot(`Stanley ran: ${command}`)
       }
+      const changes = await changed(before, after, scratch)
+      return changes.length ? { ...result, changes } : result
     },
     async paths() {
       // Read directly, not through bash: it's asked for on every decision, and changes nothing.

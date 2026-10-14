@@ -1,19 +1,21 @@
 import { defineApp, type AgentNode } from '@stanley/app-sdk'
 
 export interface Track {
-  /** `j<jamendo id>`. */
+  /** `j<jamendo id>` or `s<soundcloud id>`. */
   id: string
   title: string
   artist: string
   durationSec: number
-  /** Stream URL (an MP3 on Jamendo). */
+  /** How it plays: an MP3 in an `<audio>` element, or SoundCloud's embedded player. */
+  source: 'jamendo' | 'soundcloud'
+  /** For Jamendo, the MP3's URL; for SoundCloud, the track's API URL, which its player loads. */
   audio: string
   /** Cover image URL. Until it loads (or if it fails) the UI draws a generated cover. */
   image: string
   album: string
-  /** Creative Commons licence URL. */
-  license: string
-  /** The track's page on Jamendo. */
+  /** Creative Commons licence URL, on Jamendo. SoundCloud tracks are the uploader's, all rights reserved. */
+  license?: string
+  /** The track's page on Jamendo or SoundCloud. */
   url: string
 }
 
@@ -31,6 +33,7 @@ const jamendo = (id: number, album: number, title: string, artist: string, album
   title,
   artist,
   durationSec,
+  source: 'jamendo',
   audio: `https://prod-1.storage.jamendo.com/?trackid=${id}&format=mp32`,
   image: `https://usercontent.jamendo.com?type=album&id=${album}&width=300&trackid=${id}`,
   album: albumName,
@@ -38,7 +41,23 @@ const jamendo = (id: number, album: number, title: string, artist: string, album
   url: `https://www.jamendo.com/track/${id}`,
 })
 
-/** The playlist: a dozen distinctive Creative Commons tracks, one per style. */
+/**
+ * A track on SoundCloud, played through its embedded player (the widget), which needs no API key.
+ * Only tracks whose uploader allows embedding everywhere, and that stream in full, belong here.
+ */
+const soundcloud = (id: number, path: string, artwork: string, title: string, artist: string, albumName: string, durationSec: number): Track => ({
+  id: `s${id}`,
+  title,
+  artist,
+  durationSec,
+  source: 'soundcloud',
+  audio: `https://api.soundcloud.com/tracks/${id}`,
+  image: `https://i1.sndcdn.com/artworks-${artwork}-t500x500.jpg`,
+  album: albumName,
+  url: `https://soundcloud.com/${path}`,
+})
+
+/** The playlist: a dozen distinctive Creative Commons tracks, one per style, then a few from SoundCloud. */
 export const playlist: Track[] = [
   jamendo(81740, 7505, 'Sad Robot', 'Pornophonique', '8-bit Lagerfeuer', 312, 'by-nc-nd/3.0'),
   jamendo(391002, 49216, 'Balrog Boogie', 'Diablo Swing Orchestra', "The Butcher's Ballroom", 233, 'by-nc-nd/3.0'),
@@ -52,12 +71,16 @@ export const playlist: Track[] = [
   jamendo(29862, 3777, 'Deep Blue', 'Antony Raijekov', 'Jazz U', 202, 'by-nc-nd/3.0'),
   jamendo(868293, 101801, 'Eleven 11', 'Kellee Maize', 'Integration', 238, 'by-sa/3.0'),
   jamendo(1687406, 187872, 'Unframed Toaster', 'Ehma', 'Framed by Frames', 165, 'by/3.0'),
+  soundcloud(293, 'forss/flickermood', '000067273316-smsiqx', 'Flickermood', 'Forss', 'Soulhack', 214),
+  soundcloud(291313240, 'bonobo/kerala', 'nd5do3eR82sw-0', 'Kerala', 'Bonobo', 'Migration', 238),
+  soundcloud(298851207, 'tycho/awake', 'VEsr8icpGzsm-0', 'Awake', 'Tycho', 'Awake', 284),
+  soundcloud(341471474, 'odesza/a-moment-apart', 'nU2mhziz3vmX-0', 'A Moment Apart', 'ODESZA', 'A Moment Apart', 234),
 ]
 
 /** The song list's section title. */
 export const LIST_TITLE = 'Playlist'
-/** Shown under the list: the tracks are Creative Commons, credited to their artists. */
-export const CREDIT = 'Music from Jamendo'
+/** Shown under the list, crediting where the tracks come from. */
+export const CREDIT = 'Music from Jamendo and SoundCloud'
 
 /** The track in the hero and the status bar. */
 export const nowPlaying = (s: Pick<MusicState, 'tracks' | 'currentId'>): Track | undefined => s.tracks.find((t) => t.id === s.currentId)

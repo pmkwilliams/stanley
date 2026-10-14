@@ -93,6 +93,29 @@ describe.runIf(process.platform === 'darwin')('localFiles', () => {
     expect((await files.bash('touch "$STANLEY_HISTORY/x"')).exitCode).not.toBe(0)
   })
 
+  it('says what a command changed in the folder, scratch too, and a file moved out of scratch', async () => {
+    const { files, root } = setup()
+    writeFileSync(join(root, 'note.md'), 'first\n')
+    writeFileSync(join(root, 'old.md'), 'old\n')
+    expect((await files.bash('ls')).changes).toBeUndefined()
+    const done = await files.bash('echo second > note.md && rm old.md && mkdir -p Pages .stanley/scratch && echo a > .stanley/scratch/a.html && echo b > new.md')
+    expect(done.changes).toEqual(
+      expect.arrayContaining([
+        { kind: 'changed', path: 'note.md' },
+        { kind: 'deleted', path: 'old.md' },
+        { kind: 'added', path: 'new.md' },
+        { kind: 'added', path: '.stanley/scratch/a.html' },
+      ]),
+    )
+    expect(done.changes).toHaveLength(4)
+    expect((await files.bash('mv .stanley/scratch/a.html Pages/a.html && mv new.md renamed.md')).changes).toEqual(
+      expect.arrayContaining([
+        { kind: 'moved', from: '.stanley/scratch/a.html', path: 'Pages/a.html' },
+        { kind: 'moved', from: 'new.md', path: 'renamed.md' },
+      ]),
+    )
+  })
+
   it('stops a command that runs too long, or is aborted', async () => {
     const { files } = setup({ timeoutMs: 300 })
     const slow = await files.bash('echo started; sleep 10')

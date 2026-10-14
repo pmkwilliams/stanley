@@ -2,11 +2,15 @@ import { SCRATCH_DIR } from '@stanley/app-sdk'
 import { filesOf, type Entry } from './conversation'
 import type { SkillScan } from './skills'
 
-/** What a command printed, stdout and stderr together, and how it exited. */
+/** What a command printed, stdout and stderr together, how it exited, and what it changed in the folder. */
 export interface BashResult {
   output: string
   exitCode: number
+  changes?: FileChange[]
 }
+
+/** A file a command changed, by its path from the folder's top. */
+export type FileChange = { kind: 'added' | 'changed' | 'deleted'; path: string } | { kind: 'moved'; from: string; path: string }
 
 /** The user's files: one folder, worked on through bash in the background. */
 export interface FileTools {
@@ -94,8 +98,8 @@ export function filesPrompt(root: string, page: PageSize = PAGE_SIZE, background
     : `- It comes on screen as you write it, and is drawn as it comes. Then you get what its console printed (errors, warnings, and anything it logs) and a picture of it. If something is broken (an error, something missing, overlapping or cut off), fix that part with \`edit_file\`; otherwise leave it as it is: the user is waiting.
 - To change a page the user is looking at, use \`edit_file\` on just the part that changes: the page reloads where they were looking. Write the whole page again only when most of it changes.`
   const heard = background
-    ? `- Pages are seen, not heard: once one is on screen, never describe it out loud, and say nothing more about it.`
-    : `- Pages are seen, not heard. The user waits while one is written, so it starts with a few words about what you'll make; once it is on screen, never describe it out loud, and say nothing more about it.`
+    ? `- Pages are seen, not heard: once one is on screen, never describe it out loud.`
+    : `- Pages are seen, not heard. The user waits while one is written, so it starts with a few words about what you'll make; once it is on screen, never describe it out loud.`
   return `## Files
 The user's files are in a folder on their computer, ${root}. \`bash\` runs a command there, in the background: the folder is your working directory and your home, and the screen doesn't change. The user can't see what you do there, so say what you found or did, in spoken sentences, not the file's formatting.
 - Look before you change anything. Only overwrite, move or delete the user's files when they asked for that; making new files is fine.
@@ -170,11 +174,17 @@ export function readCommand(path: string): string {
   return `cat -- ${quote(path)}`
 }
 
-/** What a command gives back as a tool result: its output, and its exit code when it failed. */
+/** How many of a command's changes its tool result lists. */
+const SHOWN_CHANGES = 20
+
+/** What a command gives back as a tool result: its output, its exit code when it failed, and what it changed in the folder. */
 export function bashText(result: BashResult): string {
-  const output = result.output.trimEnd()
-  if (result.exitCode === 0) return output || '(no output)'
-  return `${output ? `${output}\n` : ''}(exit code ${result.exitCode})`
+  const printed = [result.output.trimEnd(), result.exitCode === 0 ? '' : `(exit code ${result.exitCode})`].filter(Boolean).join('\n')
+  const changes = result.changes ?? []
+  const line = (c: FileChange) => (c.kind === 'moved' ? `- moved ${c.from} to ${c.path}` : `- ${c.kind} ${c.path}`)
+  const more = changes.length > SHOWN_CHANGES ? [`… and ${changes.length - SHOWN_CHANGES} more`] : []
+  const changed = changes.length ? ['Changes to the folder:', ...changes.slice(0, SHOWN_CHANGES).map(line), ...more].join('\n') : ''
+  return [printed, changed].filter(Boolean).join('\n\n') || '(no output)'
 }
 
 /**
