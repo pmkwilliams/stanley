@@ -1,4 +1,5 @@
 import { filesOf, type Entry } from './conversation'
+import type { SkillScan } from './skills'
 
 /** What a command printed, stdout and stderr together, and how it exited. */
 export interface BashResult {
@@ -21,6 +22,8 @@ export interface FileTools {
   write?(path: string, content: string): Promise<void>
   /** A file's text. Throws when it isn't there. */
   read?(path: string): Promise<string>
+  /** The skills in the folder (see skills.ts), read from disk each time. */
+  skills?(): Promise<SkillScan>
 }
 
 /** A command that ran on the user's files, as the history keeps it. */
@@ -33,6 +36,8 @@ export type FileMeta =
   | { kind: 'bash'; command: string; exitCode: number; utteranceId?: number }
   /** Thinking wrote a file, or changed part of one (`edit`). */
   | { kind: 'write'; path: string; edit: boolean; error?: string; utteranceId?: number }
+  /** Jev read a skill. `body` is what it says to do. */
+  | { kind: 'skill'; name: string; path: string; body: string; error?: string; utteranceId?: number }
 
 /** A file or folder Stanley has seen, which Jev can read or list. */
 export interface KnownFile {
@@ -95,7 +100,7 @@ export function knownFiles(entries: Entry[], paths: string[] = []): KnownFile[] 
   const files: KnownFile[] = []
   let latest = true
   for (const f of filesOf(entries).reverse()) {
-    if (f.kind === 'bash' || f.error) continue
+    if (f.kind === 'bash' || f.kind === 'skill' || f.error) continue
     const found = f.kind === 'list' ? f.entries.map((name) => join(f.path, name)) : [f.path]
     for (const path of found) if (!files.some((k) => k.path === path)) files.push({ path, latest })
     latest = false

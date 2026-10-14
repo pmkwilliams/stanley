@@ -59,6 +59,8 @@ Each tick the world provides (`World` in `packages/agent/src/world.ts`):
 - **The user's files** (see **Files**): `list files`, then `list folder: <path>` and
   `read file: <path>` for everything in the folder, most recently looked at first. Looking only
   reads, in the background: nothing comes on screen.
+- **Skills** (see **Skills**): `use skill: <name>` for each skill the user has, described by when
+  it is for, unless Jev already read it this task.
 
 Apart from known pages, only what is on the current screen is offered. The agent can't reach into a
 screen it isn't on, because on a real website it can't either: to archive an email it opens the
@@ -94,6 +96,7 @@ decisions showed the old single question giving 50% to an option whose route hel
 | `act` on a button | Runs once the user finishes the thought; if it **commits** (see **Effects**), once their turn ends, and thinking confirms |
 | `act` on a field | At any pause thinking writes what goes in it (one call), then the fast part carries on. The user's own words go in at once (live dictation, retyped as they go on); words Stanley composed wait for the thought to finish |
 | `think` with a field step ≥ 0.9 | Handled as writing that field: one call instead of a tool loop |
+| Anything but `done`, with a `use skill` step ≥ 0.9 | The skill is read at once, even mid-word (it only reads); the next tick decides with it in view |
 | `act`, unsure of `act` or of the step | Listens while the user speaks; after they finish, thinking takes the turn |
 | `think` | Thinking takes the turn once the user finishes the thought |
 | `listen` | Waits for more words; after the user finished, thinking takes the turn (usually to ask) |
@@ -191,7 +194,9 @@ returned. Three ways in, all with the same tools and `toolChoice: 'auto'`:
   the turn to the user. Otherwise Jev continues (Enter, Send, done). Other `act` calls (tick this,
   then type that) run in order as thinking's own steps, stopping at one no longer on screen, typing
   that isn't the user's own words, or a press that commits before the turn ends or with unsure
-  words; then Jev continues. A lookup, or a first call that can't run, hands over to a whole turn.
+  words; then Jev continues. A command on the user's files runs within the step (reading a skill,
+  or a list the user named), and the step goes on to decide, up to three steps in all. A lookup, or
+  a first call that can't run, hands over to a whole turn.
 - **confirm** (one step): Jev chose a button that commits. Thinking presses it (calls `act` on it)
   only if the user asked for that and has heard any words Stanley wrote itself; otherwise it says
   what is ready and asks. Asking to reply or post with given words is asking to send; asking to
@@ -438,6 +443,36 @@ writes there is usable outside it.
   sandbox. `HOME` is the folder. 30 s per command, then the process group is killed; barge-in
   kills it too. `rg`, `git`, `python3`, `node`, `zip`, `sed` and `awk` work; `textutil` and
   `mdls` don't (they need system services the sandbox blocks).
+
+## Skills
+
+What the user taught Stanley, written down once: how they like something done ("how I write
+emails"), or what to do when they say something ("when I say it's time for a break, play…"). They
+are the Agent Skills format coding agents use, where coding agents keep them: a folder per skill in
+`.agents/skills/` in the user's folder, which is `~/.agents/skills/` to commands, as `HOME` is the
+folder. A `SKILL.md` starts with front matter (`name`, the folder's name; `description`, what it
+does and when to use it), then says what to do. The user edits them in any editor; Stanley writes
+and changes them with its file tools when asked. No tool or prompt is skill-specific beyond that:
+models know the format.
+
+- **Read from disk each time** (`FileTools.skills`, parsed by `parseSkill` in `skills.ts`), so a
+  change shows at once. A `SKILL.md` that can't be used (no front matter or description, a name that
+  isn't its folder's) is listed with why, for thinking to fix when asked.
+- **Jev** has `use skill: <name>`, described by the skill's description, and the line in its
+  prompt that a skill a request is for comes first, then what it says, a step at a time. Reading it
+  is a look, like `read file:`: it runs mid-word, goes into the history as `cat -- '…/SKILL.md'`
+  with its output, and Jev reads all of what it says (the latest read of each skill; earlier ones
+  as a line). When Jev's step is sure of a skill, it is read whatever Jev says comes next: Jev
+  tends to listen or hand over on a short request like "time for a break", and decides well once
+  the skill is in view. So a routine runs on the fast path: open Music, then press the song.
+- **Thinking** has a `## Skills` section in its instructions: where they are, the format, to read
+  a skill a request is for before anything else, and to write, change or delete one only when the
+  user asks. It lists the skills as they were when the session started, so the instructions never
+  change. A change since then comes as a note with the next observation (`The skills changed:
+  added "focus": …`), and right in the result of a command or file write that changed them, so
+  thinking hears at once when a skill it wrote can't be used.
+- **Kept like every file**: the snapshots include `.agents/`, and `paths()` leaves hidden folders
+  out, so skills are offered once, as skills, not again as files.
 
 ## Surfaces and layout
 

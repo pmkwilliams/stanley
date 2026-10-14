@@ -21,7 +21,7 @@ export type TickReason = 'words' | 'action' | 'end' | 'pause'
 /** What `request()` did with a tick request. Everything but `tick` means no Jev call. */
 export type RequestResult = 'tick' | 'deferred' | 'no-new-words' | 'halted' | 'nothing-to-re-ask' | 'held' | 'released'
 
-export type GateRule = 'stale' | 'act-confidence' | 'done-confidence' | 'step-confidence' | 'mid-speech' | 'thought-open' | 'turn-open' | 'early-guess' | 'unsure-words' | 'listen-ended' | 'oscillation' | 'step-cap' | 'ran-calls' | 'only-navigated'
+export type GateRule = 'stale' | 'act-confidence' | 'done-confidence' | 'step-confidence' | 'mid-speech' | 'thought-open' | 'turn-open' | 'early-guess' | 'unsure-words' | 'listen-ended' | 'oscillation' | 'step-cap' | 'ran-calls' | 'only-navigated' | 'skill'
 
 /**
  * Structured trace of the loop, for the debug window. Carries everything needed

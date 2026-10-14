@@ -7,6 +7,7 @@ import { validate } from '../src/conversation'
 import type { AgentDebugEvent } from '../src/debug'
 import type { Effect } from '../src/effects'
 import type { FileTools } from '../src/files'
+import type { SkillScan } from '../src/skills'
 import { DONE_CHECK, scriptedTurn, type FileOutput, type ThinkRequest, type Thinker, type ThinkResult } from '../src/think'
 import type { WebTools } from '../src/web'
 import type { World } from '../src/world'
@@ -1682,5 +1683,99 @@ describe('Agent history', () => {
     expect(last).toContain('call call_1')
     expect(last.indexOf('result call_1')).toBe(last.indexOf('call call_1') + 1)
     expect(last).not.toContain('Sorted.')
+  })
+})
+
+describe('Agent skills', () => {
+  const windDown = '---\nname: wind-down\ndescription: When the user is winding down for the night.\n---\nOpen To-do, then press Sort.\n'
+  /** A folder with one skill, which a command can change. */
+  function skillFiles() {
+    let scan: SkillScan = { skills: [{ name: 'wind-down', description: 'When the user is winding down for the night.', path: '.agents/skills/wind-down/SKILL.md' }], broken: [] }
+    const ran: string[] = []
+    const files: FileTools & { ran: string[]; set(next: SkillScan): void } = {
+      ran,
+      set: (next) => void (scan = next),
+      root: '~/Stanley',
+      paths: async () => ['notes.md'],
+      skills: async () => scan,
+      async bash(command) {
+        ran.push(command)
+        return command === "cat -- '.agents/skills/wind-down/SKILL.md'" ? { output: windDown, exitCode: 0 } : { output: '', exitCode: 0 }
+      },
+    }
+    return files
+  }
+
+  it('reads a skill while the user speaks, then follows it with everything it says in view', async () => {
+    const f = skillFiles()
+    const states: string[] = []
+    const options: string[][] = []
+    const { agent, performed, thinker } = setup(
+      (req, i) => {
+        states.push(req.state)
+        options.push(Object.keys(req.questions.step!.options))
+        return [{ next: 'act', step: 'use skill: wind-down' }, { next: 'act', step: 'open To-do' }, { next: 'act', step: 'Sort' }][i] ?? { next: 'done', nextConfidence: 0.99 }
+      },
+      { deps: { files: f } },
+    )
+    agent.utteranceStart()
+    say(agent, "I'm winding down")
+    await settle()
+    expect(f.ran).toEqual(["cat -- '.agents/skills/wind-down/SKILL.md'"])
+    expect(options[0]).toContain('use skill: wind-down')
+    expect(states[0]).toContain('"use skill" step')
+    // Read this task, it is in view: it isn't offered again.
+    expect(options[1]).not.toContain('use skill: wind-down')
+    expect(states[1]).toContain('Stanley read its skill "wind-down":\n  Open To-do, then press Sort.')
+    agent.utteranceEnd()
+    await settle()
+    expect(performed).toEqual(expect.arrayContaining(['open todo', 'todo:sort']))
+    expect(thinker.runs).toHaveLength(0)
+  })
+
+  it('reads a skill the step is sure of even while Jev would listen, but not one it is unsure of', async () => {
+    const f = skillFiles()
+    const { agent, debug } = setup((_, i) => [{ next: 'listen', step: 'use skill: wind-down', stepConfidence: 0.7 }, { next: 'listen', step: 'use skill: wind-down', stepConfidence: 0.95 }][i] ?? { next: 'listen' }, { deps: { files: f } })
+    agent.utteranceStart()
+    say(agent, "I'm winding")
+    await settle()
+    expect(f.ran).toEqual([])
+    say(agent, "I'm winding down")
+    await settle()
+    expect(f.ran).toEqual(["cat -- '.agents/skills/wind-down/SKILL.md'"])
+    expect(debug.some((e) => e.type === 'gate' && e.rule === 'skill')).toBe(true)
+  })
+
+  it('lists the skills in thinking’s instructions as they were at the start, and tells it when they change', async () => {
+    const f = skillFiles()
+    const results: string[] = []
+    let turn = 0
+    const { agent, thinker } = setup(() => ({ next: 'think' }), {
+      thinker: {
+        run: async (req) => {
+          if (turn++ === 0) {
+            f.set({ skills: [], broken: [{ path: '.agents/skills/wind-down/SKILL.md', error: 'it has no description: say what it does and when to use it' }] })
+            results.push(await req.bash!('echo > .agents/skills/wind-down/SKILL.md', 'b1'))
+          }
+          return { text: '' }
+        },
+      },
+      deps: { files: f },
+    })
+    agent.utteranceStart()
+    agent.segment('forget how I wind down')
+    agent.utteranceEnd()
+    await settle()
+    expect(thinker.runs[0]!.instructions).toContain('The skills:\n- wind-down: When the user is winding down for the night.')
+    expect(results[0]).toBe("(no output)\n\nThe skills changed: .agents/skills/wind-down/SKILL.md can't be used: it has no description: say what it does and when to use it.")
+
+    // Changed outside Stanley: the next call's observation says so. The instructions stay as they were.
+    f.set({ skills: [{ name: 'focus', description: 'When the user wants to focus.', path: '.agents/skills/focus/SKILL.md' }], broken: [] })
+    agent.utteranceStart()
+    agent.segment('what now')
+    agent.utteranceEnd()
+    await settle()
+    expect(thinker.runs[1]!.instructions).toBe(thinker.runs[0]!.instructions)
+    expect(observation(thinker.runs[1]!)).toContain('<note>The skills changed: added "focus": When the user wants to focus.</note>')
   })
 })

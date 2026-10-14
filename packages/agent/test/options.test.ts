@@ -30,6 +30,13 @@ describe('stepOptions', () => {
     expect(Object.keys(options.criteria)).toEqual(['Inbox (5)', 'Sam: Lunch Friday?', '"Lunch Friday?" › Archive', '"Lunch Friday?" › Reply to Sam', 'Archive', 'open To-do', 'back', 'home'])
   })
 
+  it("offers the user's skills before the apps, described by when they are for", () => {
+    const skills = stepOptions(screen, apps, 50, '', [], false, undefined, [{ name: 'wind-down', description: 'When the user winds down.', path: '.agents/skills/wind-down/SKILL.md' }])
+    expect(Object.keys(skills.criteria).slice(-4)).toEqual(['use skill: wind-down', 'open To-do', 'back', 'home'])
+    expect(skills.criteria['use skill: wind-down']).toBe('skill: When the user winds down.')
+    expect(navigates(skills.targets.get('use skill: wind-down')!)).toBe(true)
+  })
+
   it('offers lock last, only when the world can lock', () => {
     expect(Object.keys(stepOptions(screen, apps, 50, '', [], true).criteria).slice(-3)).toEqual(['back', 'home', 'lock'])
   })

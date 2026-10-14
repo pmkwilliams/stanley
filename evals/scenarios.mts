@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { lookupsOf, saidOf, stepsOf, targetOf, type Agent } from '@stanley/agent'
+import { filesOf, lookupsOf, parseSkill, saidOf, stepsOf, targetOf, type Agent } from '@stanley/agent'
 import type { Shell } from '../apps/desktop/src/main/shell'
 
 /** Returns a failure message, or nothing when the check passes. `files` is the user's folder for the run. */
@@ -68,6 +68,30 @@ const newFile = (name: RegExp, text: RegExp): Check => (_, __, files) => {
   const hit = all.find((f) => name.test(f) && text.test(readFileSync(join(files, f), 'utf8')))
   return hit ? undefined : `expected a file named ~ ${name} saying ~ ${text}, got ${all.join(', ')}`
 }
+
+/** Stanley read skill `name`: Jev's step for it, or a command of thinking's on its folder. */
+const usedSkill = (name: string) => (agent: Agent) =>
+  filesOf(agent.history.view()).some((f) => (f.kind === 'skill' && f.name === name && !f.error) || (f.kind === 'bash' && f.command.includes(`.agents/skills/${name}`)))
+const readSkill = (name: string): Check => (_, agent) => (usedSkill(name)(agent) ? undefined : `expected the skill ${name} to be read`)
+const skippedSkill = (name: string): Check => (_, agent) => (usedSkill(name)(agent) ? `expected the skill ${name} not to be read` : undefined)
+/** Every step was Jev's: a skill was followed on the fast path, without thinking. */
+const fastPath: Check = (_, agent) => {
+  const slow = stanleySteps(agent).filter((e) => e.by === 'thinking')
+  return slow.length ? `expected Jev to take every step, thinking took ${slow.map((e) => targetOf(e.target)).join(', ')}` : undefined
+}
+/** Every skill in the folder can be used, and one of them says to do `what`. */
+const skillSays = (what: RegExp): Check => (_, __, files) => {
+  const dir = join(files, '.agents/skills')
+  const folders = existsSync(dir) ? readdirSync(dir) : []
+  const texts = folders.map((f) => (existsSync(join(dir, f, 'SKILL.md')) ? readFileSync(join(dir, f, 'SKILL.md'), 'utf8') : ''))
+  const broken = folders.flatMap((f, i) => {
+    const skill = parseSkill(f, texts[i]!)
+    return 'error' in skill ? [`${skill.path}: ${skill.error}`] : []
+  })
+  if (broken.length) return `expected every skill to be usable: ${broken.join('; ')}`
+  return texts.some((t) => what.test(t)) ? undefined : `expected a skill saying ~ ${what}, got ${folders.join(', ')}`
+}
+const playing = (title: RegExp): Check => state('music', (s) => s?.playing === true && title.test(s.tracks?.find((t: any) => t.id === s.currentId)?.title ?? ''), `playing ~ ${title}`)
 
 const said = (pattern = /\S/): Check => (_, agent) =>
   spoken(agent).some((t) => pattern.test(t)) ? undefined : `expected Stanley to say something matching ${pattern}`
@@ -429,6 +453,36 @@ export const scenarios: Scenario[] = [
     name: 'files-delete-when-asked',
     utterances: ['delete the shakshuka recipe'],
     checks: [fileGone('Recipes/shakshuka.md'), fileSays('Recipes/banana bread.md', /bananas/)],
+  },
+  {
+    // A skill the user wrote: read as soon as it matches, then followed step by step by Jev alone.
+    name: 'skill-routine',
+    utterances: ['time for a break'],
+    checks: [readSkill('break-time'), playing(/^Sweet$/), fastPath, saidNothing],
+  },
+  {
+    // Know-how: how the user writes changes what Stanley composes for them.
+    name: 'skill-know-how',
+    utterances: ['open the email from Jordan', 'write back and say yes to the swap'],
+    checks: [readSkill('email-style'), state('email', (s) => { const t: string | undefined = s?.drafts?.m8; return !!t && t === t.toLowerCase() && /— ?pat\s*$/.test(t) }, 'a lowercase reply to Jordan signed "— pat"'), sentCount(0)],
+  },
+  {
+    // Skills that don't apply stay out of the way.
+    name: 'skill-not-needed',
+    utterances: ['add call the bank to my list'],
+    checks: [newTodos(1), skippedSkill('break-time'), skippedSkill('email-style')],
+  },
+  {
+    // Taught, then used in the same session.
+    name: 'skill-taught',
+    utterances: ['play some music', "remember that whenever I say I'm on a call you should pause the music", "I'm on a call"],
+    checks: [skillSays(/pause/i), state('music', (s) => s?.playing === false, 'music paused')],
+  },
+  {
+    // Changed when asked, and still usable.
+    name: 'skill-edit-when-asked',
+    utterances: ['change my break skill so it plays Energy instead'],
+    checks: [fileSays('.agents/skills/break-time/SKILL.md', /Energy/), skillSays(/Energy/)],
   },
   {
     // A question is answered from a background search; nothing opens on screen.

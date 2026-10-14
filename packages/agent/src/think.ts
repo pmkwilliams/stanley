@@ -2,6 +2,7 @@ import { jsonSchema, parsePartialJson, stepCountIs, streamText, tool, type Langu
 import { DEFAULT_AGENT_NAME } from '@stanley/app-sdk'
 import { filesPrompt } from './files'
 import { named } from './narrate'
+import { skillsPrompt, type SkillScan } from './skills'
 import type { WebResult } from './web'
 
 /** One `act` call: an option, and for fields the text and whose words it is. */
@@ -147,11 +148,13 @@ export function longDate(d: Date): string {
 }
 
 /**
- * Thinking's instructions for a session. Fixed from its start (a new day arrives as a note), unless
- * the user renames the assistant. `files` is where the user's files are, when the session has them.
+ * Thinking's instructions for a session. Fixed from its start (a new day, and a change to the
+ * skills, arrive as notes), unless the user renames the assistant. `files` is where the user's
+ * files are, when the session has them, and `skills` the skills in them when it started.
  */
-export function instructions(opts: { web: boolean; files?: string; today: Date; name?: string }): string {
-  const text = [THINKING_PROMPT, MISHEARD, ...(opts.web ? [WEB] : []), ...(opts.files ? [filesPrompt(opts.files)] : []), `Today is ${longDate(opts.today)}.`].join('\n\n')
+export function instructions(opts: { web: boolean; files?: string; skills?: SkillScan; today: Date; name?: string }): string {
+  const files = opts.files ? [filesPrompt(opts.files), ...(opts.skills ? [skillsPrompt(opts.skills)] : [])] : []
+  const text = [THINKING_PROMPT, MISHEARD, ...(opts.web ? [WEB] : []), ...files, `Today is ${longDate(opts.today)}.`].join('\n\n')
   return named(text, opts.name ?? DEFAULT_AGENT_NAME)
 }
 
@@ -180,6 +183,9 @@ export function confirmNote(option: string): string {
 /** How often a page being written is drawn again. */
 const DRAW_MS = 100
 
+/** A single-step turn's steps at most: commands on the user's files, then the decision. */
+const SINGLE_STEPS = 3
+
 /** Anthropic prompt caching, kept for an hour: gaps between thinking calls often pass five minutes. */
 const CACHE = { anthropic: { cacheControl: { type: 'ephemeral', ttl: '1h' } } } as const
 
@@ -196,7 +202,8 @@ const urlInput = jsonSchema<{ url: string }>({
 
 /**
  * The same tools on every call, so the cached prefix holds: `act`, and the web and file tools the
- * session has. A single-step turn's tools don't run.
+ * session has. A single-step turn's tools don't run, except `bash`: it may look at the user's files
+ * first (a skill, or a list they named), and then decide.
  */
 function tools(req: ThinkRequest): ToolSet {
   const set: ToolSet = {
@@ -304,8 +311,8 @@ function tools(req: ThinkRequest): ToolSet {
     }),
   }
   if (!req.single) return set
-  // Without `execute`, a call comes back unrun. What the model is sent stays the same.
-  return Object.fromEntries(Object.entries(set).map(([name, { execute: _, ...rest }]) => [name, rest as Tool]))
+  // Without `execute`, a call comes back unrun, and the turn ends there. What the model is sent stays the same.
+  return Object.fromEntries(Object.entries(set).map(([name, t]) => [name, name === 'bash' ? t : ({ ...t, execute: undefined } as Tool)]))
 }
 
 /** Calls in `messages` that have no result. */
@@ -360,7 +367,7 @@ export function createThinker(opts: { model?: LanguageModel; singleModel?: Langu
           tools: tools(req),
           toolChoice: 'auto',
           reasoning,
-          stopWhen: stepCountIs(req.single ? 1 : req.maxSteps),
+          stopWhen: stepCountIs(req.single ? SINGLE_STEPS : req.maxSteps),
           providerOptions: { gateway: { order: ['anthropic'] } },
           // Read the cache where the previous call ended, and write it at the end of this step's input.
           prepareStep: ({ initialMessages, responseMessages }) => {

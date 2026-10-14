@@ -1,5 +1,6 @@
 import type { AgentNode } from '@stanley/app-sdk'
 import type { KnownFile } from './files'
+import type { Skill } from './skills'
 import { domainOf, sameUrl, type KnownPage } from './web'
 import type { AppEntry, Screen } from './world'
 
@@ -14,6 +15,8 @@ export type Target =
   /** Looked at in the background: a folder of the user's files is listed (`''` is the whole folder), a file read. */
   | { kind: 'folder'; path: string }
   | { kind: 'file'; path: string }
+  /** Read in the background, so what it says to do is in the conversation. */
+  | { kind: 'skill'; skill: Skill }
 
 export interface OptionSet {
   /** Option name → description, sent to Jev as one question's options. */
@@ -34,7 +37,7 @@ export function roleOf(node: AgentNode): string {
 
 /**
  * Navigation is cheap to undo, so it may run while the user is still speaking, and so may looking at
- * files. Locking isn't: it waits until they finish.
+ * files and reading a skill. Locking isn't: it waits until they finish.
  */
 export function navigates(target: Target): boolean {
   if (target.kind === 'element') return target.node.kind === 'location'
@@ -102,13 +105,13 @@ export function findElement(screen: Screen, nodeId: string): { node: AgentNode; 
 
 /**
  * What Stanley can do next: the screen's elements in screen order, the pages it found or read on
- * the web and the files it has seen (up to `limit` together, see `pick`), the apps, back / home
- * (and lock, when `lock`), and listing the user's files (when there are `files`). A file the screen
+ * the web and the files it has seen (up to `limit` together, see `pick`), the user's `skills`, the
+ * apps, back / home (and lock, when `lock`), and listing the user's files (when there are `files`). A file the screen
  * can show can also be opened; the one on screen isn't offered. Names are unique;
  * a clash gets a counter. `focus` is what the user is asking for, used to choose when there are too
  * many. The page already on screen isn't offered: opening it again does nothing.
  */
-export function stepOptions(screen: Screen, apps: AppEntry[], limit: number, focus = '', pages: KnownPage[] = [], lock = false, files?: KnownFile[]): OptionSet {
+export function stepOptions(screen: Screen, apps: AppEntry[], limit: number, focus = '', pages: KnownPage[] = [], lock = false, files?: KnownFile[], skills: Skill[] = []): OptionSet {
   const criteria: Record<string, string | null> = {}
   const targets = new Map<string, Target>()
   const add = (name: string, description: string, target: Target) => {
@@ -149,6 +152,7 @@ export function stepOptions(screen: Screen, apps: AppEntry[], limit: number, foc
       add(`open page: ${title}${titles.get(title)! > 1 ? ` (${domain})` : ''}`, `web page on ${domain}`, { kind: 'page', url, title })
     }
   }
+  for (const skill of skills) add(`use skill: ${skill.name}`, `skill: ${skill.description}`, { kind: 'skill', skill })
   for (const app of apps) add(`open ${app.title}`, `app: ${app.description}`, { kind: 'app', app })
   add('back', NAVIGATION.back, { kind: 'back' })
   add('home', NAVIGATION.home, { kind: 'home' })

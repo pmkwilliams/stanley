@@ -4,7 +4,8 @@ Plan for giving Stanley skills: know-how and ways of acting ("when I say wind do
 and play my sleep playlist", "how I like my emails written") that the user, or Stanley when asked,
 writes down once and Stanley uses from then on.
 
-Status: planned.
+Status: implemented, all four stages. See **Implementation notes** at the end for results and
+where the code differs from this plan.
 
 ## Principles
 
@@ -91,3 +92,42 @@ Editing a skill's body needs no note: thinking reads the file when it uses it.
   thinking.
 - How long a body Jev can carry in its state before ticks slow down. A body is in Jev's window for
   as long as the turn it was loaded in is.
+
+## Implementation notes
+
+**The open question, answered: Jev follows a loaded skill.** With `break-time` read ("open Music
+and play Sweet"), Jev opened Music and pressed the song at 0.98–1.00, with no thinking: 1.0 s to
+settle, against 6.4 s when thinking did it. What didn't work at first was getting the skill read.
+On "time for a break" Jev's step put `use skill: break-time` at 0.97, but its `next` stayed
+`listen` (0.47) or `think`, so thinking read the skill and did the rest. Hence one rule beyond the
+plan: a `use skill` step at `skillStep` (0.9) or above is read whatever `next` says, except `done`.
+
+**Single steps can look at files.** A write or confirm step whose model read a skill first (`cat
+.agents/skills/email-style/SKILL.md`) used to hand over to a whole turn, which pressed Send itself:
+that skipped the read-back of unsure words (`reply-unsure-word-reads-back` went 0/2). Now `bash`
+runs within a single step, up to three steps, and only its `act` calls come back unrun. That fixed
+it, and the same handover on lists the user named (`todo-homophone-fixed`): handovers in the reply
+and file scenarios went from 12 to 1. A write that reads a skill takes a step more (write p50 1.6 s
+→ 3.5 s with the fixture's email skill, which is for every reply).
+
+**Differences from the plan**
+- Names must match their folders, as the spec says; a skill that breaks a rule is listed with why
+  (in thinking's list, and in its change notes), not dropped silently.
+- A change to the skills reaches thinking in the result of the command or file write that made it,
+  as well as in the next observation's note: a skill it wrote that can't be used is fixed in the
+  same turn.
+- `write_file` and `edit_file` take `~/…` as the folder, as commands do (`HOME` is the folder), so
+  `~/.agents/skills/…` works with every tool.
+- Jev isn't offered a skill it already read this task; it is in what Jev reads.
+
+**Results.** The fixture skills (`evals/files/.agents/skills`) are in every scenario's folder, so
+every eval also checks that skills stay out of the way.
+- Skill scenarios: `skill-routine` 0/3 → 3/3 with the sure-skill rule, all on the fast path; the
+  other four 3/3 before the single-step change and 2/2 after it.
+- Replies, writes, files and skills after both changes: 54/54 (27 scenarios × 2).
+- Every scenario once: 61/65 before the single-step change; after it, 60/65, where four failures
+  are the gateway running out of credit mid-run (`insufficient_funds`) and the fifth is
+  `navigate-and-ask` ("the newest email is from GitHub", expected Sam), which failed the same way
+  before it and reads no skill. Those four (`current-office-holder`, `follow-up-no-repeat`,
+  `reuse-earlier-results`, `long-session`) still need a run with credit.
+

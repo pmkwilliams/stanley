@@ -98,6 +98,18 @@ describe('createThinker', () => {
     expect(m.doStreamCalls[0]!.tools?.map((t) => t.name)).toEqual(['act'])
   })
 
+  it('lets a single step look at the files first, then brings its decision back unrun', async () => {
+    const ran: string[] = []
+    const bash = { type: 'tool-call', toolCallId: 'b1', toolName: 'bash', input: JSON.stringify({ command: 'cat .agents/skills/email-style/SKILL.md' }) } as Part
+    const m = model([[bash, finish('tool-calls')], [call('w1', { option: 'Reply', text: 'sounds good — pat', wrote: 'stanley' }), finish('tool-calls')]])
+    const result = await createThinker({ model: m }).run(
+      request({ single: { kind: 'write', option: 'Reply' }, bash: async (command) => (ran.push(command), 'All lowercase.'), act: async () => '' }),
+    )
+    expect(ran).toEqual(['cat .agents/skills/email-style/SKILL.md'])
+    expect(result.calls).toEqual([{ tool: 'act', input: { option: 'Reply', text: 'sounds good — pat', wrote: 'stanley' }, toolCallId: 'w1' }])
+    expect(result.messages.map((x) => x.role)).toEqual(['assistant', 'tool', 'assistant'])
+  })
+
   it('returns the steps that finished when the turn is aborted', async () => {
     const controller = new AbortController()
     const m = model([[call('c1', { option: 'Sort' }), finish('tool-calls')], [...say('Sorted.'), finish('stop')]])

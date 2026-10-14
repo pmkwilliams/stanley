@@ -37,6 +37,22 @@ describe.runIf(process.platform === 'darwin')('localFiles', () => {
     await expect(files.read!('gone.html')).rejects.toThrow()
   })
 
+  it('finds the skills in .agents/skills, and says why one can\'t be used', async () => {
+    const { files, root } = setup()
+    expect(await files.skills!()).toEqual({ skills: [], broken: [] })
+    await files.write!('~/.agents/skills/wind-down/SKILL.md', '---\nname: wind-down\ndescription: For bedtime.\n---\nPause the music.\n')
+    expect(existsSync(join(root, '.agents/skills/wind-down/SKILL.md'))).toBe(true)
+    await files.bash('mkdir -p .agents/skills/empty .agents/skills/bad && printf -- "---\nname: bad\n---\n" > .agents/skills/bad/SKILL.md')
+    expect(await files.skills!()).toEqual({
+      skills: [{ name: 'wind-down', description: 'For bedtime.', path: '.agents/skills/wind-down/SKILL.md' }],
+      broken: [
+        { path: '.agents/skills/bad/SKILL.md', error: 'it has no description: say what it does and when to use it' },
+        { path: '.agents/skills/empty/SKILL.md', error: 'it has no SKILL.md' },
+      ],
+    })
+    expect(await files.paths()).toEqual([])
+  })
+
   it('gives every file and folder in it, without hidden ones', async () => {
     const { files } = setup()
     await files.bash('mkdir -p Trips/.cache && touch Trips/packing.md Trips/.cache/x .hidden budget.csv')

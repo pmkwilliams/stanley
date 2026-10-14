@@ -29,6 +29,9 @@ export function namedOptions<K extends string>(options: Record<K, string>, name:
  */
 export function narrate(entries: Entry[], screen: Screen | null, live?: LiveUtterance, maxTurns = 50, name = DEFAULT_AGENT_NAME): string {
   const liveWords = live ? live.text.trim().split(/\s+/).filter(Boolean).length : 0
+  // A skill reads in full where it was read last; before that, only that it was.
+  const lastRead = new Map<string, FileMeta>()
+  for (const e of entries) for (const r of e.meta.results ?? []) if (r.file?.kind === 'skill' && !r.file.error) lastRead.set(r.file.name, r.file)
   const lines: string[] = []
   /** Where each of the user's turns starts in `lines`. */
   const turns: number[] = []
@@ -52,7 +55,7 @@ export function narrate(entries: Entry[], screen: Screen | null, live?: LiveUtte
       for (const r of m.results ?? []) {
         if (r.step) lines.push(describeStep(r.step, name))
         else if (r.lookup) lines.push(...describeLookup(r.lookup, name))
-        else if (r.file) lines.push(describeFile(r.file, name))
+        else if (r.file) lines.push(describeFile(r.file, name, lastRead.get(r.file.kind === 'skill' ? r.file.name : '') === r.file))
       }
     }
   }
@@ -82,8 +85,17 @@ function describeLookup(l: LookupMeta, name: string): string[] {
   ]
 }
 
-/** A listing names what is in the folder, so it can be opened next; a read gives how the file starts. */
-function describeFile(f: FileMeta, name: string): string {
+/**
+ * A listing names what is in the folder, so it can be opened next; a read gives how the file starts;
+ * a skill says what to do, in `full` (indented, so its headings aren't the conversation's).
+ */
+function describeFile(f: FileMeta, name: string, full = false): string {
+  if (f.kind === 'skill') {
+    const head = `${name} read its skill "${f.name}"`
+    if (f.error) return `${head}: failed (${f.error}).`
+    if (!full) return `${head}.`
+    return f.body ? `${head}:\n${f.body.replace(/^/gm, '  ')}` : `${head}: it says nothing to do.`
+  }
   if (f.kind === 'bash') return `${name} ran \`${clip(f.command.replace(/\s+/g, ' ').trim(), 200)}\` on the user's files${f.exitCode ? `: failed (exit code ${f.exitCode})` : ''}.`
   if (f.kind === 'write') return `${name} ${f.edit ? 'changed' : 'wrote'} the file "${f.path}"${f.error ? `: failed (${f.error})` : ''}.`
   if (f.kind === 'read') {

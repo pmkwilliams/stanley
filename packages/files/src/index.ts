@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 
 import { mkdir, readdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, resolve, sep } from 'node:path'
-import type { BashResult, FileTools } from '@stanley/agent'
+import { parseSkill, skillPath, SKILLS_DIR, type BashResult, type FileTools, type SkillScan } from '@stanley/agent'
 
 export interface LocalFilesOptions {
   /** The user's folder. Made if it isn't there. */
@@ -82,10 +82,13 @@ export function localFiles(opts: LocalFilesOptions): FileTools {
 
   const shown = root.startsWith(`${home}/`) ? `~${root.slice(home.length)}` : root
 
-  /** A path as written (from the top, `./…`, `~/Stanley/…` or absolute) as a real path in the folder. */
+  /**
+   * A path as written (from the top, `./…`, `~/Stanley/…` or absolute) as a real path in the folder.
+   * `~/…` is in the folder too: it is home to commands.
+   */
   const inside = async (written: string): Promise<string> => {
     let path = written.trim()
-    for (const top of [`${shown}/`, `${root}/`]) if (path.startsWith(top)) path = path.slice(top.length)
+    for (const top of [`${shown}/`, `${root}/`, '~/']) if (path.startsWith(top)) path = path.slice(top.length)
     const full = resolve(root, path.replace(/^(\.\/)+/, ''))
     if (!full.startsWith(root + sep)) throw new Error(`${written} isn't in the user's folder`)
     // Through a link, a path inside can lead outside.
@@ -130,6 +133,17 @@ export function localFiles(opts: LocalFilesOptions): FileTools {
     },
     async read(path) {
       return readFile(await inside(path), 'utf8')
+    },
+    async skills() {
+      const scan: SkillScan = { skills: [], broken: [] }
+      const folders = await readdir(join(root, SKILLS_DIR), { withFileTypes: true }).catch(() => [])
+      for (const folder of folders.filter((f) => f.isDirectory() && !f.name.startsWith('.')).map((f) => f.name).sort()) {
+        const text = await readFile(join(root, skillPath(folder)), 'utf8').catch(() => null)
+        const skill = text === null ? { path: skillPath(folder), error: 'it has no SKILL.md' } : parseSkill(folder, text)
+        if ('error' in skill) scan.broken.push(skill)
+        else scan.skills.push(skill)
+      }
+      return scan
     },
   }
 
