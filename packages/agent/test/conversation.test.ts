@@ -41,6 +41,19 @@ describe('Conversation', () => {
     expect(sent.entries).toBe(r.h.entries.length)
   })
 
+  it('starts with a greeting, committed without a thinking call, before the first utterance', () => {
+    const h = new Conversation()
+    h.greet('Hello, Stanley')
+    expect(h.entries).toHaveLength(1)
+    h.begin()
+    h.heard(1, 'open music')
+    const live = { utteranceId: 1, text: 'open music', ended: true }
+    expect(narrate(h.view(live), null, live).split('\n').slice(1)).toEqual(['User: Hello, Stanley', 'User: open music'])
+    const sent = h.send('<screen/>', live)
+    expect(roles(sent.messages)).toEqual(['user: Hello, Stanley', 'user: open music', 'user: <screen/>'])
+    expect(validate(sent.messages)).toBeUndefined()
+  })
+
   it('puts words said after a thinking call after it, which is when they were said', () => {
     const r = recorder()
     r.words(1, 'tick the blue one')

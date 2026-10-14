@@ -160,6 +160,14 @@ export class Conversation {
 
   constructor(private sink?: (record: HistoryRecord) => void) {}
 
+  /**
+   * What the user said before any utterance, as the session's first words: committed as is, with
+   * nothing run for them. Utterance 0, which no utterance ever is.
+   */
+  greet(text: string): void {
+    this.push([this.entry({ kind: 'words', by: 'user', utteranceId: 0, span: [0, wordsOf(text).length], part: 'first' }, { role: 'user', content: text })])
+  }
+
   /** A finalized segment of what the user said, as the models read it. */
   heard(utteranceId: number, text: string): void {
     this.segments.set(utteranceId, [...(this.segments.get(utteranceId) ?? []), text])

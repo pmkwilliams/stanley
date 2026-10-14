@@ -453,10 +453,12 @@ function lock() {
   })
 }
 
-/** Back to the home screen, listening. */
+/** Back to the home screen, listening. The greeting on the button is the user's first words, with no reply. */
 function unlock() {
   if (!locked) return
   locked = false
+  // After the lock's new session starts, before the first utterance.
+  transition(() => agent.history.greet(`Hello, ${agentName()}`))
   void shell.open(null).then(() => shell.global('show'))
   startListening('unlock')
 }
