@@ -93,7 +93,7 @@ describe.skipIf(process.platform !== 'darwin' || !existsSync(join(MODELS, 'siler
     execFileSync('say', ['-v', 'Samantha', '-o', wav, '--file-format=WAVE', '--data-format=LEI16@16000', 'Play music.'])
     const speech = readWav(wav).samples
     // The Music app's screen.
-    const onScreen = 'Email Weather Music Lights Settings Previous Play Next Volume Playlist Wish Here What Love Melanie Ungar Come Back Again Chaz Robinson First Dear Dreams Energy Pokki Boys Girls Toys Words Modern Pitch Storm Human Light John Dada'.split(' ')
+    const onScreen = 'Email Weather Music Lights Settings Previous Play Next Volume Playlist Sad Robot Pornophonique Balrog Boogie Diablo Swing Orchestra Falcon Easton Ellises Making Me Nervous Brad Sucks Swinging Shapes Revolution Void Coffee Professor Kliq'.split(' ')
     for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
       // Room noise at -45 dB: 1.5 s before the words, under them, and 2 s after.
       const noise = noiseOf(seed, 10 ** (-45 / 20))

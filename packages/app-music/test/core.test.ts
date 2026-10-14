@@ -25,7 +25,7 @@ describe('music', () => {
     expect(s).toMatchObject({ currentId: playlist[0]!.id, playing: false })
     expect(fetch).not.toHaveBeenCalled()
     expect(nodeIds(s)).toEqual(['previous', 'toggle', 'next', 'songs', ...playlist.map((t) => `track/${t.id}`)])
-    expect(musicApp.toMarkdown(s)).toContain('## Playlist\n- ▶ Wish You Were Here — The.madpix.project (4:30)')
+    expect(musicApp.toMarkdown(s)).toContain('## Playlist\n- ▶ Sad Robot — Pornophonique (5:12)')
     expect(musicApp.toMarkdown(s)).toContain('Music from Jamendo')
   })
 
@@ -53,7 +53,7 @@ describe('music', () => {
     expect(s.currentId).toBe(playlist[1]!.id)
     s = await run(s, `track/${playlist[7]!.id}`)
     expect(s).toMatchObject({ currentId: playlist[7]!.id, playing: true })
-    expect(nowPlaying(s)?.title).toBe("We'll Light The Sky")
+    expect(nowPlaying(s)?.title).toBe('A Dive Bar off Main Street')
     expect(musicApp.nodes(s).find((n) => n.id === 'songs')?.children?.[7]).toMatchObject({ description: 'playing' })
   })
 

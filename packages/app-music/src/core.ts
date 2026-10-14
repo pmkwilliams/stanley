@@ -38,20 +38,20 @@ const jamendo = (id: number, album: number, title: string, artist: string, album
   url: `https://www.jamendo.com/track/${id}`,
 })
 
-/** The playlist: a dozen of Jamendo's all-time most popular tracks. */
+/** The playlist: a dozen distinctive Creative Commons tracks, one per style. */
 export const playlist: Track[] = [
-  jamendo(1214935, 145774, 'Wish You Were Here', 'The.madpix.project', 'Wish You Were Here', 270, 'by-nc-sa/3.0'),
-  jamendo(1204669, 144705, 'What Is Love', 'Melanie Ungar', 'What Is Love', 212, 'by/3.0'),
-  jamendo(1141572, 136930, 'Love Will Come Back Again', 'Chaz Robinson', 'Chaz Robinson', 236, 'by-sa/3.0'),
-  jamendo(1157362, 138887, 'First', 'JekK', 'Dear Dreams', 204, 'by-nc-nd/3.0'),
-  jamendo(1129271, 135310, 'Energy', 'Pokki DJ', 'Energy', 230, 'by/3.0'),
-  jamendo(1165005, 140048, 'Boys, Girls, Toys & Words', 'Modern Pitch', 'Eye Of The Storm', 357, 'by-sa/3.0'),
-  jamendo(1194315, 143735, 'Human Light', 'John Dada & the Weathermen', 'folK.itUp', 234, 'by-nc-nd/3.0'),
-  jamendo(1215788, 145856, "We'll Light The Sky", 'Lyonn', "We'll Light The Sky", 168, 'by-nd/3.0'),
-  jamendo(1122085, 134086, 'Sweet', 'Tamara Laurel', 'Lightning', 214, 'by-nc-nd/3.0'),
-  jamendo(26736, 3661, "Struttin'", 'Tryad', 'Listen', 242, 'by-sa/2.5'),
-  jamendo(354778, 46325, 'Skydiving (feat. Jasmine Kara)', 'Jonay', 'Skydiving', 247, 'by-sa/3.0'),
+  jamendo(81740, 7505, 'Sad Robot', 'Pornophonique', '8-bit Lagerfeuer', 312, 'by-nc-nd/3.0'),
   jamendo(391002, 49216, 'Balrog Boogie', 'Diablo Swing Orchestra', "The Butcher's Ballroom", 233, 'by-nc-nd/3.0'),
+  jamendo(1135700, 136365, 'Falcon 69', 'The Easton Ellises', 'Nightwavs', 224, 'by-nc-sa/3.0'),
+  jamendo(30058, 3798, 'Making Me Nervous', 'Brad Sucks', "I Don't Know What I'm Doing", 159, 'by-nc-sa/3.0'),
+  jamendo(885167, 104082, 'Swinging Shapes', 'Revolution Void', 'Like a Secret Dream', 304, 'by-nc-nd/3.0'),
+  jamendo(1240697, 148689, 'Coffee', 'Professor Kliq', '28 Days With The OP-1', 196, 'by-nc-sa/3.0'),
+  jamendo(26736, 3661, "Struttin'", 'Tryad', 'Listen', 242, 'by-sa/3.0'),
+  jamendo(576435, 66456, 'A Dive Bar off Main Street', 'Monk Turner', 'Coordinates', 227, 'by-nc-nd/3.0'),
+  jamendo(162041, 23755, 'Good to Go', 'Josh Woodward', 'The Simple Life', 189, 'by/3.0'),
+  jamendo(29862, 3777, 'Deep Blue', 'Antony Raijekov', 'Jazz U', 202, 'by-nc-nd/3.0'),
+  jamendo(868293, 101801, 'Eleven 11', 'Kellee Maize', 'Integration', 238, 'by-sa/3.0'),
+  jamendo(1687406, 187872, 'Unframed Toaster', 'Ehma', 'Framed by Frames', 165, 'by/3.0'),
 ]
 
 /** The song list's section title. */
