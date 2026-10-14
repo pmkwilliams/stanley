@@ -27,13 +27,15 @@ describe.skipIf(!executablePath)('page extraction', () => {
       <a href="#up"><div title="upvote"></div></a>
       <button><img alt="Settings"></button>
       <label for="q">Search</label><input id="q">
+      <a href="#main"><img alt="" aria-hidden="true" width="20" height="20"><span><img alt="Wikipedia" width="80" height="20"><img alt="The Free Encyclopedia" width="80" height="10"></span></a>
       <a href="#x"><span></span></a>`)
     const options = stepOptions(screen, [], 50)
-    expect(Object.entries(options.criteria).filter(([n]) => n !== 'back' && n !== 'home')).toEqual([
+    expect(Object.entries(options.criteria).filter(([n]) => n !== 'back' && n !== 'home screen')).toEqual([
       ['Archive', 'button'],
       ['upvote', 'link'],
       ['Settings', 'button'],
       ['Search', 'field, empty'],
+      ['Wikipedia The Free Encyclopedia', 'link'],
     ])
   })
 

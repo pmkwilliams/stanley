@@ -6,7 +6,7 @@ import { defaultConfig } from '../src/config'
 import { validate } from '../src/conversation'
 import type { AgentDebugEvent } from '../src/debug'
 import type { Effect } from '../src/effects'
-import type { FileTools } from '../src/files'
+import { topFiles, type FileTools } from '../src/files'
 import type { SkillScan } from '../src/skills'
 import { DONE_CHECK, scriptedTurn, type FileOutput, type ThinkRequest, type Thinker, type ThinkResult } from '../src/think'
 import type { WebTools } from '../src/web'
@@ -41,7 +41,7 @@ function fakeWorld(opts: { screenChanges?: boolean; failOn?: string; titles?: Re
       performed.push(`url ${url}`)
       return { summary: `Opened ${url}`, title: opts.titles?.[url] }
     },
-    fileUrl: (path) => (/\.(html|pdf)$/.test(path) && !path.startsWith('missing') ? `stanley://files/${path.replace(/^~\/Stanley\//, '')}` : undefined),
+    fileUrl: (path) => (/\.(html|pdf)$/.test(path) && !path.startsWith('missing') ? `stanley://files/${path.replace(/^~\/Wren\//, '')}` : undefined),
   }
   return { world, performed }
 }
@@ -65,7 +65,7 @@ function scripted(script: Script, effect: Effect = 'changes', working: Working =
     effectCalls: 0,
     heardWhileWorking: [] as string[],
     async decide(req: DecideRequest): Promise<MultiChoiceResult> {
-      const { next, step = 'home', nextConfidence = 0.9, stepConfidence = 0.9, heard = 0.9 } = await script(req, client.calls++)
+      const { next, step = 'home screen', nextConfidence = 0.9, stepConfidence = 0.9, heard = 0.9 } = await script(req, client.calls++)
       if (!(step in req.questions.step!.options)) throw new Error(`"${step}" not in options: ${Object.keys(req.questions.step!.options).join(', ')}`)
       return {
         answers: {
@@ -499,7 +499,7 @@ describe('Agent loop', () => {
     await settle()
     expect(performed.filter((p) => p === 'tasks:item')).toHaveLength(2)
     expect(statuses.at(-1)).toBe('stuck')
-    expect(await agent.context()).toContain('Stanley stopped: it kept repeating the same step.')
+    expect(await agent.context()).toContain('Wren stopped: it kept repeating the same step.')
   })
 
   it('repeats a step that keeps changing the screen', async () => {
@@ -542,7 +542,7 @@ describe('Agent loop', () => {
     agent.utteranceStart()
     spoke(agent, 'sort')
     await settle()
-    expect(seen[1]).toContain('Stanley pressed [Sort]: failed (tasks:sort broke).')
+    expect(seen[1]).toContain('Wren pressed [Sort]: failed (tasks:sort broke).')
     expect(performed).toEqual(['tasks:item', 'show'])
     expect(statuses.at(-1)).toBe('done')
   })
@@ -588,10 +588,10 @@ describe('Agent writing', () => {
     spoke(agent, 'add buy eggs')
     await settle()
     expect(performed).toEqual(['tasks:title=Buy eggs', 'tasks:add', 'show'])
-    expect(await agent.context()).toContain('Stanley typed "Buy eggs" into [Add a task].')
+    expect(await agent.context()).toContain('Wren typed "Buy eggs" into [Add a task].')
   })
 
-  it("marks words Stanley wrote itself, and ends the turn when it has something to say", async () => {
+  it("marks words Wren wrote itself, and ends the turn when it has something to say", async () => {
     const { agent, performed, said } = setup(plan({ next: 'act', step: 'Add a task' }), {
       thinker: { write: async () => ({ source: 'stanley', text: 'Ramen? I was born ready.', say: 'I wrote "Ramen? I was born ready." Send it?' }) },
     })
@@ -601,7 +601,7 @@ describe('Agent writing', () => {
     await settle()
     expect(performed).toEqual(['tasks:title=Ramen? I was born ready.', 'show'])
     expect(said).toEqual(['I wrote "Ramen? I was born ready." Send it?'])
-    expect(await agent.context()).toContain('Stanley wrote its own words into [Add a task]: "Ramen? I was born ready."')
+    expect(await agent.context()).toContain('Wren wrote its own words into [Add a task]: "Ramen? I was born ready."')
   })
 
   it('writes a field Jev is sure of with one call, even when it chose to think', async () => {
@@ -1190,7 +1190,7 @@ describe('Agent speaking', () => {
     await settle()
     expect(said).toHaveLength(1)
     agent.cutOff(1, 'Your next meeting is at three,')
-    expect(agent.conversation()).toContain('Stanley started to say: "Your next meeting is at three," but the user cut in.')
+    expect(agent.conversation()).toContain('Wren started to say: "Your next meeting is at three," but the user cut in.')
     expect(agent.conversation()).not.toContain('with Sam')
   })
 
@@ -1205,7 +1205,7 @@ describe('Agent speaking', () => {
     await settle()
     expect(debug.some((e) => e.type === 'think-end' && e.aborted)).toBe(true)
     expect(said).toEqual([])
-    expect(agent.conversation()).toContain('Stanley started to say: "Your next" but the user cut in.')
+    expect(agent.conversation()).toContain('Wren started to say: "Your next" but the user cut in.')
   })
 
   it('hushes a reply that went out of date while it was being said', async () => {
@@ -1253,7 +1253,7 @@ describe('Agent web lookups', () => {
     agent.segment('who was the first one')
     agent.utteranceEnd()
     await settle()
-    expect(await agent.context()).toContain('Stanley searched the web for "first US president":\n- "George Washington - Wikipedia" (en.wikipedia.org/wiki/George_Washington): George Washington was the first president')
+    expect(await agent.context()).toContain('Wren searched the web for "first US president":\n- "George Washington - Wikipedia" (en.wikipedia.org/wiki/George_Washington): George Washington was the first president')
 
     agent.utteranceStart()
     agent.segment('let me see it')
@@ -1261,7 +1261,7 @@ describe('Agent web lookups', () => {
     await settle()
     expect(options).toContain('open page: George Washington | whitehouse.gov')
     expect(performed).toContain('url https://en.wikipedia.org/wiki/George_Washington')
-    expect(await agent.context()).toContain('Stanley opened the page "George Washington - Wikipedia" (en.wikipedia.org/wiki/George_Washington).')
+    expect(await agent.context()).toContain('Wren opened the page "George Washington - Wikipedia" (en.wikipedia.org/wiki/George_Washington).')
   })
 
   it('lets thinking open any page by address, logged under the title it opened with', async () => {
@@ -1282,7 +1282,7 @@ describe('Agent web lookups', () => {
     agent.utteranceEnd()
     await settle()
     expect(performed).toContain('url https://www.loc.gov/item/gw-papers/')
-    expect(await agent.context()).toContain('Stanley opened the page "George Washington Papers" (loc.gov/item/gw-papers).')
+    expect(await agent.context()).toContain('Wren opened the page "George Washington Papers" (loc.gov/item/gw-papers).')
   })
 
   it('offers the pages kept open, as well as those it found, but not pages of the user\'s files', async () => {
@@ -1318,7 +1318,7 @@ describe('Agent files', () => {
     const ran: string[] = []
     return {
       ran,
-      root: '~/Stanley',
+      root: '~/Wren',
       paths: async () => ['Trips/', 'Trips/packing.md', 'budget.csv', 'deep/', 'deep/notes.md'],
       async bash(command) {
         ran.push(command)
@@ -1348,9 +1348,9 @@ describe('Agent files', () => {
     expect(options[1]).toEqual(expect.arrayContaining(['list folder: Trips', 'read file: budget.csv']))
     expect(options[2]).toContain('read file: Trips/packing.md')
     const context = await agent.context()
-    expect(context).toContain("Stanley listed the user's files: Trips/, budget.csv.")
-    expect(context).toContain('Stanley listed the folder "Trips": packing.md.')
-    expect(context).toContain('Stanley read the file "Trips/packing.md": - Passport - Charger')
+    expect(context).toContain("Wren listed the user's files: Trips/, budget.csv.")
+    expect(context).toContain('Wren listed the folder "Trips": packing.md.')
+    expect(context).toContain('Wren read the file "Trips/packing.md": - Passport - Charger')
     expect(state).toContain('"list files" lists it')
 
     agent.utteranceEnd()
@@ -1362,6 +1362,41 @@ describe('Agent files', () => {
     expect(calls).toContain(JSON.stringify({ command: "cat -- 'Trips/packing.md'" }))
     const results = req.messages.flatMap((m) => (m.role === 'tool' ? m.content.flatMap((p) => (p.type === 'tool-result' && p.output.type === 'text' ? [p.output.value] : [])) : []))
     expect(results).toContain('- Passport\n- Charger')
+  })
+
+  it('shows the folder nearest the top when there is too much of it', () => {
+    const many = Array.from({ length: 250 }, (_, i) => `A/${String(i).padStart(3, '0')}.md`)
+    const shown = topFiles(['A/', ...many, 'A/B/', 'A/B/deep.md', 'z.md']).split('\n')
+    expect(shown).toHaveLength(203)
+    expect(shown.slice(0, 2)).toEqual(['<files>', 'A/'])
+    expect(shown).toContain('z.md')
+    expect(shown).not.toContain('A/B/deep.md')
+    expect(shown.at(-2)).toBe('… and 53 more')
+    expect(topFiles([])).toBe('<files>\n(empty)\n</files>')
+  })
+
+  it('shows thinking the top two levels of the folder the first time, and again only when they change', async () => {
+    let paths = ['Trips/', 'Trips/Lisbon/', 'Trips/Lisbon/hotel.pdf', 'Trips/packing.md', 'budget.csv']
+    const f = { ...files(), paths: async () => paths }
+    const { agent, thinker } = setup(() => ({ next: 'think' }), { deps: { files: f } })
+    const ask = async (words: string) => {
+      agent.utteranceStart()
+      agent.segment(words)
+      agent.utteranceEnd()
+      await settle()
+    }
+    const last = () => {
+      const m = thinker.runs.at(-1)!.messages.at(-1)!
+      return typeof m.content === 'string' ? m.content : m.content.map((p) => (p.type === 'text' ? p.text : '')).join('')
+    }
+    await ask('what have I got')
+    expect(last()).toContain('<files>\nTrips/\nTrips/Lisbon/\nTrips/packing.md\nbudget.csv\n</files>')
+    await ask('and now')
+    expect(last()).not.toContain('<files>')
+    paths = [...paths, 'notes.md']
+    await ask('and now')
+    expect(last()).toContain('<files>\nTrips/\nTrips/Lisbon/\nTrips/packing.md\nbudget.csv\nnotes.md\n</files>')
+    expect(agent.instructions).toContain('<files>')
   })
 
   it("gives thinking bash, and Jev a line for each command thinking ran", async () => {
@@ -1381,9 +1416,9 @@ describe('Agent files', () => {
     agent.utteranceEnd()
     await settle()
     const context = await agent.context()
-    expect(context).toContain("Stanley ran `ls -p` on the user's files.")
-    expect(context).toContain("Stanley ran `rm nothing` on the user's files: failed (exit code 127).")
-    expect(agent.instructions).toContain('~/Stanley')
+    expect(context).toContain("Wren ran `ls -p` on the user's files.")
+    expect(context).toContain("Wren ran `rm nothing` on the user's files: failed (exit code 127).")
+    expect(agent.instructions).toContain('~/Wren')
   })
 
   it('offers to open a file the screen can show, and thinking opens one by its path', async () => {
@@ -1399,7 +1434,7 @@ describe('Agent files', () => {
       {
         thinker: {
           run: async (req) => {
-            results.push(await req.openPage!('~/Stanley/plan.html', 'o1'))
+            results.push(await req.openPage!('~/Wren/plan.html', 'o1'))
             results.push(await req.openPage!('missing.html', 'o2'))
             return { text: '' }
           },
@@ -1415,7 +1450,7 @@ describe('Agent files', () => {
     expect(options).not.toContain('open file: notes.md')
     expect(performed).toContain('url stanley://files/plan.html')
     expect(results[1]).toBe(`There is no file "missing.html" in the user's folder that the screen can show.`)
-    expect(await agent.context()).toContain('Stanley opened the page "plan.html"')
+    expect(await agent.context()).toContain('Wren opened the page "plan.html"')
   })
 
   /** A folder in memory that can be written, and a world that draws pages and looks at them. */
@@ -1461,7 +1496,7 @@ describe('Agent files', () => {
     expect(output!.text).toContain('Wrote Pages/sea.html. Opened stanley://files/Pages/sea.html.\nThe page reported these errors:\n- Uncaught ReferenceError: mermaid is not defined')
     expect(output!.image).toEqual({ data: 'aGk=', mediaType: 'image/jpeg' })
     expect(debug.some((e) => e.type === 'working')).toBe(false)
-    expect(await agent.context()).toContain('Stanley wrote the file "Pages/sea.html".')
+    expect(await agent.context()).toContain('Wren wrote the file "Pages/sea.html".')
   })
 
   it('changes part of a page, and says why when the text to change is not there exactly once', async () => {
@@ -1491,8 +1526,8 @@ describe('Agent files', () => {
     expect(stored.get('Pages/rain.html')).toBe('<h1 style="color: navy">Rain</h1><p style="color: navy">Drops</p>')
     expect(performed).toContain('url stanley://files/Pages/rain.html')
     const context = await agent.context()
-    expect(context).toContain('Stanley changed the file "Pages/rain.html": failed (That text isn\'t in Pages/rain.html.')
-    expect(context).toContain('Stanley changed the file "Pages/rain.html".')
+    expect(context).toContain('Wren changed the file "Pages/rain.html": failed (That text isn\'t in Pages/rain.html.')
+    expect(context).toContain('Wren changed the file "Pages/rain.html".')
   })
 
   it('takes a page off the screen when its writing never finished', async () => {
@@ -1523,7 +1558,7 @@ describe('Agent files', () => {
     agent.utteranceStart()
     spoke(agent, 'read me the gone one')
     await settle()
-    expect(await agent.context()).toContain('Stanley read the file "gone.md": failed (bash: cat -- \'gone.md\': not found).')
+    expect(await agent.context()).toContain('Wren read the file "gone.md": failed (bash: cat -- \'gone.md\': not found).')
   })
 
   it('offers no files and no bash without them', async () => {
@@ -1576,12 +1611,12 @@ describe('Agent history', () => {
     })
     expect(agent.instructions).toContain('You are Jarvis,')
     agent.utteranceStart()
-    agent.segment('tell Stanley Kubrick hi')
+    agent.segment('tell Wren Kubrick hi')
     agent.utteranceEnd()
     await settle()
-    expect(states.join('\n')).not.toMatch(/Stanley(?! Kubrick)/)
-    expect(states[0]).toContain('User: tell Stanley Kubrick hi')
-    expect(thinker.runs[0]!.instructions).not.toContain('Stanley')
+    expect(states.join('\n')).not.toMatch(/Wren(?! Kubrick)/)
+    expect(states[0]).toContain('User: tell Wren Kubrick hi')
+    expect(thinker.runs[0]!.instructions).not.toContain('Wren')
     expect(agent.conversation()).toContain('Jarvis said: "Hi."')
     name = 'Ada'
     expect(agent.instructions).toContain('You are Ada,')
@@ -1597,7 +1632,7 @@ describe('Agent history', () => {
     agent.utteranceEnd()
     await settle()
     expect(performed[0]).toBe('lock')
-    expect(await agent.context()).toContain('Stanley locked the computer.')
+    expect(await agent.context()).toContain('Wren locked the computer.')
   })
 
   it("ends the instructions with today's date, gives Jev the date each tick, and tells thinking when the day changes", async () => {
@@ -1713,7 +1748,7 @@ describe('Agent skills', () => {
     const files: FileTools & { ran: string[]; set(next: SkillScan): void } = {
       ran,
       set: (next) => void (scan = next),
-      root: '~/Stanley',
+      root: '~/Wren',
       paths: async () => ['notes.md'],
       skills: async () => scan,
       async bash(command) {
@@ -1744,7 +1779,7 @@ describe('Agent skills', () => {
     expect(states[0]).toContain('"use skill" step')
     // Read this task, it is in view: it isn't offered again.
     expect(options[1]).not.toContain('use skill: wind-down')
-    expect(states[1]).toContain('Stanley read its skill "wind-down":\n  Open Tasks, then press Sort.')
+    expect(states[1]).toContain('Wren read its skill "wind-down":\n  Open Tasks, then press Sort.')
     agent.utteranceEnd()
     await settle()
     expect(performed).toEqual(expect.arrayContaining(['open tasks', 'tasks:sort']))
@@ -1787,7 +1822,7 @@ describe('Agent skills', () => {
     expect(thinker.runs[0]!.instructions).toContain('The skills:\n- wind-down: When the user is winding down for the night.')
     expect(results[0]).toBe("(no output)\n\nThe skills changed: .agents/skills/wind-down/SKILL.md can't be used: it has no description: say what it does and when to use it.")
 
-    // Changed outside Stanley: the next call's observation says so. The instructions stay as they were.
+    // Changed outside Wren: the next call's observation says so. The instructions stay as they were.
     f.set({ skills: [{ name: 'focus', description: 'When the user wants to focus.', path: '.agents/skills/focus/SKILL.md' }], broken: [] })
     agent.utteranceStart()
     agent.segment('what now')

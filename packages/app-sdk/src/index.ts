@@ -64,7 +64,7 @@ export interface AppStore {
 }
 
 /** What the assistant is called until the user names it otherwise (in Settings). */
-export const DEFAULT_AGENT_NAME = 'Stanley'
+export const DEFAULT_AGENT_NAME = 'Wren'
 
 /** What a live web page shows now, read the way an accessibility tree describes it. */
 export interface PageView {

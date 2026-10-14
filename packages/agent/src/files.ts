@@ -9,7 +9,7 @@ export interface BashResult {
 
 /** The user's files: one folder, worked on through bash in the background. */
 export interface FileTools {
-  /** The folder, as the user would name it: `~/Stanley`. */
+  /** The folder, as the user would name it: `~/Wren`. */
   root: string
   /** Runs a command in the folder. Throws only when it couldn't run at all, or `signal` aborted it. */
   bash(command: string, signal?: AbortSignal): Promise<BashResult>
@@ -49,6 +49,20 @@ export interface KnownFile {
   url?: string
 }
 
+/**
+ * Where the pages Stanley makes go, from the top of the user's folder, until the user wants one
+ * kept (in `Pages/`): emptied each time Stanley starts, and left out of the folder's history.
+ */
+export const SCRATCH_DIR = '.stanley/scratch'
+
+/**
+ * The size a page is shown at, in CSS pixels: the Web app's page view in Stanley's window, which
+ * opens full screen (`createWindow` in the desktop app), on a 1920 by 1080 display, less the status
+ * bar, the caption and the margins around an app window (a page of the user's has no address bar).
+ * The Web app's own full screen gives it more.
+ */
+const PAGE_SIZE = { width: 1850, height: 885 }
+
 /** For thinking, when the session has the user's files. */
 export function filesPrompt(root: string): string {
   return `## Files
@@ -58,16 +72,33 @@ The user's files are in a folder on their computer, ${root}. \`bash\` runs a com
 - Every change to the folder is kept. To see an earlier version of a file or bring it back: git --git-dir="$STANLEY_HISTORY" log -- <file>, then git --git-dir="$STANLEY_HISTORY" show <commit>:<file>.
 - \`open_page\` puts a file from the folder on screen by its path, as a browser shows it: a web page, a PDF, a picture or a video. A web page from the folder can use files next to it, but nothing from the internet.
 - \`write_file\` writes a file and \`edit_file\` changes part of one.
+- What is in the folder, two levels down, comes in <files> the first time you're needed, and again when it changes. Look deeper with \`bash\`.
 
 ## Pages
-When the user asks you to make something to look at (a diagram, a chart, a timeline, a small app), make it a web page: one .html file in Pages/, named for what it shows, written with \`write_file\`. Anything else they ask about is answered as before: from the screen, their files or a lookup.
+When the user asks you to make something to look at (a diagram, a chart, a timeline, a small app), make it a web page: one .html file in ${SCRATCH_DIR}/, named for what it shows, written with \`write_file\`. Anything else they ask about is answered as before: from the screen, their files or a lookup.
+- ${SCRATCH_DIR}/ is scratch: it is emptied when Stanley restarts and isn't kept in the folder's history. A page the user wants to keep goes in Pages/: write it there if they asked for one to keep, or move it there with \`mv\` when they say so.
 - It comes on screen as you write it, and is drawn as it comes. Then you get the errors it reported and a picture of it. If something is broken (an error, something missing, overlapping or cut off), fix that part with \`edit_file\`; otherwise leave it as it is: the user is waiting.
 - To change a page the user is looking at, use \`edit_file\` on just the part that changes: the page reloads where they were looking. Write the whole page again only when most of it changes.
-- Every line takes time to write while the user waits, so keep a page as short as it can be and still be good. It fills a large window, about 1200 by 560: lay it out to fit without scrolling (an SVG with a viewBox that scales to the window does), with text large enough to read from a little way off.
-- A page in Pages/ takes Stanley's look, light or dark as the user's theme is: its background, text colour and font are set already, so don't set your own. Colour it with these CSS variables: --foreground, --muted-foreground (secondary text), --card and --border (a panel that stands apart), --primary, --destructive, --warning, --success, and --chart-1 to --chart-6, in that order, for things that differ by kind (series, categories); text stays in the text colours, with the colour it names beside it. Also --radius, --font-sans and --font-mono.
+- It is shown in a window about ${PAGE_SIZE.width} by ${PAGE_SIZE.height} pixels, larger when the user makes it full screen: lay it out to fit without scrolling (an SVG with a viewBox that scales to the window does).
+- A page in either folder takes Stanley's look, light or dark as the user's theme is: its background, text colour and font are set already, so don't set your own. Colour it with these CSS variables: --foreground, --muted-foreground (secondary text), --card and --border (a panel that stands apart), --primary, --destructive, --warning, --success, and --chart-1 to --chart-6, in that order, for things that differ by kind (series, categories); text stays in the text colours, with the colour it names beside it. Also --radius, --font-sans and --font-mono.
 - The page is the whole window: no card, border or title banner around all of it. A panel with its own background has at least 16px of padding inside and var(--radius) corners.
-- A page can't reach the internet. Mermaid, Three.js, D3 and Chart.js load from their usual addresses (https://cdn.jsdelivr.net/npm/mermaid, …/three, …/d3, …/chart.js); a page can fetch files next to it in the folder. Write everything else into the page itself.
+- A page can't reach the internet. Mermaid, Three.js, D3 and Chart.js load from their usual addresses (https://cdn.jsdelivr.net/npm/mermaid, …/three, …/d3, …/chart.js); a page can fetch the user's files by their path from the folder's top, starting with / (/budget.csv). Write everything else into the page itself.
 - Pages are seen, not heard. Making one takes a while, so it starts with a few words about what you'll make; once it is on screen, never describe it out loud, and say nothing more about it.`
+}
+
+/** How many paths at the top of the folder thinking is shown. */
+const TOP_FILES = 200
+
+/**
+ * The top two levels of the user's folder, as thinking is shown it, from `FileTools.paths`: those
+ * nearest the top when there are too many.
+ */
+export function topFiles(paths: string[]): string {
+  const depth = (path: string) => path.slice(0, -1).split('/').length
+  const top = paths.filter((p) => depth(p) <= 2)
+  const shown = new Set([...top.filter((p) => depth(p) === 1), ...top.filter((p) => depth(p) === 2)].slice(0, TOP_FILES))
+  const more = top.length > shown.size ? [`… and ${top.length - shown.size} more`] : []
+  return `<files>\n${[...top.filter((p) => shown.has(p)), ...more].join('\n') || '(empty)'}\n</files>`
 }
 
 /** For Jev, when the session has the user's files. */

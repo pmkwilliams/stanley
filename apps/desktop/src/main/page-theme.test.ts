@@ -7,16 +7,18 @@ describe('page theme', () => {
     expect(pageStyle()).toContain("--font-sans:'Inter Variable',")
     expect(pageStyle()).toContain('{:root{--radius:0.5rem;--background:oklch(0.147 0.004 49.3)')
     expect(pageStyle()).toContain('@media (prefers-color-scheme:light){:root{--background:oklch(1 0 0)')
-    expect(pageStyle()).toContain('--chart-1:#3987e5')
-    expect(pageStyle()).toContain('--chart-1:#2a78d6')
-    expect(pageStyle()).toContain('--chart-6:#008300')
+    expect(pageStyle()).toContain('--chart-1:#6458e0')
+    expect(pageStyle()).toContain('--chart-1:#5d4ed6')
+    expect(pageStyle()).toContain('--chart-6:#009eda')
     expect(pageStyle()).toContain('--font-mono:')
     expect(pageStyle()).not.toContain('--window-shadow')
     expect(pageStyle()).not.toContain('--pill')
   })
 
-  it('is for pages Stanley writes, in Pages/', () => {
+  it('is for pages Stanley writes, in Pages/ or scratch', () => {
     expect(themed('Pages/water-cycle.html')).toBe(true)
+    expect(themed('.stanley/scratch/water-cycle.html')).toBe(true)
+    expect(themed('.stanley/scratch/data.json')).toBe(false)
     expect(themed('Pages/old/plan.HTM')).toBe(true)
     expect(themed('Pages/chart.svg')).toBe(false)
     expect(themed('Notes/site.html')).toBe(false)

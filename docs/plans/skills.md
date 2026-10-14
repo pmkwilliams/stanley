@@ -19,7 +19,7 @@ where the code differs from this plan.
 
 ## Where skills live
 
-`~/Stanley/.agents/skills/<name>/SKILL.md`. Commands run with `HOME` set to the files folder, so to
+`~/Wren/.agents/skills/<name>/SKILL.md`. Commands run with `HOME` set to the files folder, so to
 the agent this is `~/.agents/skills/`, the user-level location coding agents use.
 
 ```

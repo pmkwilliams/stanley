@@ -4,6 +4,7 @@ import { dirname, extname, join, resolve, sep } from 'node:path'
 import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import { runInNewContext } from 'node:vm'
+import { SCRATCH_DIR } from '@stanley/agent'
 import { FILES_URL } from '@stanley/app-sdk'
 import { themed, withTheme } from './page-theme'
 
@@ -103,7 +104,7 @@ export function filePath(url: string): string | null {
 
 /**
  * A path as a person or a model would write one, as a path from the folder's top: relative,
- * `./…`, `~/Stanley/…` (`shown`, the folder's name for people) or absolute (`root`).
+ * `./…`, `~/Wren/…` (`shown`, the folder's name for people) or absolute (`root`).
  */
 export function inFolder(written: string, root: string, shown: string): string | null {
   let path = written.trim()
@@ -130,16 +131,20 @@ export function rewriteCdn(text: string): string {
     .replace(/https?:\/\/d3js\.org\/d3(?:\.v\d+)?(?:\.min)?\.js/g, `${LIB_URL}d3`)
 }
 
+/** A path with a hidden file or folder in it, other than the way into scratch. */
+const hidden = (path: string) => (path.startsWith(`${SCRATCH_DIR}/`) ? path.slice(SCRATCH_DIR.length + 1) : path).split('/').some((part) => part.startsWith('.'))
+
 const notFound = () => new Response('Not found', { status: 404, headers: { 'Content-Type': 'text/plain' } })
 
 /**
  * Answers a request for `stanley://files/…` from the folder at `root` (a real path). Nothing
- * outside it, and nothing hidden, is served. A folder shows its `index.html`, or a list of what is
- * in it. Pages Stanley writes are served in its look (`page-theme.ts`).
+ * outside it, and nothing hidden but Stanley's scratch pages, is served. A folder shows its
+ * `index.html`, or a list of what is in it. Pages Stanley writes are served in its look
+ * (`page-theme.ts`).
  */
 export async function serveFile(root: string, url: string, headers: Headers): Promise<Response> {
   const path = filePath(url)
-  if (path === null || path.split('/').some((part) => part.startsWith('.'))) return notFound()
+  if (path === null || hidden(path)) return notFound()
   let full = resolve(root, path)
   try {
     full = await realpath(full)

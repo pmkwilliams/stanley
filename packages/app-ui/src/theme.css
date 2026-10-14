@@ -37,13 +37,14 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.547 0.021 43.1);
-  /* Categorical: things that differ by kind (series, categories), in this order. Validated for colour-blind separation on --background. */
-  --chart-1: #3987e5;
-  --chart-2: #d95926;
-  --chart-3: #199e70;
-  --chart-4: #c98500;
-  --chart-5: #d55181;
-  --chart-6: #008300;
+  /* Categorical: things that differ by kind (series, categories), in this order. The presence wave's hues
+     (indigo, green, magenta, violet, rose, cyan), validated for colour-blind separation on --background and --card. */
+  --chart-1: #6458e0;
+  --chart-2: #009c5d;
+  --chart-3: #bb2d8d;
+  --chart-4: #af66ec;
+  --chart-5: #f55177;
+  --chart-6: #009eda;
 
   /* Shell-only surfaces. */
   --pill: rgba(255, 255, 255, 0.1);
@@ -78,12 +79,12 @@
   --border: oklch(0.922 0.005 34.3);
   --input: oklch(0.922 0.005 34.3);
   --ring: oklch(0.714 0.014 41.2);
-  --chart-1: #2a78d6;
-  --chart-2: #eb6834;
-  --chart-3: #1baf7a;
-  --chart-4: #eda100;
-  --chart-5: #e87ba4;
-  --chart-6: #008300;
+  --chart-1: #5d4ed6;
+  --chart-2: #009c5d;
+  --chart-3: #a30978;
+  --chart-4: #af66ec;
+  --chart-5: #f24e74;
+  --chart-6: #0091c9;
 
   --pill: rgba(255, 255, 255, 0.6);
   --player: #ffffff;

@@ -19,7 +19,7 @@ describe('knownPages', () => {
     ])
   })
 
-  it('knows the pages Stanley or the user opened too, but not pages of the user\'s files', () => {
+  it('knows the pages Wren or the user opened too, but not pages of the user\'s files', () => {
     const r = recorder()
     r.lookup({ kind: 'search', query: 'a', results: [result('One', 'https://one.test/')] })
     r.step({ target: { kind: 'page', url: 'https://shop.test/', title: 'Corner Shop' }, by: 'thinking' })
@@ -65,11 +65,11 @@ describe('narrate lookups', () => {
     r.said("Gustave Eiffel's company.")
     expect(narrate(r.h.view(), screen).split('\n').slice(1, 7)).toEqual([
       'User: who designed it',
-      'Stanley searched the web for "Eiffel Tower designer":',
+      'Wren searched the web for "Eiffel Tower designer":',
       '- "Eiffel Tower" (en.wikipedia.org/wiki/Eiffel_Tower): Designed by the company of Gustave Eiffel.',
-      'Stanley read "Official site" (toureiffel.paris/en).',
-      'Stanley searched the web for "nothing": nothing found.',
-      `Stanley said: "Gustave Eiffel's company."`,
+      'Wren read "Official site" (toureiffel.paris/en).',
+      'Wren searched the web for "nothing": nothing found.',
+      `Wren said: "Gustave Eiffel's company."`,
     ])
   })
 

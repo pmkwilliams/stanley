@@ -41,7 +41,7 @@ describe('folder pages', () => {
     expect(viewable('notes.docx')).toBe(false)
   })
 
-  it('serves the folder with a policy that keeps pages off the network, and nothing hidden or outside it', async () => {
+  it('serves the folder with a policy that keeps pages off the network, and nothing hidden but scratch, or outside it', async () => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'folder-pages-')))
     const outside = realpathSync(mkdtempSync(join(tmpdir(), 'folder-outside-')))
     mkdirSync(join(root, 'site'))
@@ -50,6 +50,10 @@ describe('folder pages', () => {
     writeFileSync(join(root, 'Pages', 'rain.html'), '<!doctype html><h1>Rain</h1>')
     writeFileSync(join(root, 'clip.mp4'), Buffer.alloc(100, 1))
     writeFileSync(join(root, '.secret'), 'no')
+    mkdirSync(join(root, '.stanley/scratch/.cache'), { recursive: true })
+    writeFileSync(join(root, '.stanley/scratch/sea.html'), '<h1>Sea</h1>')
+    writeFileSync(join(root, '.stanley/scratch/.cache/x.html'), 'no')
+    writeFileSync(join(root, '.stanley/other.html'), 'no')
     writeFileSync(join(outside, 'secret.txt'), 'no')
     symlinkSync(join(outside, 'secret.txt'), join(root, 'link.txt'))
     const get = (path: string, headers: Record<string, string> = {}) => serveFile(root, `stanley://files/${path}`, new Headers(headers))
@@ -61,7 +65,10 @@ describe('folder pages', () => {
     expect(part.status).toBe(206)
     expect(part.headers.get('Content-Range')).toBe('bytes 10-19/100')
     expect((await part.arrayBuffer()).byteLength).toBe(10)
+    expect(await (await get('.stanley/scratch/sea.html')).text()).toBe(`${pageStyle()}<h1>Sea</h1>`)
     expect((await get('.secret')).status).toBe(404)
+    expect((await get('.stanley/other.html')).status).toBe(404)
+    expect((await get('.stanley/scratch/.cache/x.html')).status).toBe(404)
     expect((await get('link.txt')).status).toBe(404)
     expect((await get('..%2F..%2Fetc%2Fpasswd')).status).toBe(404)
     expect(await (await get('')).text()).toContain('>clip.mp4</a>')

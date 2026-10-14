@@ -155,7 +155,7 @@ export function stepOptions(screen: Screen, apps: AppEntry[], limit: number, foc
   for (const skill of skills) add(`use skill: ${skill.name}`, `skill: ${skill.description}`, { kind: 'skill', skill })
   for (const app of apps) add(`open ${app.title}`, `app: ${app.description}`, { kind: 'app', app })
   add('back', NAVIGATION.back, { kind: 'back' })
-  add('home', NAVIGATION.home, { kind: 'home' })
+  add('home screen', NAVIGATION.home, { kind: 'home' })
   if (lock) add('lock', NAVIGATION.lock, { kind: 'lock' })
   if (files) add('list files', NAVIGATION.files, { kind: 'folder', path: '' })
   return { criteria, targets }

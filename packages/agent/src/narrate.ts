@@ -11,7 +11,7 @@ export type { LiveUtterance } from './conversation'
  * Stanley; only text we wrote goes through here, never the user's words or what is on screen.
  */
 export function named(text: string, name: string): string {
-  return name === DEFAULT_AGENT_NAME ? text : text.replace(/\bStanley\b/g, () => name)
+  return name === 'Stanley' ? text : text.replace(/\bStanley\b/g, () => name)
 }
 
 /** `named` for each of a question's options. */
@@ -121,7 +121,7 @@ export function describeStep(e: StepMeta, name = DEFAULT_AGENT_NAME): string {
     case 'back':
       return `${who} went back${outcome}.`
     case 'home':
-      return `${who} went home${outcome}.`
+      return `${who} went to the home screen${outcome}.`
     case 'lock':
       return `${who} locked the computer${outcome}.`
     case 'page':

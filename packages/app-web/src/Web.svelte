@@ -19,6 +19,8 @@
   let icon = $derived<'folder' | 'lock' | 'globe'>(file !== null ? 'folder' : open?.url.startsWith('https:') ? 'lock' : 'globe')
   // A page Stanley couldn't read is titled with its domain, a file without a title with its name; don't say it twice.
   let title = $derived(open && open.title !== place && open.title !== place.split('/').at(-1) ? open.title : '')
+  /** The page has the whole window, its chrome out of sight until wanted: in full screen, and for the user's own files (pages Stanley writes). */
+  let bare = $derived(fullscreen || file !== null)
 </script>
 
 {#snippet notice(text: string, className: string)}
@@ -36,14 +38,14 @@
   {#if open}
     <!--
       Slim chrome, Safari-style: one centred, read-only address capsule on the glass, and the full screen toggle at the end.
-      In full screen the page has the whole screen: the chrome waits above it and slides down over the page while the pointer is
+      In full screen, or for a file of the user's, the page has all the room: the chrome waits above it and slides down over the page while the pointer is
       at the top edge, held by a thin strip over the page (which takes the pointer's events itself), or while it has the keyboard.
     -->
-    <div class={fullscreen ? 'group/chrome absolute inset-x-0 top-0 z-10 h-1.5' : 'contents'}>
+    <div class={bare ? 'group/chrome absolute inset-x-0 top-0 z-10 h-1.5' : 'contents'}>
       <header
         class={[
           'relative flex flex-none justify-center px-4 py-2.5',
-          fullscreen &&
+          bare &&
             '-translate-y-full border-b bg-card/80 backdrop-blur-md backdrop-saturate-150 transition-transform delay-300 group-focus-within/chrome:translate-y-0 group-focus-within/chrome:delay-0 group-hover/chrome:translate-y-0 group-hover/chrome:delay-0',
         ]}
       >
@@ -68,7 +70,7 @@
         </Button>
       </header>
     </div>
-    {#if data.error}{@render notice(data.error, fullscreen ? 'mx-4 my-2.5 w-auto flex-none' : 'mx-4 mb-2.5 w-auto flex-none')}{/if}
+    {#if data.error}{@render notice(data.error, bare ? 'mx-4 my-2.5 w-auto flex-none' : 'mx-4 mb-2.5 w-auto flex-none')}{/if}
   {:else}
     <App.Bar><App.Title>Web</App.Title></App.Bar>
     <App.Body>
@@ -84,11 +86,17 @@
   {/if}
   <!--
     Edge to edge under the chrome, a hairline apart (a white page meets light glass); the bottom corners follow the window's (its radius less its 1px border).
-    In full screen, square and with no hairline: the page meets the screen's edges.
+    With the chrome out of sight, all its corners do; in full screen, square and with no hairline: the page meets the screen's edges.
     A view per tab, stacked: the tab shown is the one in sight, and the others go on running out of sight, full size, as the ready one waits.
     With no page open they are all behind the empty state, so a page loads at the size it is seen at.
   -->
-  <div class={['relative min-h-0 w-full flex-1 overflow-hidden', !fullscreen && 'rounded-b-[calc(var(--radius-3xl)-1px)] border-t', !open && 'invisible absolute inset-0']}>
+  <div
+    class={[
+      'relative min-h-0 w-full flex-1 overflow-hidden',
+      !fullscreen && (bare ? 'rounded-[calc(var(--radius-3xl)-1px)]' : 'rounded-b-[calc(var(--radius-3xl)-1px)] border-t'),
+      !open && 'invisible absolute inset-0',
+    ]}
+  >
     {#each views as id (id)}
       <webview class={['absolute inset-0 size-full', id !== open?.tab && 'invisible']} src={`about:blank#tab=${id}`} allowpopups></webview>
     {/each}

@@ -43,14 +43,14 @@ describe('Conversation', () => {
 
   it('starts with a greeting, committed without a thinking call, before the first utterance', () => {
     const h = new Conversation()
-    h.greet('Hello, Stanley')
+    h.greet('Hello, Wren')
     expect(h.entries).toHaveLength(1)
     h.begin()
     h.heard(1, 'open music')
     const live = { utteranceId: 1, text: 'open music', ended: true }
-    expect(narrate(h.view(live), null, live).split('\n').slice(1)).toEqual(['User: Hello, Stanley', 'User: open music'])
+    expect(narrate(h.view(live), null, live).split('\n').slice(1)).toEqual(['User: Hello, Wren', 'User: open music'])
     const sent = h.send('<screen/>', live)
-    expect(roles(sent.messages)).toEqual(['user: Hello, Stanley', 'user: open music', 'user: <screen/>'])
+    expect(roles(sent.messages)).toEqual(['user: Hello, Wren', 'user: open music', 'user: <screen/>'])
     expect(validate(sent.messages)).toBeUndefined()
   })
 
@@ -61,7 +61,7 @@ describe('Conversation', () => {
     r.h.appendTurn(turn('call_1', ''), 2, ran('call_1'))
     r.words(1, 'please')
     const live = { utteranceId: 1, text: 'tick the blue one please', ended: false }
-    expect(narrate(r.h.view(live), null, live).split('\n').slice(1)).toEqual(['User: tick the blue one', 'Stanley pressed [Red]: Marked "Red" done.', 'User (went on, still speaking): please'])
+    expect(narrate(r.h.view(live), null, live).split('\n').slice(1)).toEqual(['User: tick the blue one', 'Wren pressed [Red]: Marked "Red" done.', 'User (went on, still speaking): please'])
   })
 
   it("keeps a turn as sent, takes its final text out, and reads the cache where the turn's last step started", () => {
@@ -85,7 +85,7 @@ describe('Conversation', () => {
     r.said('Your meeting is at three, with Sam.', 7)
     r.h.cut(7, 'Your meeting is at three,')
     expect(viewed(r.h)).toContain('assistant: Your meeting is at three,')
-    expect(narrate(r.h.view(), null)).toContain('Stanley started to say: "Your meeting is at three," but the user cut in.')
+    expect(narrate(r.h.view(), null)).toContain('Wren started to say: "Your meeting is at three," but the user cut in.')
     r.h.send('<screen/>')
     r.said('It is sunny.', 8)
     r.h.send('<screen unchanged/>')
@@ -109,7 +109,7 @@ describe('Conversation', () => {
     expect(roles(h.messages()).at(-1)).toBe('user: <screen/><note>Next: pressing [Send].</note>')
   })
 
-  it("drops a call left unanswered before the next thinking call, and pairs a late application as Stanley's own", () => {
+  it("drops a call left unanswered before the next thinking call, and pairs a late application as Wren's own", () => {
     const h = new Conversation()
     h.heard(1, 'reply something funny')
     h.send('<screen/>')
@@ -122,13 +122,13 @@ describe('Conversation', () => {
     expect(viewed(h).slice(-2)).toEqual(['assistant: call stanley_' + viewed(h).at(-2)!.split('stanley_')[1], 'tool: result stanley_' + viewed(h).at(-2)!.split('stanley_')[1]])
   })
 
-  it("adds a step that ran in a turn cut short as Stanley's own call and result, without reasoning", () => {
+  it("adds a step that ran in a turn cut short as Wren's own call and result, without reasoning", () => {
     const h = new Conversation()
     h.heard(1, 'mark red')
     h.send('<screen/>')
     h.appendTurn([], 0, ran('call_9'))
     expect(roles(h.messages()).slice(2)).toEqual(['assistant: call call_9', 'tool: result call_9'])
-    expect(narrate(h.view(), null)).toContain('Stanley pressed [Red]: Marked "Red" done.')
+    expect(narrate(h.view(), null)).toContain('Wren pressed [Red]: Marked "Red" done.')
   })
 
   it('rebuilds what thinking was sent from the records', () => {

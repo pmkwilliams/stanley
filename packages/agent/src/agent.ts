@@ -5,7 +5,7 @@ import { defaultConfig, type AgentConfig, type DeciderProfile } from './config'
 import type { AgentDebugEvent, GateRule, RequestResult, TickReason } from './debug'
 import { WORKING, WORKING_INSTRUCTIONS, WORKING_PROMPT } from './barge'
 import { createEffectJudge, type EffectJudge, type EffectVerdict } from './effects'
-import { bashText, JEV_FILES, knownFiles, listCommand, readCommand, type BashResult, type FileMeta, type FileTools, type KnownFile } from './files'
+import { bashText, JEV_FILES, knownFiles, listCommand, readCommand, topFiles, type BashResult, type FileMeta, type FileTools, type KnownFile } from './files'
 import {
   Conversation,
   filesOf,
@@ -262,6 +262,8 @@ export class Agent {
   private endedByAgentAt = 0
   /** The screen and options thinking last saw, to send `<screen unchanged/>` instead. */
   private lastSeen = ''
+  /** The top of the folder (`topFiles`) as thinking last saw it, to leave out when it is the same. */
+  private lastFiles = ''
   /** The date thinking was last told. */
   private today: string
   /**
@@ -449,7 +451,7 @@ export class Agent {
   /** The person clicked or typed in an app directly. */
   recordUserStep(target: StepTarget, result: StepResult, text?: string): void {
     const step: StepMeta = { id: `user-${++this.stepCount}`, by: 'user', target, text, summary: result.summary, observation: result.observation }
-    this.history.stage({ kind: 'note', by: 'user', results: [{ step }] }, note(`In the app, the user ${describeStep(step).replace(/^User /, '')}`))
+    this.history.stage({ kind: 'note', by: 'user', results: [{ step }] }, note(`In the app, the user ${describeStep(step, this.name()).replace(/^User /, '')}`))
   }
 
   cancel(): void {
@@ -861,7 +863,7 @@ export class Agent {
     if (mode === 'done' && this.utteranceEnded && next.confidence < c.earlyGuessDone && this.guessedEarly()) {
       this.report(id, d, 'think', 'gated')
       this.gate(id, 'early-guess', 'a button was pressed before the user finished; thinking checks it against what they said')
-      return this.think(id, 'a button was pressed before the user finished: check it against what they said', EARLY_GUESS)
+      return this.think(id, 'a button was pressed before the user finished: check it against what they said', named(EARLY_GUESS, this.name()))
     }
 
     if (mode === 'done') {
@@ -1203,7 +1205,7 @@ export class Agent {
         result = { summary: 'Locked the computer' }
       } else {
         await this.world.global(target.kind)
-        result = { summary: target.kind === 'back' ? 'Went back' : 'Went home' }
+        result = { summary: target.kind === 'back' ? 'Went back' : 'Went to the home screen' }
       }
     } catch (err) {
       save({ ...meta, summary: err instanceof Error ? err.message : String(err), error: true })
@@ -1260,7 +1262,8 @@ export class Agent {
     const options = this.options(screen, this.config.thinkingElements)
     const next = single ? (single.kind === 'write' ? writeNote(single.option, !!this.files) : confirmNote(single.option)) : note
     const news = await this.skillNews()
-    const sent = this.history.send(this.observe(screen, options, [...(news ? [news] : []), ...(next ? [next] : [])]), this.live())
+    const files = await this.topFiles()
+    const sent = this.history.send(this.observe(screen, options, files, [...(news ? [news] : []), ...(next ? [next] : [])]), this.live())
     this.events.debug?.({ type: 'think-start', tickId: id, mode, handover, option: single?.option, entries: sent.entries, cacheAt: sent.cacheAt })
     const controller = new AbortController()
     this.thinking = controller
@@ -1318,18 +1321,26 @@ export class Agent {
     }
   }
 
+  /** The top of the user's folder for thinking, or `''` when there are no files or they can't be listed. */
+  private async topFiles(): Promise<string> {
+    const paths = await this.files?.paths().catch(() => null)
+    return paths ? topFiles(paths) : ''
+  }
+
   /**
    * The observation for a thinking call: the screen and its options, or `<screen unchanged/>` when
-   * thinking last saw the same, then notes.
+   * thinking last saw the same; the top of the folder (`files`, two levels) when it changed; then notes.
    */
-  private observe(screen: Screen, options: OptionSet, notes: string[]): string {
+  private observe(screen: Screen, options: OptionSet, files: string, notes: string[]): string {
     const view = screenText(screen, options)
     const body = view === this.lastSeen ? '<screen unchanged/>' : view
     this.lastSeen = view
+    const listing = files && files !== this.lastFiles ? [files] : []
+    if (files) this.lastFiles = files
     const today = longDate(this.clock())
     const all = [...(today !== this.today ? [`It is now ${today}.`] : []), ...(this.utteranceId && !this.utteranceEnded ? ['The user paused, but may not have finished speaking.'] : []), ...notes]
     this.today = today
-    return [body, ...all.map((n) => `<note>${n}</note>`)].join('\n')
+    return [body, ...listing, ...all.map((n) => `<note>${n}</note>`)].join('\n')
   }
 
   /** The last screen among the results that went into the history is the one thinking saw last. */

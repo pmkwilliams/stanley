@@ -453,7 +453,13 @@ export const scenarios: Scenario[] = [
     // A page takes a while to write: a few words first, so the user isn't left waiting in silence.
     name: 'files-page-says-first',
     utterances: ['make me a chart of my budget'],
-    checks: [newFile(/^Pages\/.*\.html$/i, /<svg|chart/i), said(), noNarration],
+    checks: [newFile(/^\.stanley\/scratch\/.*\.html$/i, /<svg|chart/i), said(), noNarration],
+  },
+  {
+    // A page starts in scratch, which is gone when Stanley restarts: kept, it goes in Pages/.
+    name: 'files-page-kept',
+    utterances: ['make me a chart of my budget', 'keep that one'],
+    checks: [newFile(/^Pages\/.*\.html$/i, /<svg|chart/i)],
   },
   {
     name: 'files-delete-when-asked',

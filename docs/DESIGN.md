@@ -31,7 +31,7 @@ Several models do the work, but it should read as one Stanley, in the trace and 
 
 - **Fast: Jev** (~330 ms). Decides turn-taking and takes clear, reversible steps, including while
   the user is still speaking: open an app, open an item, press play, tick a box.
-- **Slow: thinking** (Claude Sonnet 5.5). Anything that needs words or judgement: what goes in a
+- **Slow: thinking** (GPT-6.1 Sol; GPT-6 Luna for single steps). Anything that needs words or judgement: what goes in a
   field, whether to press something that sends or deletes, answering, asking, and working out a
   request the fast part can't.
 
@@ -410,7 +410,7 @@ real input arrived and otherwise does it from inside the page (`click()`, `reque
 
 ## Files
 
-The user's files are one real folder, `~/Stanley` (`STANLEY_FILES` moves it), not an app: there is
+The user's files are one real folder, `~/Wren` (`STANLEY_FILES` moves it), not an app: there is
 nothing to show, so nothing goes on screen. The user puts things there in Finder, and what Stanley
 writes there is usable outside it.
 
@@ -439,11 +439,13 @@ writes there is usable outside it.
   Stanley, a command or the user's own editor. See `docs/plans/live-pages.md`.
 - **Pages Stanley writes.** Thinking has `write_file` and `edit_file` (exact replacement, once or
   everywhere). For something to look at that isn't a website (a diagram, a chart), it writes one
-  .html file in `Pages/`. The page comes to the front as soon as it starts and is drawn as it is
-  written: the tool's input is read as it streams and served to the view at the file's address as
+  .html file in `.stanley/scratch/`: scratch, emptied each time Stanley starts and left out of the
+  history, so a page shown once doesn't stay in the user's folder. A page the user wants kept goes
+  in `Pages/`, written there or moved there with `mv`; when is thinking's call. The page comes to
+  the front as soon as it starts and is drawn as it is written: the tool's input is read as it streams and served to the view at the file's address as
   a streaming response. Then thinking gets the page's console errors and a picture of it, so it can
   fix what didn't work. "Make it blue" is an `edit_file`, and the page reloads where it was.
-  A page in `Pages/` takes Stanley's look: it is served with the shell's tokens from `theme.css`
+  A page in `Pages/` or scratch takes Stanley's look: it is served with the shell's tokens from `theme.css`
   as CSS variables (dark, or light with the user's theme, live) and its background, text colour
   and font (Inter, served with the libraries) set from them, in a cascade layer the page's own CSS wins over
   (`apps/desktop/src/main/page-theme.ts`). The `--chart-1…6` tokens are a categorical palette
@@ -578,7 +580,7 @@ All via **Vercel AI Gateway** with the AI SDK (`ai`, pinned exactly), one `AI_GA
   `providerMetadata.typesafe.confidence[questionId]`. `packages/jev` normalizes each answer to
   `{ choice, probabilities, confidence }`: `decide` for several questions in one call, `choose` for
   one, plus a mock.
-- **Thinking**: Claude Sonnet 5.5 via gateway (pinned to Anthropic, for its prompt caching) behind a
+- **Thinking**: GPT-6.1 Sol via gateway (GPT-6 Luna for a single write or confirm step) behind a
   `Thinker` interface with one method, `run`: a tool loop with `act`, plus `search`, `fetch` and
   `open_page` when the agent has them, or one step whose calls come back unrun (write, confirm).
 - **Web**: Parallel Search and Extract APIs (`PARALLEL_API_KEY`), in `@stanley/app-web/parallel`:

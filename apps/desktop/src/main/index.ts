@@ -158,10 +158,10 @@ const thinker: Thinker = mock
 
 const sessionsDir = join(app.getPath('userData'), 'sessions')
 /**
- * The user's files: one real folder (`STANLEY_FILES`, else ~/Stanley), outlasting sessions. Every
+ * The user's files: one real folder (`STANLEY_FILES`, else ~/Wren), outlasting sessions. Every
  * version of it is kept next to the settings, where commands can read it but not change it.
  */
-const filesRoot = process.env.STANLEY_FILES || join(homedir(), 'Stanley')
+const filesRoot = process.env.STANLEY_FILES || join(homedir(), 'Wren')
 const files: FileTools | undefined = process.platform === 'darwin' ? localFiles({ root: filesRoot, history: join(app.getPath('userData'), 'files-history.git') }) : undefined
 /** The folder as the web view shows it: its real path, and its name for people. */
 const folder = files && { root: realpathSync(filesRoot), shown: files.root }
@@ -569,8 +569,10 @@ function applySettings() {
 
 function createWindow() {
   win = new BrowserWindow({
+    // Opens full screen; this is its size when the user leaves full screen.
     width: 1280,
     height: 820,
+    fullscreen: true,
     title: agentName(),
     backgroundColor: WINDOW_BG[readSettings(store).theme],
     titleBarStyle: 'hidden',
@@ -684,7 +686,7 @@ ipcMain.on('unlock', () => unlock())
 ipcMain.on('open', async (_, appId: string | null) => {
   const result = await shell.open(appId)
   await shell.global('show')
-  const option = appId ? `open ${appId}` : 'home'
+  const option = appId ? `open ${appId}` : 'home screen'
   appEvent({ type: 'manual', option, summary: result.summary })
   const app = appId ? apps.find((a) => a.id === appId) : undefined
   agent.recordUserStep(app ? { kind: 'app', appId: app.id, title: app.title } : { kind: 'home' }, result)

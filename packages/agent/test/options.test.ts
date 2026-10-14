@@ -27,18 +27,18 @@ describe('stepOptions', () => {
   const options = stepOptions(screen, apps, 50)
 
   it('offers the screen in order, named by the containers that tell elements apart, then apps, back and home', () => {
-    expect(Object.keys(options.criteria)).toEqual(['Inbox (5)', 'Sam: Lunch Friday?', '"Lunch Friday?" › Archive', '"Lunch Friday?" › Reply to Sam', 'Archive', 'open Tasks', 'back', 'home'])
+    expect(Object.keys(options.criteria)).toEqual(['Inbox (5)', 'Sam: Lunch Friday?', '"Lunch Friday?" › Archive', '"Lunch Friday?" › Reply to Sam', 'Archive', 'open Tasks', 'back', 'home screen'])
   })
 
   it("offers the user's skills before the apps, described by when they are for", () => {
     const skills = stepOptions(screen, apps, 50, '', [], false, undefined, [{ name: 'wind-down', description: 'When the user winds down.', path: '.agents/skills/wind-down/SKILL.md' }])
-    expect(Object.keys(skills.criteria).slice(-4)).toEqual(['use skill: wind-down', 'open Tasks', 'back', 'home'])
+    expect(Object.keys(skills.criteria).slice(-4)).toEqual(['use skill: wind-down', 'open Tasks', 'back', 'home screen'])
     expect(skills.criteria['use skill: wind-down']).toBe('skill: When the user winds down.')
     expect(navigates(skills.targets.get('use skill: wind-down')!)).toBe(true)
   })
 
   it('offers lock last, only when the world can lock', () => {
-    expect(Object.keys(stepOptions(screen, apps, 50, '', [], true).criteria).slice(-3)).toEqual(['back', 'home', 'lock'])
+    expect(Object.keys(stepOptions(screen, apps, 50, '', [], true).criteria).slice(-3)).toEqual(['back', 'home screen', 'lock'])
   })
 
   it('describes elements by role and what the screen shows, nothing more', () => {
@@ -51,7 +51,7 @@ describe('stepOptions', () => {
   it('keeps names unique and respects the limit', () => {
     const twice = stepOptions({ ...screen, elements: [screen.elements[3]!, screen.elements[3]!] }, [], 50)
     expect(Object.keys(twice.criteria).slice(0, 2)).toEqual(['Archive', 'Archive (2)'])
-    expect(Object.keys(stepOptions(screen, [], 1).criteria)).toEqual(['Inbox (5)', 'back', 'home'])
+    expect(Object.keys(stepOptions(screen, [], 1).criteria)).toEqual(['Inbox (5)', 'back', 'home screen'])
   })
 
   it('treats links, apps, back and home as navigation, and buttons and fields as not', () => {
@@ -86,7 +86,7 @@ describe('stepOptions with known web pages', () => {
 
   it('ranks pages with the screen when there are too many, by the words the user said', () => {
     const options = stepOptions(screen, [], 2, 'show me the louvre', pages)
-    expect(Object.keys(options.criteria)).toEqual(['Inbox (5)', 'open page: Louvre - Wikipedia', 'back', 'home'])
+    expect(Object.keys(options.criteria)).toEqual(['Inbox (5)', 'open page: Louvre - Wikipedia', 'back', 'home screen'])
   })
 })
 

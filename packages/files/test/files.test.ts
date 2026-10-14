@@ -53,10 +53,22 @@ describe.runIf(process.platform === 'darwin')('localFiles', () => {
     expect(await files.paths()).toEqual([])
   })
 
-  it('gives every file and folder in it, without hidden ones', async () => {
-    const { files } = setup()
+  it('keeps scratch until it starts again, and out of the history', async () => {
+    const { files, root, history } = setup()
+    await files.write!('.stanley/scratch/sea.html', '<h1>Sea</h1>')
+    await files.write!('Pages/rain.html', '<h1>Rain</h1>')
+    expect(execFileSync('git', ['--git-dir', history, 'ls-files'], { encoding: 'utf8' })).toBe('Pages/rain.html\n')
+    localFiles({ root, history })
+    expect(existsSync(join(root, '.stanley/scratch/sea.html'))).toBe(false)
+    expect(existsSync(join(root, 'Pages/rain.html'))).toBe(true)
+  })
+
+  it('gives every file and folder in it, without hidden ones, those nearest the top when there are too many', async () => {
+    const { files, root, history } = setup()
     await files.bash('mkdir -p Trips/.cache && touch Trips/packing.md Trips/.cache/x .hidden budget.csv')
     expect(await files.paths()).toEqual(['Trips/', 'Trips/packing.md', 'budget.csv'])
+    await files.bash('mkdir -p A/B && touch A/B/1 A/B/2 A/B/3')
+    expect(await localFiles({ root, history, maxPaths: 3 }).paths()).toEqual(['A/', 'Trips/', 'budget.csv'])
   })
 
   it("can't write outside the folder, read the user's home, or reach the network", async () => {

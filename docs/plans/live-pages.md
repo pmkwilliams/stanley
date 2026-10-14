@@ -116,7 +116,7 @@ libraries; requests to their usual CDN addresses are answered from the bundle.
   no browser ES module of their own, so `+esm` is a module made from the classic build.
 - Jev's `open file:` is a `page` target (`World.fileUrl` gives the address), so it runs, reads and
   is recorded as opening a page does. `open_page` takes a path the way a person or a model writes
-  one: relative, `./`, `~/Stanley/…` or absolute.
+  one: relative, `./`, `~/Wren/…` or absolute.
 - A PDF shows in Chromium's viewer (`plugins` on the view), but the extractor can't read inside it:
   Stanley sees an empty page.
 - Not covered by the policy: WebRTC can still reach a STUN server.
@@ -211,7 +211,7 @@ Pages Stanley writes used to pick their own colours and showed white with no bac
 own. Adapted from T3 Code's guidance for pages it shows in a thread (`HTML_RENDER_THEME_GUIDE` and
 `HTML_RENDER_LAYOUT_GUIDE` in pingdotgg/t3code):
 
-- **Tokens.** An `.html` page in `Pages/` is served (and drawn as it is written) with a `<style>`
+- **Tokens.** An `.html` page in `Pages/` or scratch (`.stanley/scratch/`) is served (and drawn as it is written) with a `<style>`
   holding the shell's tokens from `theme.css` (less the shell-only ones), fonts, and the body's
   background, colour, font and no margin. The font is Inter, as in the shell: its fontsource
   package is served with the libraries and imported into the same layer. Dark is the base and light the `prefers-color-scheme`

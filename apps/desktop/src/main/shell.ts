@@ -14,7 +14,7 @@ export interface PageHost {
 }
 
 export interface ShellOptions {
-  /** The user's folder, whose files the app that shows web pages can show: its real path, and its name for people (`~/Stanley`). */
+  /** The user's folder, whose files the app that shows web pages can show: its real path, and its name for people (`~/Wren`). */
   folder?: { root: string; shown: string }
   pages?: PageHost
 }
@@ -178,7 +178,7 @@ export class Shell implements World {
     if (appId === null) {
       this.navigate(null)
       this.onChange()
-      return { summary: 'Went home' }
+      return { summary: 'Went to the home screen' }
     }
     const app = this.app(appId)
     return this.serial(appId, async () => {

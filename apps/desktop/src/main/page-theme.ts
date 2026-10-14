@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import { SCRATCH_DIR } from '@stanley/agent'
 
 /**
  * Stanley's look for the pages it writes: the shell's design tokens as CSS variables on `:root`,
@@ -43,7 +44,7 @@ export function pageStyle(): string {
 }
 
 /** Pages Stanley writes, which take its look. The user's other pages look as they were written. */
-export const themed = (path: string): boolean => /^Pages\/.+\.html?$/i.test(path)
+export const themed = (path: string): boolean => /^Pages\/.+\.html?$/i.test(path) || (path.startsWith(`${SCRATCH_DIR}/`) && /\.html?$/i.test(path))
 
 const DOCTYPE = '<!doctype'
 

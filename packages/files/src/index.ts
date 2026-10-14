@@ -1,9 +1,9 @@
 import { execFile, spawn } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { mkdir, readdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, resolve, sep } from 'node:path'
-import { parseSkill, skillPath, SKILLS_DIR, type BashResult, type FileTools, type SkillScan } from '@stanley/agent'
+import { parseSkill, SCRATCH_DIR, skillPath, SKILLS_DIR, type BashResult, type FileTools, type SkillScan } from '@stanley/agent'
 
 export interface LocalFilesOptions {
   /** The user's folder. Made if it isn't there. */
@@ -55,6 +55,8 @@ export function localFiles(opts: LocalFilesOptions): FileTools {
   mkdirSync(opts.history, { recursive: true })
   const root = realpathSync(opts.root)
   const history = realpathSync(opts.history)
+  // Scratch lasts until Stanley restarts.
+  rmSync(join(root, SCRATCH_DIR), { recursive: true, force: true })
   const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'stanley-files-')))
   const home = realpathSync(homedir())
   const params = { ROOT: root, TMP: tmp, HOME: home, HISTORY: history }
@@ -68,12 +70,18 @@ export function localFiles(opts: LocalFilesOptions): FileTools {
 
   /** Commits the folder as it is, if anything changed. One at a time. */
   let snapshots = Promise.resolve()
+  let excluded = false
   const snapshot = (message: string) =>
     (snapshots = snapshots.then(async () => {
       if (!existsSync(join(history, 'HEAD'))) {
         await git('init', '-q')
         for (const [key, value] of [['user.name', 'Stanley'], ['user.email', 'stanley@localhost'], ['commit.gpgsign', 'false'], ['core.autocrlf', 'false']]) await git('config', key!, value!)
-        writeFileSync(join(history, 'info', 'exclude'), '.DS_Store\n')
+      }
+      // Each start, so a history made before there was scratch leaves it out too.
+      if (!excluded) {
+        mkdirSync(join(history, 'info'), { recursive: true })
+        writeFileSync(join(history, 'info', 'exclude'), `.DS_Store\n/${SCRATCH_DIR}/\n`)
+        excluded = true
       }
       if (!(await git('status', '--porcelain')).stdout.trim()) return
       await git('add', '-A')
@@ -83,7 +91,7 @@ export function localFiles(opts: LocalFilesOptions): FileTools {
   const shown = root.startsWith(`${home}/`) ? `~${root.slice(home.length)}` : root
 
   /**
-   * A path as written (from the top, `./…`, `~/Stanley/…` or absolute) as a real path in the folder.
+   * A path as written (from the top, `./…`, `~/Wren/…` or absolute) as a real path in the folder.
    * `~/…` is in the folder too: it is home to commands.
    */
   const inside = async (written: string): Promise<string> => {
@@ -119,7 +127,12 @@ export function localFiles(opts: LocalFilesOptions): FileTools {
         if (e.isDirectory()) paths.push(`${path}/`)
         else if (e.isFile()) paths.push(path)
       }
-      return paths.sort().slice(0, maxPaths)
+      // When there are too many, the ones nearest the top are kept.
+      const depth = (path: string) => path.slice(0, -1).split('/').length
+      return paths
+        .sort((a, b) => depth(a) - depth(b) || (a < b ? -1 : 1))
+        .slice(0, maxPaths)
+        .sort()
     },
     async write(path, content) {
       const full = await inside(path)

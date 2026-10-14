@@ -21,9 +21,9 @@ describe('narrate', () => {
       [
         '## Conversation',
         'User: add a task called buy eggs',
-        'Stanley opened Tasks.',
-        'Stanley typed "Buy eggs" into [Add a task].',
-        'Stanley pressed Enter in [Add a task]: Added task "Buy eggs".',
+        'Wren opened Tasks.',
+        'Wren typed "Buy eggs" into [Add a task].',
+        'Wren pressed Enter in [Add a task]: Added task "Buy eggs".',
         '',
         '## Screen: Tasks (in front of the user)',
         '# Tasks\n- [ ] Buy eggs',
@@ -40,21 +40,21 @@ describe('narrate', () => {
     expect(narrate(recorder().h.view(fresh), screen, fresh)).toContain('## Conversation\nUser (still speaking): open\n')
   })
 
-  it("says whose words were typed, what Stanley said, and the user's own clicks", () => {
+  it("says whose words were typed, what Wren said, and the user's own clicks", () => {
     const r = recorder()
     r.words(1, 'reply with something funny')
     r.step({ target: field, text: 'Ramen? Always.', wrote: 'stanley', by: 'thinking', summary: 'typed', utteranceId: 1 })
     r.said('I wrote "Ramen? Always." Send it?')
     r.userStep({ kind: 'element', name: 'Send reply', role: 'button', nodeKind: 'action', nodeId: 'e:send' }, 'Reply sent')
-    r.userStep({ kind: 'home' }, 'Went home')
+    r.userStep({ kind: 'home' }, 'Went to the home screen')
     expect(narrate(r.h.view(), { ...screen, visible: false })).toBe(
       [
         '## Conversation',
         'User: reply with something funny',
-        'Stanley wrote its own words into [Add a task]: "Ramen? Always."',
-        'Stanley said: "I wrote "Ramen? Always." Send it?"',
+        'Wren wrote its own words into [Add a task]: "Ramen? Always."',
+        'Wren said: "I wrote "Ramen? Always." Send it?"',
         'User pressed [Send reply]: Reply sent.',
-        'User went home.',
+        'User went to the home screen.',
         '',
         "## Screen: Tasks (in the background, the user can't see it)",
         '# Tasks\n- [ ] Buy eggs',
@@ -74,16 +74,16 @@ describe('narrate', () => {
     r.words(1, 'tick the blue one')
     r.step(tick('Blue', 4))
     const live = { utteranceId: 1, text: 'tick the blue one sorry the', ended: false }
-    expect(narrate(r.h.view(live), screen, live)).toContain('Stanley pressed [Blue › checkbox]: Marked "Blue" done.\nUser (went on, still speaking): sorry the\n')
+    expect(narrate(r.h.view(live), screen, live)).toContain('Wren pressed [Blue › checkbox]: Marked "Blue" done.\nUser (went on, still speaking): sorry the\n')
     r.words(1, 'sorry the red one')
     r.step(tick('Red', 8))
     expect(narrate(r.h.view(), screen).split('\n').slice(0, 6)).toEqual([
       '## Conversation',
       'User: tick the blue one',
-      'Stanley opened Tasks.',
-      'Stanley pressed [Blue › checkbox]: Marked "Blue" done.',
+      'Wren opened Tasks.',
+      'Wren pressed [Blue › checkbox]: Marked "Blue" done.',
       'User (went on): sorry the red one',
-      'Stanley pressed [Red › checkbox]: Marked "Red" done.',
+      'Wren pressed [Red › checkbox]: Marked "Red" done.',
     ])
   })
 

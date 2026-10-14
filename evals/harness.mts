@@ -58,7 +58,7 @@ export function select<T>(items: T[], name: (t: T) => string, command: string): 
   const args = process.argv.slice(2)
   const filters = args.filter((a, i) => !a.startsWith('-') && !/^--(runs|concurrency|jev-turns|word-ms|effort|single-model|set)$/.test(args[i - 1] ?? ''))
   if (!filters.length && !args.includes('--all')) {
-    console.log(`${items.length} available — each makes several paid Jev/Sonnet calls:`)
+    console.log(`${items.length} available — each makes several paid Jev/thinking calls:`)
     for (const t of items) console.log(`  ${name(t)}`)
     console.log(`\nRun some:  ${command} <filter...>\nRun all:   ${command} --all`)
     return null
@@ -68,7 +68,7 @@ export function select<T>(items: T[], name: (t: T) => string, command: string): 
 
 export function printUsage() {
   const ratio = usage.thinkingInputTokens ? `${Math.round((usage.thinkingCachedTokens / usage.thinkingInputTokens) * 100)}%` : '—'
-  console.log(`Paid calls: ${usage.jev} ${process.env.STANLEY_DECIDER ?? 'jev'} (${usage.jevInputTokens.toLocaleString()} input tokens, p50 ${median(usage.jevMs)}s), ${usage.thinking} thinking turns, ${usage.writing} writes, ${usage.confirming} confirms (${usage.singleFallbacks} handed over to a whole turn) (Sonnet: ${usage.thinkingInputTokens.toLocaleString()} input tokens, ${ratio} read from cache, largest call ${usage.largestThinkingInput.toLocaleString()}), ${usage.searches} searches, ${usage.reads} page reads (Parallel)`)
+  console.log(`Paid calls: ${usage.jev} ${process.env.STANLEY_DECIDER ?? 'jev'} (${usage.jevInputTokens.toLocaleString()} input tokens, p50 ${median(usage.jevMs)}s), ${usage.thinking} thinking turns, ${usage.writing} writes, ${usage.confirming} confirms (${usage.singleFallbacks} handed over to a whole turn) (thinking: ${usage.thinkingInputTokens.toLocaleString()} input tokens, ${ratio} read from cache, largest call ${usage.largestThinkingInput.toLocaleString()}), ${usage.searches} searches, ${usage.reads} page reads (Parallel)`)
   const t = usage.thinkMs
   console.log(`Thinking latency p50: run ${median(t.run)}s (${t.run.length}), write ${median(t.write)}s (${t.write.length}), confirm ${median(t.confirm)}s (${t.confirm.length})`)
   for (const f of usage.fallbacks) console.log(`  handed over: ${f}`)
@@ -112,7 +112,7 @@ export async function runScenario(scenario: Scenario, speak: Speak): Promise<Sce
 /** A fresh copy of `evals/files` for one run, as the user's files (macOS only: the sandbox needs it). */
 function fixtureFiles(): { files?: FileTools; root: string } {
   const dir = mkdtempSync(join(tmpdir(), 'stanley-eval-'))
-  const root = join(dir, 'Stanley')
+  const root = join(dir, 'Wren')
   cpSync(join(import.meta.dirname, 'files'), root, { recursive: true })
   // `--no-files`: without them, to compare.
   const on = process.platform === 'darwin' && !process.argv.includes('--no-files')

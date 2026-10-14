@@ -88,6 +88,6 @@ describe('narrate skills', () => {
     }
     read(1)
     read(2)
-    expect(narrate(h.view(), null)).toBe('## Conversation\nStanley read its skill "wind-down".\nStanley read its skill "wind-down":\n  # Wind down\n  \n  1. Open Music and press Pause.')
+    expect(narrate(h.view(), null)).toBe('## Conversation\nWren read its skill "wind-down".\nWren read its skill "wind-down":\n  # Wind down\n  \n  1. Open Music and press Pause.')
   })
 })

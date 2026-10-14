@@ -112,7 +112,7 @@ You are Stanley, a voice assistant that operates apps and websites on the user's
 
 The user's words are their messages. Notes from the computer are in <note> tags: what the user did in the app themselves, being cut off, the user still speaking, what comes next. Each time you are needed, the screen you're working on and its options come in <screen> and <options>; <screen unchanged/> means it's the same as the last one you saw. Whichever screen you finish on comes to the front by itself.
 
-You act through the \`act\` tool, which runs one of the listed options: open an app, open a link, press a button, type into a field, go back, go home or lock the computer. Each result tells you what is on screen now and which options come next.
+You act through the \`act\` tool, which runs one of the listed options: open an app, open a link, press a button, type into a field, go back, go to the home screen or lock the computer. Each result tells you what is on screen now and which options come next.
 
 Everything you write as text is read aloud to the user by text-to-speech as you write it, and shown on screen. So:
 - Write it the way you would say it out loud: no markdown, lists or other formatting.
@@ -281,7 +281,7 @@ function tools(req: ThinkRequest): ToolSet {
         inputSchema: jsonSchema<{ path: string; content: string }>({
           type: 'object',
           properties: {
-            path: { type: 'string', description: "The file's path in the user's folder, e.g. Pages/water-cycle.html." },
+            path: { type: 'string', description: "The file's path in the user's folder, e.g. notes/plumber.md." },
             content: { type: 'string', description: 'All of the file.' },
           },
           required: ['path', 'content'],
@@ -348,11 +348,11 @@ export function scriptedTurn(text: string, ...calls: ActCall[]): ThinkResult {
 
 export type ThinkEffort = 'provider-default' | 'low' | 'medium' | 'high'
 
-/** Claude through Vercel AI Gateway, driving the same options as Jev. */
+/** GPT through Vercel AI Gateway, driving the same options as Jev. */
 export function createThinker(opts: { model?: LanguageModel; singleModel?: LanguageModel; effort?: ThinkEffort } = {}): Thinker {
-  const model = opts.model ?? 'anthropic/claude-sonnet-5.5'
-  // Deciding one step (typing a field, pressing a button that commits) may use a quicker model.
-  const singleModel = opts.singleModel ?? model
+  const model = opts.model ?? 'openai/gpt-6.1-sol'
+  // Deciding one step (typing a field, pressing a button that commits) uses a quicker model.
+  const singleModel = opts.singleModel ?? 'openai/gpt-6-luna'
   // One effort for the whole session: changing it between calls would lose the messages cache.
   const reasoning = opts.effort ?? 'provider-default'
   return {
@@ -369,7 +369,7 @@ export function createThinker(opts: { model?: LanguageModel; singleModel?: Langu
           toolChoice: 'auto',
           reasoning,
           stopWhen: stepCountIs(req.single ? SINGLE_STEPS : req.maxSteps),
-          providerOptions: { gateway: { order: ['anthropic'] } },
+          providerOptions: { gateway: { order: ['openai'] } },
           // Read the cache where the previous call ended, and write it at the end of this step's input.
           prepareStep: ({ initialMessages, responseMessages }) => {
             captured = responseMessages

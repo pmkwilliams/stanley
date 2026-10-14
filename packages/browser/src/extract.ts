@@ -64,8 +64,14 @@ export const EXTRACT = String.raw`(function (opts) {
     if (tag === 'INPUT' && /^(submit|button|reset)$/.test(el.type)) return clean(el.value) || el.type
     if (tag === 'INPUT' || tag === 'TEXTAREA') { if (clean(el.placeholder)) return clean(el.placeholder) }
     var t2 = textOf(el); if (t2) return t2.length > 80 ? t2.slice(0, 79) + '…' : t2
-    var img = el.querySelector('img[alt], svg[aria-label], [role=img][aria-label], [aria-label], [title]')
-    if (img) { var n = clean(img.getAttribute('alt') || img.getAttribute('aria-label') || img.getAttribute('title')); if (n) return n }
+    // Every named image inside, in order: a logo is often a decorative icon (alt="") then the wordmark.
+    var named = [], parts = []
+    el.querySelectorAll('img[alt], svg[aria-label], [role=img][aria-label], [aria-label], [title]').forEach(function (img) {
+      if (img.closest('[aria-hidden=true]') || named.some(function (p) { return p.contains(img) })) return
+      var n = clean(img.getAttribute('alt') || img.getAttribute('aria-label') || img.getAttribute('title'))
+      if (n) { named.push(img); parts.push(n) }
+    })
+    if (parts.length) return parts.join(' ')
     if (clean(el.title)) return clean(el.title)
     return clean(el.getAttribute('name'))
   }
