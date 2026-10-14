@@ -53,8 +53,13 @@ export interface World {
   appList(): AppEntry[]
   open(appId: string): Promise<StepResult>
   perform(node: AgentNode, args: ActionArgs): Promise<StepResult>
-  /** Opens a web page by its address, as typing it into a browser would. Without it, pages Stanley found can't be opened. */
-  openUrl?(url: string): Promise<StepResult>
+  /**
+   * Opens a web page by its address, as typing it into a browser would. A page kept open comes back
+   * as it was left, unless `fresh` asks for it as it is now. Without it, pages Stanley found can't be opened.
+   */
+  openUrl?(url: string, opts?: { fresh?: boolean }): Promise<StepResult>
+  /** Pages kept open, live, besides the one on screen: going back to one is instant, and it is as it was left. */
+  openPages?(): { url: string; title: string }[]
   /**
    * The address `openUrl` shows a file from the user's folder at, written as a path from its top
    * (or as a person would write it), when it is there and the screen can show it.

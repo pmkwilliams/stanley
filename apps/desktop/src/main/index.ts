@@ -1,9 +1,9 @@
 import { appendFileSync, existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { FULLSCREEN } from '@stanley/app-sdk'
+import { FULLSCREEN, type LivePage } from '@stanley/app-sdk'
 import { readSettings } from '@stanley/app-settings/core'
-import type { WebState } from '@stanley/app-web/core'
+import { shownTab, type WebState } from '@stanley/app-web/core'
 import { parallelWeb } from '@stanley/app-web/parallel'
 import { livePage } from '@stanley/browser'
 import { localFiles } from '@stanley/files'
@@ -17,7 +17,7 @@ import { apps } from './apps'
 import { DebugRecorder } from './debug'
 import { Drafts } from './drafts'
 import { filePath, SCHEME, serveFile, serveLib } from './folder-pages'
-import { WebviewPage } from './page'
+import { WebviewTabs } from './page'
 import { Shell } from './shell'
 import { fileStore } from './store'
 
@@ -97,11 +97,11 @@ function refreshHotwords() {
   transcriber.setHotwords([...new Set([agentName(), ...screenVocabulary(shell.screenNow(), shell.appList())])])
 }
 
-/** The Web app's page, live in the main window: Stanley reads it and works it like a person in a browser. */
 /** Pages Stanley is writing, drawn in the web view as they come. */
 const drafts = new Drafts()
-const webview = new WebviewPage({
-  navigated: () => pageNavigated(),
+/** The Web app's pages, live in the main window, a tab each: Stanley reads them and works them like a person in a browser. */
+const tabs = new WebviewTabs({
+  navigated: (tab) => pageNavigated(tab),
   fileOf: (url) => {
     const path = folder && filePath(url)
     return folder && path !== null && path !== undefined ? join(folder.root, path) : null
@@ -115,14 +115,24 @@ const webview = new WebviewPage({
     if (shell.layout.fullscreen && shell.layout.visible === 'web' && !locked) void shell.performIn('web', FULLSCREEN, {})
   },
 })
-const page = livePage(webview)
+/** Each tab's page as the Web app works it, made once per session (a page remembers which of its elements are fields). */
+let livePages = new Map<number, LivePage>()
+const pages = { tab: (id: number) => livePages.get(id) ?? livePages.set(id, livePage(tabs.page(id))).get(id)! }
 let navigatedTimer: ReturnType<typeof setTimeout> | undefined
 
+/** The tab the Web app shows, if it shows one. */
+const webTab = () => {
+  const state = shell.surfaces.get('web') as WebState | undefined
+  return state ? shownTab(state) : null
+}
+
 /**
- * The page changed by itself or by the user's hand (a link, a form, a new title): read it again.
- * A page the user went to themselves is in the conversation, as their own step.
+ * The page shown changed by itself or by the user's hand (a link, a form, a new title): read it
+ * again. A page the user went to themselves is in the conversation, as their own step. A tab out of
+ * sight is read when it is shown.
  */
-function pageNavigated() {
+function pageNavigated(tab: number) {
+  if (tab !== webTab()) return
   clearTimeout(navigatedTimer)
   navigatedTimer = setTimeout(async () => {
     const world = shell
@@ -200,8 +210,9 @@ function startSession() {
   sessionName = new Date().toISOString().replace(/[:.]/g, '-')
   sessionFile = join(sessionsDir, `${sessionName}.jsonl`)
   debug = new DebugRecorder(sessionsDir, sessionName, (e) => debugWin?.webContents.send('debug:event', e))
-  webview.reset()
-  const ctx = { env: process.env, fetch, store, page, get agentName() { return agentName() } }
+  tabs.reset()
+  livePages = new Map()
+  const ctx = { env: process.env, fetch, store, pages, get agentName() { return agentName() } }
   const world: Shell = new Shell(
     apps,
     ctx,
@@ -209,10 +220,11 @@ function startSession() {
       if (world !== shell) return
       sendSnapshot()
       refreshHotwords()
+      tabs.show(webTab())
     },
     // The agent locks the way the lock button does.
     () => world === shell && lock(),
-    { folder, pages: { draft: (path) => drafts.begin(path), look: () => webview.look() } },
+    { folder, pages: { draft: (path) => drafts.begin(path), look: () => tabs.look() } },
   )
   shell = world
   const self: Agent = new Agent({
@@ -580,7 +592,7 @@ function createWindow() {
     // For PDFs.
     prefs.plugins = true
   })
-  win.webContents.on('did-attach-webview', (_, wc) => webview.attach(wc))
+  win.webContents.on('did-attach-webview', (_, wc) => tabs.attach(wc))
   win.on('closed', () => {
     win = null
     debugWin?.close()

@@ -123,7 +123,7 @@ export class Shell implements World {
     if (!path || !pages || !/\.html?$/i.test(path)) return undefined
     const host = pages.draft(path)
     // Opened as it is written, not before: a page can't be read until some of it has come.
-    const opening = this.openUrl(fileUrl(path)).then(
+    const opening = this.openUrl(fileUrl(path), { fresh: true }).then(
       () => this.global('show'),
       () => host.cancel(),
     )
@@ -137,6 +137,12 @@ export class Shell implements World {
         })
       },
     }
+  }
+
+  /** Pages the app that shows web pages keeps open, live, besides the one shown. */
+  openPages(): { url: string; title: string }[] {
+    const app = this.apps.find((a) => a.openUrl)
+    return app?.openPages && this.surfaces.has(app.id) ? app.openPages(this.surfaces.get(app.id)) : []
   }
 
   /** How the web page on screen came out. */
@@ -184,12 +190,12 @@ export class Shell implements World {
   }
 
   /** Opens a web page in the app that shows them. */
-  async openUrl(url: string): Promise<StepResult> {
+  async openUrl(url: string, opts?: { fresh?: boolean }): Promise<StepResult> {
     const app = this.apps.find((a) => a.openUrl)
     if (!app) throw new Error('No app opens web pages')
     return this.serial(app.id, async () => {
       await this.ensure(app)
-      const result = await app.openUrl!(this.surfaces.get(app.id), url, this.ctx)
+      const result = await app.openUrl!(this.surfaces.get(app.id), url, this.ctx, opts)
       this.surfaces.set(app.id, result.state)
       this.navigate(app.id)
       this.onChange()

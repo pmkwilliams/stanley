@@ -11,6 +11,8 @@
   let { data, perform, agentName = DEFAULT_AGENT_NAME, fullscreen = false }: AppUiProps<WebState> = $props()
 
   let open = $derived(data.route.startsWith('page/') ? (data.pages[Number(data.route.slice(5))] ?? null) : null)
+  /** Every tab's view, the ready one too, in the order they were made: a view moved in the page would reload. */
+  let views = $derived([...data.tabs.map((t) => t.id), data.ready].sort((a, b) => a - b))
   /** A file of the user's is named by its path in their folder, a page by its site. */
   let file = $derived(open?.url.startsWith(FILES_URL) ? decodeURIComponent(open.url.slice(FILES_URL.length)) : null)
   let place = $derived(open ? (file ?? domainOf(open.url)) : '')
@@ -70,11 +72,12 @@
   {/if}
   <!--
     Edge to edge under the chrome, a hairline apart (a white page meets light glass); the bottom corners follow the window's (its radius less its 1px border), square in full screen.
-    With no page open it is out of sight behind the empty state, still full size, so a page loads at the size it is seen at.
+    A view per tab, stacked: the tab shown is the one in sight, and the others go on running out of sight, full size, as the ready one waits.
+    With no page open they are all behind the empty state, so a page loads at the size it is seen at.
   -->
-  <webview
-    class={['min-h-0 w-full flex-1 overflow-hidden border-t', !fullscreen && 'rounded-b-[calc(var(--radius-3xl)-1px)]', !open && 'invisible absolute inset-0']}
-    src="about:blank"
-    allowpopups
-  ></webview>
+  <div class={['relative min-h-0 w-full flex-1 overflow-hidden border-t', !fullscreen && 'rounded-b-[calc(var(--radius-3xl)-1px)]', !open && 'invisible absolute inset-0']}>
+    {#each views as id (id)}
+      <webview class={['absolute inset-0 size-full', id !== open?.tab && 'invisible']} src={`about:blank#tab=${id}`} allowpopups></webview>
+    {/each}
+  </div>
 </App.Root>

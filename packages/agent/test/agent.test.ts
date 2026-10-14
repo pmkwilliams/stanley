@@ -1285,6 +1285,24 @@ describe('Agent web lookups', () => {
     expect(await agent.context()).toContain('Stanley opened the page "George Washington Papers" (loc.gov/item/gw-papers).')
   })
 
+  it('offers the pages kept open, as well as those it found, but not pages of the user\'s files', async () => {
+    let criteria: Record<string, string | null> = {}
+    const { agent } = setup((req) => {
+      criteria = req.questions.step!.options
+      return { next: 'listen' }
+    })
+    const world = (agent as unknown as { world: World }).world
+    world.openPages = () => [
+      { url: 'https://shop.test/mug', title: 'Blue mug' },
+      { url: 'stanley://files/Pages/rain.html', title: 'Rain' },
+    ]
+    agent.utteranceStart()
+    agent.segment('back to the mug')
+    await settle()
+    expect(criteria['open page: Blue mug']).toBe('web page on shop.test, kept open')
+    expect(Object.keys(criteria).filter((n) => n.includes('Rain'))).toEqual([])
+  })
+
   it('gives thinking no web tools without web access', async () => {
     const { agent, thinker } = setup(() => ({ next: 'think' }))
     agent.utteranceStart()
