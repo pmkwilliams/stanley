@@ -1,4 +1,4 @@
-import { jsonSchema, parsePartialJson, stepCountIs, streamText, tool, type LanguageModel, type LanguageModelUsage, type ModelMessage, type Tool, type ToolResultPart, type ToolSet } from 'ai'
+import { generateText, jsonSchema, parsePartialJson, stepCountIs, streamText, tool, type LanguageModel, type LanguageModelUsage, type ModelMessage, type Tool, type ToolResultPart, type ToolSet } from 'ai'
 import { DEFAULT_AGENT_NAME } from '@stanley/app-sdk'
 import { filesPrompt, type PageSize } from './files'
 import { named } from './narrate'
@@ -69,6 +69,10 @@ export interface ThinkRequest {
   taskStatus?(taskId: string, toolCallId: string): Promise<string>
   /** Stops a background task. */
   taskCancel?(taskId: string, toolCallId: string): Promise<string>
+  /** Sends a working background task more to go on. */
+  taskSteer?(taskId: string, message: string, toolCallId: string): Promise<string>
+  /** Messages sent while the turn works, read before its next step: a background task's, from thinking (`task_steer`). Each comes once. */
+  inbox?(): ModelMessage[]
   maxSteps: number
   signal: AbortSignal
   /** Each piece of text as it is written, so it can be spoken before the turn is over. Not for single-step turns. */
@@ -111,6 +115,8 @@ export class PartialTurn extends Error {
 export interface Thinker {
   /** A turn on the history: with tools, or deciding one step (`single`). */
   run(req: ThinkRequest): Promise<ThinkResult>
+  /** A short text from `text` by `instructions`, on the quicker model, with no tools or history. */
+  quick?(instructions: string, text: string, signal?: AbortSignal): Promise<string>
 }
 
 /** What thinking writes, alone, when there is nothing worth saying. It is never spoken. */
@@ -126,9 +132,9 @@ You act through the \`act\` tool, which runs one of the listed options: open an 
 Everything you write as text is read aloud to the user by text-to-speech as you write it, and shown on screen. So:
 - Write it the way you would say it out loud: no markdown, lists or other formatting.
 - Keep it short: listening takes longer than reading. Give just the answer, without hedging.
-- Speak only when there's something worth hearing: an answer they asked for, a question, what's ready before something is sent, something that went wrong, or what you're starting on when it will take a while. The user can see the screen: never narrate it. Don't say where they are, what opened or what is showing ("you're in your inbox", "the calendar is up"), and don't read out or count what's on screen unless they asked.
+- Speak only when there's something worth hearing: an answer they asked for, a question, what's ready before something is sent, something that went wrong, or what you're starting on when the user would otherwise wait in silence. The user can see the screen: never narrate it. Don't say where they are, what opened or what is showing ("you're in your inbox", "the calendar is up"), and don't read out or count what's on screen unless they asked.
 - When there is nothing worth hearing, write only ${SILENT} after your last step: it is never spoken. A turn that only did what was asked ends this way: opening the page they asked for ends with ${SILENT}, never "The page is open" or "Done".
-- When what the user asked for will take a while (making a page, several lookups, going through their files), say in a few words what you'll do before your first step, as a person would ("Sure, I'll sketch that out"), then get on with it, so they aren't left waiting in silence. Say it once, not before each step, and never for something quick, like opening something, pressing a button or a single lookup.
+- When what the user asked for takes several steps before they hear or see anything (several lookups, going through their files), say in a few words what you'll do before your first step, as a person would ("Sure, I'll look into that"), then get on with it, so they aren't left waiting in silence. Say it once, not before each step, and never for something quick, like opening something, pressing a button or a single lookup.
 - When the answer to their question is on screen, say only the answer itself, as if you just knew it: never that it's on screen, which app or page it's in, or that you opened it. "Your flight lands at six", not "the email is open and it says your flight lands at six".
 
 How to act:
@@ -150,10 +156,12 @@ A question only needs an answer: look it up in the background and say it. When t
 
 /** For sessions that can start background tasks (see background.ts). */
 export const BACKGROUND = `## Background tasks
-\`delegate\` starts a task in the background, worked on by another agent while you go on with the user. Use it when what the user asks for will take a while (looking into something across many sources, going through many of their files, making a page while they get on with something else) or when they ask for it to be done in the background. Say in a few words what you've set going, then stop: don't wait for it. Do anything quick yourself.
+\`delegate\` hands a task to a more capable model, which works on it in the background while you carry on with the user. It is much better than you at coding, 3D modelling, visualisations, extended research and reasoning, and anything else that takes careful thought, and it checks what it makes before handing it back. Use it for anything you can't do immediately: making a page or anything else new, changing a page beyond a quick fix, looking into something across several sources, going through many of their files, or whatever they ask to have done in the background. Do yourself only what is done at once: working the screen, an answer you know or can get with a single lookup, a small fix to a page on screen.
+- To the user it is your own work, not anyone else's: say in a few words what you'll work on in the background, and that the two of you can keep going meanwhile, then stop: don't wait for it.
 - It knows nothing but what you write in \`task\`: put in everything it needs from the conversation (names, addresses, file paths, what the user said they want) and what to give back. It can search the web, read pages, and work on the user's files, including making web pages, but it has no screen and can't ask the user anything.
 - When it finishes, its result comes to you in a note. Tell the user, briefly, what it found or made, as you would your own answer. A page it made isn't on screen: put it there with \`open_page\` when the user wanted to see it. A result starting with "Needs:" is a question for the user: ask it.
-- Tasks still working are listed in a note each time you're needed. \`task_status\` says how one is going, only when the user asks; \`task_cancel\` stops one, when the user no longer wants it.`
+- Tasks still working are listed in a note each time you're needed. \`task_status\` says how one is going, only when the user asks; \`task_cancel\` stops one, when the user no longer wants it.
+- When the user changes or adds to what a working task is doing, tell it with \`task_steer\` rather than starting it again: it goes on from where it is. It knows only its brief and what you send, so say the change in full.`
 
 export const MISHEARD = `## Speech recognition
 The user's words come from speech recognition, which marks a word it was unsure of with (?).`
@@ -171,7 +179,7 @@ export function longDate(d: Date): string {
  * the size pages are shown at then (a change arrives as a note too).
  */
 export function instructions(opts: { web: boolean; files?: string; skills?: SkillScan; background?: boolean; today: Date; name?: string; page?: PageSize }): string {
-  const files = opts.files ? [filesPrompt(opts.files, opts.page), ...(opts.skills ? [skillsPrompt(opts.skills)] : [])] : []
+  const files = opts.files ? [filesPrompt(opts.files, opts.page, opts.background), ...(opts.skills ? [skillsPrompt(opts.skills)] : [])] : []
   const text = [THINKING_PROMPT, MISHEARD, ...(opts.web ? [WEB] : []), ...files, ...(opts.background ? [BACKGROUND] : []), `Today is ${longDate(opts.today)}.`].join('\n\n')
   return named(text, opts.name ?? DEFAULT_AGENT_NAME)
 }
@@ -358,7 +366,7 @@ function tools(req: ThinkRequest): ToolSet {
     ...(req.delegate && {
       delegate: tool({
         description:
-          'Start a task in the background, worked on by another agent while you go on with the user. It gets nothing but `task`: none of the conversation. Returns at once; its result comes to you in a note when it finishes.',
+          'Start a task that goes on in the background while you carry on with the user. It gets nothing but `task`: none of the conversation. Returns at once; its result comes to you in a note when it finishes.',
         inputSchema: jsonSchema<{ task: string; title: string }>({
           type: 'object',
           properties: {
@@ -386,6 +394,21 @@ function tools(req: ThinkRequest): ToolSet {
         description: 'Stop a background task the user no longer wants. What it already did stays done.',
         inputSchema: taskInput,
         execute: ({ taskId }: { taskId: string }, { toolCallId }: { toolCallId: string }) => req.taskCancel!(taskId, toolCallId),
+      }),
+    }),
+    ...(req.taskSteer && {
+      task_steer: tool({
+        description: 'Send a working background task what the user changed or added. It reads it before its next step and goes on from where it is. Returns at once.',
+        inputSchema: jsonSchema<{ taskId: string; message: string }>({
+          type: 'object',
+          properties: {
+            taskId: { type: 'string', description: "The task's id, as `delegate` gave it: task-1." },
+            message: { type: 'string', description: 'What changed or is added, in full, with every detail it needs from the conversation: it has none of it.' },
+          },
+          required: ['taskId', 'message'],
+          additionalProperties: false,
+        }),
+        execute: ({ taskId, message }: { taskId: string; message: string }, { toolCallId }: { toolCallId: string }) => req.taskSteer!(taskId, message, toolCallId),
       }),
     }),
   }
@@ -436,9 +459,24 @@ export function createThinker(opts: { model?: LanguageModel; singleModel?: Langu
   // One effort for the whole session: changing it between calls would lose the messages cache.
   const reasoning = opts.effort ?? 'provider-default'
   return {
+    async quick(instructions, text, signal) {
+      const result = await generateText({ model: singleModel, abortSignal: signal, instructions, prompt: text, providerOptions: { gateway: { order: order(singleModel) } } })
+      return result.text.trim()
+    },
     async run(req) {
       // The response messages of the steps that finished, as the SDK sent them to the next step.
       let captured: ModelMessage[] = []
+      // Messages from the inbox, each after the response messages there were when it was read.
+      const arrived: { at: number; message: ModelMessage }[] = []
+      const withArrived = (response: ModelMessage[]) => {
+        if (!arrived.length) return response
+        const out: ModelMessage[] = []
+        for (let i = 0; i <= response.length; i++) {
+          out.push(...arrived.filter((a) => a.at === i).map((a) => a.message))
+          if (i < response.length) out.push(response[i]!)
+        }
+        return out
+      }
       try {
         const result = streamText({
           model: req.single ? singleModel : model,
@@ -452,8 +490,9 @@ export function createThinker(opts: { model?: LanguageModel; singleModel?: Langu
           providerOptions: { gateway: { order: order(req.single ? singleModel : model) } },
           // Read the cache where the previous call ended, and write it at the end of this step's input.
           prepareStep: ({ initialMessages, responseMessages }) => {
-            captured = responseMessages
-            const all = [...initialMessages, ...responseMessages]
+            for (const message of req.inbox?.() ?? []) arrived.push({ at: responseMessages.length, message })
+            captured = withArrived(responseMessages)
+            const all = [...initialMessages, ...captured]
             return { messages: marked(all, [req.cacheAt, all.length - 1]) }
           },
         })
@@ -493,7 +532,7 @@ export function createThinker(opts: { model?: LanguageModel; singleModel?: Langu
           speak()
         }
         req.signal.throwIfAborted()
-        const messages = await result.responseMessages
+        const messages = withArrived(await result.responseMessages)
         const steps = await result.steps
         const said = unsilenced(text, true).replace(/ {2,}/g, ' ').trim()
         return { text: said, messages, sent: captured.length, calls: unrunCalls(messages), usage: await result.totalUsage, lastInputTokens: steps.at(-1)?.usage.inputTokens }

@@ -3,13 +3,14 @@
   import MiniPlayer from '@stanley/app-music/mini'
   import type { MusicState } from '@stanley/app-music/core'
   import { fade } from 'svelte/transition'
+  import * as Tooltip from '@stanley/app-ui/components/tooltip'
   import { clock, time, weekday } from './clock.svelte'
   import CometTrail from './CometTrail.svelte'
 
   let { snapshot, onlock }: { snapshot: Snapshot | null; onlock: () => void } = $props()
 
   const music = $derived(snapshot?.surfaces.music as MusicState | undefined)
-  /** What the background-work icon says it is, for its tooltip and screen readers. */
+  /** What the background-work icon says it is, for screen readers. */
   const working = $derived(`Working in the background: ${snapshot?.tasks.map((t) => t.title).join(', ') ?? ''}`)
 </script>
 
@@ -61,10 +62,25 @@
           {/if}
         </button>
       </span>
-      <!-- Working in the background: there only while a background task is. -->
+      <!-- Working in the background: there only while a background task is. Hovering it says what each was asked to do, in a sentence. -->
       {#if snapshot?.tasks.length}
         <span class="grid size-5 place-items-center" transition:fade={{ duration: 180 }}>
-          <CometTrail label={working} />
+          <Tooltip.Provider delayDuration={150}>
+            <Tooltip.Root>
+              <Tooltip.Trigger>
+                {#snippet child({ props })}
+                  <span {...props} class="grid size-5 place-items-center [-webkit-app-region:no-drag]"><CometTrail label={working} /></span>
+                {/snippet}
+              </Tooltip.Trigger>
+              <!-- Glass like the web view's window, 10 below this one as they are 10 apart: the icon sits 10 in from its bottom. -->
+              <Tooltip.Content side="bottom" sideOffset={20} class="flex max-w-72 flex-col gap-1 text-center">
+                <p class="text-xs font-medium tracking-wide text-muted-foreground uppercase">{snapshot.tasks.length > 1 ? 'Background tasks' : 'Background task'}</p>
+                {#each snapshot.tasks as task (task.id)}
+                  <p>{task.gist ?? task.title}</p>
+                {/each}
+              </Tooltip.Content>
+            </Tooltip.Root>
+          </Tooltip.Provider>
         </span>
       {/if}
       <span class="grid size-5 place-items-center" aria-label="Wi-Fi">

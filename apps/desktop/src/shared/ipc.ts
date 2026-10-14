@@ -38,8 +38,8 @@ export interface Snapshot {
   talking: boolean
   /** Stanley lowered its voice: the user may be cutting in. */
   ducked: boolean
-  /** Background tasks working now (see `delegate`): the status bar shows one is while any is. */
-  tasks: { id: string; title: string }[]
+  /** Background tasks working now (see `delegate`), with their briefs in a sentence once they have one: the status bar shows one is while any is. */
+  tasks: { id: string; title: string; gist?: string }[]
   stt: 'ready' | 'loading' | 'missing-models' | 'error'
   /** Stanley's voice. Without it, what it says is only shown. */
   tts: 'ready' | 'loading' | 'missing-models' | 'error'

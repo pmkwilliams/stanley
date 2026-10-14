@@ -3,7 +3,7 @@
    * "Comet Trail" from Dot Matrix (https://dotmatrix.zzzzshawn.cloud, dotm-3x3-14), ported to Svelte
    * for the status bar; used under its license, which allows use in a product but not redistributing it
    * as a component. A bright dot with a two-dot tail runs clockwise around a 3×3 grid while the centre
-   * softly breathes. 6px dots 1px apart make it 20px, the size of the bar's icons.
+   * softly breathes. 5px dots 1px apart make it 17px, a little under the bar's 20px icons.
    */
   import { onMount } from 'svelte'
 
@@ -50,8 +50,8 @@
   })
 </script>
 
-<span class="grid size-5 grid-cols-3 gap-px" role="status" aria-label={label} title={label}>
+<span class="grid grid-cols-3 gap-px" role="status" aria-label={label}>
   {#each { length: 9 } as _, cell (cell)}
-    <span class="size-1.5 rounded-full bg-current" style:opacity={opacity(cell)}></span>
+    <span class="size-1.25 rounded-full bg-current" style:opacity={opacity(cell)}></span>
   {/each}
 </span>

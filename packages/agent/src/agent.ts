@@ -3,7 +3,7 @@ import type { Answer, DecisionClient, MultiChoiceResult, Question } from '@stanl
 import type { JSONValue } from 'ai'
 import { defaultConfig, type AgentConfig, type DeciderProfile } from './config'
 import type { AgentDebugEvent, GateRule, RequestResult, TickReason } from './debug'
-import { Background, describe, TASK_DONE, TASK_EFFORT, TASK_MODEL, taskInstructions, type BackgroundTask, type TaskRecord } from './background'
+import { Background, describe, GIST_PROMPT, TASK_DONE, TASK_EFFORT, TASK_MODEL, taskInstructions, type BackgroundTask, type TaskRecord } from './background'
 import { WORKING, WORKING_INSTRUCTIONS, WORKING_PROMPT } from './barge'
 import { createEffectJudge, type EffectJudge, type EffectVerdict } from './effects'
 import { bashText, editText, JEV_FILES, knownFiles, listCommand, pageResized, PAGE_SIZE, pageSizeText, readCommand, topFiles, type BashResult, type FileMeta, type FileTools, type KnownFile, type PageSize } from './files'
@@ -88,8 +88,8 @@ export interface AgentEvents {
   hush(id: number): void
   /** Stanley said something: a whole reply, once complete. */
   said(text: string): void
-  /** The background tasks working changed: these are working now (none, once the last one ends). */
-  tasks(working: { id: string; title: string }[]): void
+  /** The background tasks working changed: these are working now (none, once the last one ends), with their briefs in a sentence once they have one. */
+  tasks(working: { id: string; title: string; gist?: string }[]): void
   /**
    * The agent judged the user finished, and ended the utterance before the silence backstop.
    * The host stops treating later speech as part of it (`Transcriber.endUtterance`).
@@ -330,11 +330,13 @@ export class Agent {
         web: deps.web,
         files: deps.files,
         preview: deps.world.preview?.bind(deps.world),
+        // The quicker model thinking types fields with puts each brief in a sentence for the status bar.
+        gist: deps.thinker.quick && ((task, signal) => deps.thinker.quick!(GIST_PROMPT, task, signal)),
         instructions: () => taskInstructions({ web: !!this.web, files: this.files?.root, page: this.pageSize(), today: this.started, name: this.name() }),
         max: this.config.background.max,
         steps: this.config.background.steps,
         ended: (task) => this.taskEnded(task),
-        changed: () => this.events.tasks?.(this.background!.working().map(({ id, title }) => ({ id, title }))),
+        changed: () => this.events.tasks?.(this.background!.working().map(({ id, title, gist }) => ({ id, title, gist }))),
         debug: (event) => this.events.debug?.(event),
         sink: deps.taskSink,
       })
@@ -1356,6 +1358,7 @@ export class Agent {
           delegate: (task: string, title: string, toolCallId: string) => (steps++, this.delegate(id, task, title, toolCallId, signal, ran)),
           taskStatus: (taskId: string, toolCallId: string) => (steps++, this.taskTool(id, 'task_status', taskId, toolCallId, signal, ran)),
           taskCancel: (taskId: string, toolCallId: string) => (steps++, this.taskTool(id, 'task_cancel', taskId, toolCallId, signal, ran)),
+          taskSteer: (taskId: string, message: string, toolCallId: string) => (steps++, this.taskTool(id, 'task_steer', taskId, toolCallId, signal, ran, message)),
         }),
       })
       const { final, toolCallIds } = this.history.appendTurn(result.messages, result.sent, ran, id)
@@ -1647,7 +1650,7 @@ export class Agent {
   /** Why thinking can't write `path` now: a background task still working wrote it, and may write it again. */
   private heldBy(path: string): string | null {
     const task = this.background?.holding(path, this.files?.root)
-    return task ? `Background task ${task.id}, "${task.title}", is working on ${path}: wait for it to finish, or stop it with task_cancel first.` : null
+    return task ? `Background task ${task.id}, "${task.title}", is working on ${path}: wait for it to finish, send it the change with task_steer, or stop it with task_cancel first.` : null
   }
 
   /** Thinking hands work to a background task: it starts at once, and its result comes in a note (`taskEnded`). */
@@ -1667,11 +1670,11 @@ export class Agent {
     return text
   }
 
-  /** `task_status` or `task_cancel`. */
-  private async taskTool(id: number, tool: 'task_status' | 'task_cancel', taskId: string, toolCallId: string, signal: AbortSignal, ran: Map<string, Ran>): Promise<string> {
+  /** `task_status`, `task_cancel`, or `task_steer` with its `message`. */
+  private async taskTool(id: number, tool: 'task_status' | 'task_cancel' | 'task_steer', taskId: string, toolCallId: string, signal: AbortSignal, ran: Map<string, Ran>, message = ''): Promise<string> {
     signal.throwIfAborted()
-    const text = tool === 'task_status' ? this.background!.status(taskId) : this.background!.cancel(taskId)
-    ran.set(toolCallId, { tool, input: { taskId }, output: { type: 'text', value: text }, result: { toolCallId } })
+    const text = tool === 'task_status' ? this.background!.status(taskId) : tool === 'task_cancel' ? this.background!.cancel(taskId) : this.background!.steer(taskId, message)
+    ran.set(toolCallId, { tool, input: tool === 'task_steer' ? { taskId, message } : { taskId }, output: { type: 'text', value: text }, result: { toolCallId } })
     this.events.debug?.({ type: 'think-step', tickId: id, option: tool, text: taskId, result: text })
     return text
   }

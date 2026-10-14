@@ -12,13 +12,17 @@ import type { PagePreview, PreviewOptions, World } from './world'
  * Background tasks: work thinking hands to another agent (`delegate`) so it can go on with the
  * user. A task starts from its brief alone, none of the conversation, and has no screen: it looks
  * things up, works on the user's files, and draws the pages it makes out of sight to check them.
- * It never talks to the user. When it ends by itself, its result goes to thinking in a note
+ * It never talks to the user, but thinking can send it more as it works (`steer`). When it ends by itself, its result goes to thinking in a note
  * (`Agent.taskEnded`), which tells the user once they and Stanley are both quiet.
  */
+/** How what thinking sends a working task (`task_steer`) starts. */
+export const STEERED = 'From Stanley:'
+
 export const TASK_PROMPT = `# Background task
 You work in the background for Stanley, a voice assistant on the user's computer. Stanley gave you one task, in the message below, and goes on talking with the user while you work. No one sees or hears anything you write until you finish: then your last message is the result, which Stanley reads and tells the user about.
 
 - You have no screen: you can't open apps, press anything or show the user anything. Stanley shows what you made, when the user wants to see it.
+- Stanley may send you more while you work, in a message starting "${STEERED}": what the user changed or added. Go on from where you are, taking it in, and redo only what it changes.
 - Work the task through on your own. You can't ask the user anything while you work. When something only they can decide stops you (a choice between things they care about, or something that would send, buy, delete or overwrite what they didn't ask for), stop there and say what you need, starting with "Needs:".
 - Finish with the result, written for Stanley, not the user: what you found, with the facts, numbers and sources an answer needs, or what you made and its path. Keep it short, but complete enough that Stanley can answer a follow-up without you.
 - Do the task, then stop.`
@@ -26,6 +30,9 @@ You work in the background for Stanley, a voice assistant on the user's computer
 /** Background tasks always run on Claude Opus 5.5 at high effort, whatever thinking runs on. */
 export const TASK_MODEL = 'anthropic/claude-opus-5.5'
 export const TASK_EFFORT: ThinkEffort = 'high'
+
+/** How a task's brief is put in a sentence for the status bar (`BackgroundTask.gist`). */
+export const GIST_PROMPT = `The message is a brief for a task an assistant is working on in the background. Say in one short sentence, at most 12 words, what it was asked to do, for the user to read in a status bar: start with the verb, as in "Making a chart of this year's rainfall in Oslo". Write only the sentence, with no full stop.`
 
 /** What thinking is told when it is called to tell the user what background tasks found or made. */
 export const TASK_DONE = `A background task ended: its result is in the note above. Tell the user, in a sentence or two, what it found or made, as your own answer. If it made a page the user wanted to see, put it on screen with open_page. If its result starts with "Needs:", ask the user what it needs. If it failed, say so briefly.`
@@ -46,6 +53,8 @@ export interface BackgroundTask {
   title: string
   /** The brief: all the task knows. */
   task: string
+  /** The brief in a sentence, for the user, once it has been put in one (`GIST_PROMPT`). */
+  gist?: string
   state: TaskMeta['state']
   /** What it is doing right now: "searching the web for …". */
   doing: string
@@ -75,6 +84,8 @@ export interface BackgroundDeps {
   preview?: World['preview']
   /** The tasks' instructions (`taskInstructions`). */
   instructions: () => string
+  /** Puts a brief in a sentence (`GIST_PROMPT`). Without it, tasks have only their titles. */
+  gist?(task: string, signal: AbortSignal): Promise<string>
   /** Tasks working at once, at most. */
   max: number
   /** Tool steps a task takes, at most. */
@@ -95,6 +106,8 @@ const errorText = (err: unknown) => (err instanceof Error ? err.message : String
 export class Background {
   private tasks: BackgroundTask[] = []
   private controllers = new Map<string, AbortController>()
+  /** What thinking sent working tasks that they haven't read yet. */
+  private inboxes = new Map<string, ModelMessage[]>()
   private count = 0
 
   constructor(private deps: BackgroundDeps) {}
@@ -108,6 +121,7 @@ export class Background {
     const controller = new AbortController()
     this.controllers.set(t.id, controller)
     void this.run(t, controller.signal)
+    void this.summarize(t, controller.signal)
     this.deps.changed?.()
     return t
   }
@@ -153,6 +167,18 @@ export class Background {
     return `Stopped ${t.id}, "${t.title}".${t.wrote.length ? ` What it wrote stays: ${t.wrote.join(', ')}.` : ''}`
   }
 
+  /** Sends a working task `message`, which it reads before its next step. One that has ended says how. */
+  steer(id: string, message: string): string {
+    const t = this.get(id)
+    if (!t) return this.unknown(id)
+    if (t.state !== 'working') return `${this.status(id)}\nIt has ended, so it can't take more: start a new task for what's left.`
+    const inbox = this.inboxes.get(t.id) ?? []
+    inbox.push({ role: 'user', content: `${STEERED} ${message.trim()}` })
+    this.inboxes.set(t.id, inbox)
+    this.deps.debug?.({ type: 'task', action: 'steer', taskId: t.id, title: t.title, text: message })
+    return `Sent to ${t.id}, "${t.title}": it reads it before its next step.`
+  }
+
   /** Stops every task still working: the session is ending. */
   cancelAll(): void {
     for (const t of this.working()) this.cancel(t.id)
@@ -162,6 +188,19 @@ export class Background {
   holding(path: string, root?: string): BackgroundTask | undefined {
     const norm = (p: string) => (root && p.startsWith(`${root}/`) ? p.slice(root.length + 1) : p).replace(/^(\.\/)+/, '')
     return this.working().find((t) => t.wrote.some((w) => norm(w) === norm(path)))
+  }
+
+  /** Puts a working task's brief in a sentence: `working()` changes once it has one. */
+  private async summarize(t: BackgroundTask, signal: AbortSignal): Promise<void> {
+    if (!this.deps.gist) return
+    try {
+      const gist = (await this.deps.gist(t.task, signal)).trim()
+      if (!gist || t.state !== 'working') return
+      t.gist = gist
+      this.deps.changed?.()
+    } catch (err) {
+      if (!signal.aborted) this.deps.debug?.({ type: 'task', action: 'step', taskId: t.id, title: t.title, tool: 'gist', text: t.task, result: `failed: ${errorText(err)}` })
+    }
   }
 
   private unknown(id: string): string {
@@ -188,13 +227,19 @@ export class Background {
         },
       )
     }
-    let messages: ModelMessage[] = []
-    try {
-      const result = await this.deps.thinker.run({
+    const brief: ModelMessage = { role: 'user', content: t.task }
+    const inbox = () => {
+      const sent = this.inboxes.get(t.id) ?? []
+      this.inboxes.delete(t.id)
+      return sent
+    }
+    const ask = (messages: ModelMessage[]) =>
+      this.deps.thinker.run({
         instructions,
-        messages: [{ role: 'user', content: t.task }],
+        messages,
         maxSteps: this.deps.steps,
         signal,
+        inbox,
         ...(web && {
           search: (query: string) =>
             step(`searching the web for "${query}".`, 'search', query, async (): Promise<SearchOutput> => ({ query, results: await web.search(query, signal) }), (o) => `${o.results.length} found`),
@@ -258,13 +303,23 @@ export class Background {
               }, (o) => o.text),
           }),
       })
+    // All it did, after its brief.
+    let messages: ModelMessage[] = []
+    try {
+      let result = await ask([brief])
       messages = result.messages
+      // Sent more after its last step: it goes on with it.
+      while (t.state === 'working' && this.inboxes.get(t.id)?.length) {
+        result = await ask([brief, ...messages])
+        messages = [...messages, ...result.messages]
+      }
       if (t.state === 'working') this.end(t, 'done', finalText(result.messages) || result.text || `It stopped after ${t.steps} steps without saying what it found or made.`)
     } catch (err) {
-      messages = err instanceof PartialTurn ? err.messages : []
+      if (err instanceof PartialTurn) messages = [...messages, ...err.messages]
       if (t.state === 'working') this.end(t, 'failed', errorText(err instanceof PartialTurn ? err.cause : err))
     } finally {
       this.controllers.delete(t.id)
+      this.inboxes.delete(t.id)
       this.deps.sink?.({ type: 'end', id: t.id, state: t.state, summary: t.summary ?? '', messages })
     }
   }

@@ -80,8 +80,22 @@ function pageLook(page: PageSize, changes = ''): string {
 - A page can't reach the internet. Mermaid, Three.js, D3 and Chart.js load from their usual addresses (https://cdn.jsdelivr.net/npm/mermaid, …/three, …/d3, …/chart.js); a page can fetch the user's files by their path from the folder's top, starting with / (/budget.csv). Write everything else into the page itself.`
 }
 
-/** For thinking, when the session has the user's files: pages are shown at `page`. */
-export function filesPrompt(root: string, page: PageSize = PAGE_SIZE): string {
+/**
+ * For thinking, when the session has the user's files: pages are shown at `page`. With
+ * `background`, new pages are made by background tasks (`delegate`), and thinking only changes them.
+ */
+export function filesPrompt(root: string, page: PageSize = PAGE_SIZE, background = false): string {
+  const making = background
+    ? `When the user asks you to make something to look at (a diagram, a chart, a timeline, a 3D model, a small app), it is a web page: one .html file in ${SCRATCH_DIR}/, named for what it shows. Making one is never immediate, so hand it to a background task with \`delegate\`: say in the task what the page should show and its path, and once it is done, put it on screen with \`open_page\`. Anything else they ask about is answered as before: from the screen, their files or a lookup.`
+    : `When the user asks you to make something to look at (a diagram, a chart, a timeline, a small app), make it a web page: one .html file in ${SCRATCH_DIR}/, named for what it shows, written with \`write_file\`. Anything else they ask about is answered as before: from the screen, their files or a lookup.`
+  const changing = background
+    ? `- To change a page the user is looking at, use \`edit_file\` on just the part that changes: the page reloads where they were looking. A change that is more than a quick fix (something new on it, a different look, a rework) goes to a background task instead, with the page's path.
+- A page you change comes on screen as it is written. Then you get what its console printed (errors, warnings, and anything it logs) and a picture of it. If something is broken (an error, something missing, overlapping or cut off), fix that part with \`edit_file\`; otherwise leave it as it is: the user is waiting.`
+    : `- It comes on screen as you write it, and is drawn as it comes. Then you get what its console printed (errors, warnings, and anything it logs) and a picture of it. If something is broken (an error, something missing, overlapping or cut off), fix that part with \`edit_file\`; otherwise leave it as it is: the user is waiting.
+- To change a page the user is looking at, use \`edit_file\` on just the part that changes: the page reloads where they were looking. Write the whole page again only when most of it changes.`
+  const heard = background
+    ? `- Pages are seen, not heard: once one is on screen, never describe it out loud, and say nothing more about it.`
+    : `- Pages are seen, not heard. The user waits while one is written, so it starts with a few words about what you'll make; once it is on screen, never describe it out loud, and say nothing more about it.`
   return `## Files
 The user's files are in a folder on their computer, ${root}. \`bash\` runs a command there, in the background: the folder is your working directory and your home, and the screen doesn't change. The user can't see what you do there, so say what you found or did, in spoken sentences, not the file's formatting.
 - Look before you change anything. Only overwrite, move or delete the user's files when they asked for that; making new files is fine.
@@ -92,12 +106,11 @@ The user's files are in a folder on their computer, ${root}. \`bash\` runs a com
 - What is in the folder, two levels down, comes in <files> the first time you're needed, and again when it changes. Look deeper with \`bash\`.
 
 ## Pages
-When the user asks you to make something to look at (a diagram, a chart, a timeline, a small app), make it a web page: one .html file in ${SCRATCH_DIR}/, named for what it shows, written with \`write_file\`. Anything else they ask about is answered as before: from the screen, their files or a lookup.
+${making}
 - ${SCRATCH_DIR}/ is scratch: it is emptied when Stanley restarts and isn't kept in the folder's history. A page the user wants to keep goes in Pages/: write it there if they asked for one to keep, or move it there with \`mv\` when they say so.
-- It comes on screen as you write it, and is drawn as it comes. Then you get what its console printed (errors, warnings, and anything it logs) and a picture of it. If something is broken (an error, something missing, overlapping or cut off), fix that part with \`edit_file\`; otherwise leave it as it is: the user is waiting.
-- To change a page the user is looking at, use \`edit_file\` on just the part that changes: the page reloads where they were looking. Write the whole page again only when most of it changes.
+${changing}
 ${pageLook(page, ' (a note says when that changes)')}
-- Pages are seen, not heard. Making one takes a while, so it starts with a few words about what you'll make; once it is on screen, never describe it out loud, and say nothing more about it.`
+${heard}`
 }
 
 /** For a background task (see background.ts), when the session has the user's files: as thinking's, without a screen. Pages are shown at `page`. */

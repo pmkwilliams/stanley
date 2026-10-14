@@ -84,6 +84,7 @@
       const head = `${ev.taskId} "${ev.title}"`
       if (ev.action === 'start') return { who: 'task', text: `${head} started: ${ev.text}`, tone: 'strong' }
       if (ev.action === 'step') return { who: 'task', text: `${head} · ${ev.tool} ${ev.text}${ev.result ? ` → ${ev.result.split('\n')[0]}` : ''}`, tone: 'muted' }
+      if (ev.action === 'steer') return { who: 'task', text: `${head} steered: ${ev.text}` }
       if (ev.action === 'end') return { who: 'task', text: `${head} ${ev.state === 'failed' ? 'failed' : 'finished'}: ${ev.text}`, tone: ev.state === 'failed' ? 'bad' : 'strong' }
       if (ev.action === 'cancel') return { who: 'task', text: `${head} stopped` }
       return { who: 'task', text: `${head}: telling the user (tick #${ev.tickId})` }

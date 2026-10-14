@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
+import type { ModelMessage } from 'ai'
 import type { AgentNode } from '@stanley/app-sdk'
 import type { ChoiceRequest, ChoiceResult, DecideRequest, DecisionClient, MultiChoiceResult } from '@stanley/jev'
 import { Agent, type AgentDeps, type AgentStatus, type TickReport } from '../src/agent'
-import type { TaskRecord } from '../src/background'
+import { GIST_PROMPT, type TaskRecord } from '../src/background'
 import { defaultConfig } from '../src/config'
 import { validate } from '../src/conversation'
 import type { AgentDebugEvent } from '../src/debug'
@@ -106,6 +107,7 @@ interface FakeThinking {
   single?: (req: ThinkRequest) => Promise<ThinkResult>
   write?: (req: ThinkRequest) => Promise<Writing>
   confirm?: (req: ThinkRequest) => Promise<{ press: boolean; say: string }>
+  quick?: Thinker['quick']
 }
 
 /** Types what the user said, presses when asked, and otherwise says nothing and does nothing. Tests override parts. */
@@ -117,6 +119,7 @@ function fakeThinker(over: FakeThinking = {}): Thinker & { runs: ThinkRequest[];
     runs,
     writes,
     confirms,
+    ...(over.quick && { quick: over.quick }),
     async run(req) {
       const option = req.single?.option ?? ''
       if (req.single && over.single) return over.single(req)
@@ -1859,7 +1862,7 @@ describe('Agent skills', () => {
 
 describe('Agent background tasks', () => {
   /** A folder that keeps what is written to it, a world that can draw its pages out of sight, and quick delivery. */
-  function backgroundSetup(run: (req: ThinkRequest, main: boolean) => Promise<{ text: string } | ThinkResult>, script: Script = () => ({ next: 'think' })) {
+  function backgroundSetup(run: (req: ThinkRequest, main: boolean) => Promise<{ text: string } | ThinkResult>, script: Script = () => ({ next: 'think' }), quick?: Thinker['quick']) {
     const stored = new Map<string, string>()
     const files: FileTools = {
       root: '~/Wren',
@@ -1879,17 +1882,23 @@ describe('Agent background tasks', () => {
     }
     const records: TaskRecord[] = []
     const working: string[][] = []
+    const gists: (string | undefined)[][] = []
     // The main thinking turns have a screen to act on; a background task has none. Both go through
     // the same stand-in, so a test sees every run.
     let env!: ReturnType<typeof setup>
     const taskThinker: Thinker = { run: (req) => env.thinker.run(req) }
     env = setup(script, {
-      thinker: { run: (req) => run(req, !!req.act) },
+      thinker: { run: (req) => run(req, !!req.act), quick },
       deps: { world, files, taskThinker, config: { ...defaultConfig, background: { ...defaultConfig.background, quietMs: 5 } }, taskSink: (r) => records.push(r) },
-      events: { tasks: (tasks) => working.push(tasks.map((t) => t.title)) },
+      events: {
+        tasks: (tasks) => {
+          working.push(tasks.map((t) => t.title))
+          gists.push(tasks.map((t) => t.gist))
+        },
+      },
     })
     const mainRuns = () => env.thinker.runs.filter((r) => r.act)
-    return { ...env, stored, previews, records, working, mainRuns }
+    return { ...env, stored, previews, records, working, gists, mainRuns }
   }
 
   const ask = async (agent: Agent, words: string) => {
@@ -1960,6 +1969,35 @@ describe('Agent background tasks', () => {
     expect(working).toEqual([['rainfall chart'], []])
   })
 
+  it("puts a working task's brief in a sentence for the status bar, with the quicker model", async () => {
+    const finish = gate()
+    const asked: { instructions: string; text: string }[] = []
+    let started = false
+    const { agent, gists } = backgroundSetup(
+      async (req, main) => {
+        if (main && !started) {
+          started = true
+          await req.delegate!('Make a chart of monthly rainfall in Denver for 2025 as .stanley/scratch/rain.html.', 'rainfall chart', 'd1')
+          return { text: '' }
+        }
+        if (main) return { text: '' }
+        await finish.opened
+        return { text: 'Wrote it.' }
+      },
+      undefined,
+      async (instructions, text) => {
+        asked.push({ instructions, text })
+        return " Making a chart of Denver's 2025 rainfall "
+      },
+    )
+    await ask(agent, 'make me a chart of rainfall in Denver in the background')
+    expect(asked).toEqual([{ instructions: GIST_PROMPT, text: 'Make a chart of monthly rainfall in Denver for 2025 as .stanley/scratch/rain.html.' }])
+    expect(gists).toEqual([[undefined], ["Making a chart of Denver's 2025 rainfall"]])
+    finish.open()
+    await settle()
+    expect(gists.at(-1)).toEqual([])
+  })
+
   it('holds a result while the user is mid-turn, and a whole turn that reads it tells it, once', async () => {
     const finish = gate()
     const { agent, mainRuns } = backgroundSetup(async (req, main) => {
@@ -2016,6 +2054,57 @@ describe('Agent background tasks', () => {
     expect(await agent.context()).not.toContain('finished')
   })
 
+  it('steers a working task: it reads what thinking sent before its next step, or goes on with it after its last', async () => {
+    const step = gate()
+    const last = gate()
+    const replies: string[] = []
+    const taskRuns: ThinkRequest[] = []
+    const read: ModelMessage[][] = []
+    let turn = 0
+    const { agent, mainRuns, records, debug } = backgroundSetup(async (req, main) => {
+      if (main) {
+        turn++
+        if (turn === 1) await req.delegate!('Make a chart of monthly rainfall in Denver for 2025 as .stanley/scratch/rain.html.', 'rainfall chart', 'd1')
+        if (turn === 2) replies.push(await req.taskSteer!('task-1', 'Show it in inches, not millimetres.', 's1'))
+        if (turn === 3) replies.push(await req.taskSteer!('task-1', 'Make the bars blue.', 's2'))
+        return { text: '' }
+      }
+      taskRuns.push(req)
+      // Its first run takes a step, then finishes before the second message comes; its second reads it first.
+      if (taskRuns.length === 1) {
+        await step.opened
+        read.push(req.inbox!())
+        await last.opened
+        return { text: 'Wrote it, in inches.' }
+      }
+      read.push(req.inbox!())
+      return { text: 'Wrote it, in inches, with blue bars.' }
+    })
+    await ask(agent, 'make me a chart of rainfall in Denver in the background')
+    await ask(agent, 'in inches please')
+    expect(replies[0]).toBe('Sent to task-1, "rainfall chart": it reads it before its next step.')
+    expect(mainRuns()[1]!.instructions).toContain('task_steer')
+    step.open()
+    await settle()
+    expect(read[0]).toEqual([{ role: 'user', content: 'From Stanley: Show it in inches, not millimetres.' }])
+    await ask(agent, 'and blue bars')
+    last.open()
+    await settle()
+    await settle()
+    // Sent after its last step: it goes on from all it did, and reads it then.
+    expect(taskRuns).toHaveLength(2)
+    expect(taskRuns[1]!.messages.map((m) => m.role)).toEqual(['user', 'assistant'])
+    expect(read[1]).toEqual([{ role: 'user', content: 'From Stanley: Make the bars blue.' }])
+    expect(await agent.context()).toContain('Wren\'s background task "rainfall chart" finished: Wrote it, in inches, with blue bars.')
+    expect(debug.filter((e) => e.type === 'task').map((e) => (e as { action: string }).action)).toEqual(['start', 'steer', 'steer', 'end', 'deliver'])
+    expect((records[1] as Extract<TaskRecord, { type: 'end' }>).messages.map((m) => m.role)).toEqual(['assistant', 'assistant'])
+
+    // An ended task can't be steered.
+    await ask(agent, 'and add a title')
+    expect(mainRuns()).toHaveLength(5)
+    expect(await mainRuns()[4]!.taskSteer!('task-1', 'Add a title.', 's3')).toBe('task-1, "rainfall chart" finished:\nWrote it, in inches, with blue bars.\nIt has ended, so it can\'t take more: start a new task for what\'s left.')
+  })
+
   it("won't let thinking write a file a working task wrote, and lets it once the task is done", async () => {
     const finish = gate()
     const outputs: FileOutput[] = []
@@ -2034,7 +2123,7 @@ describe('Agent background tasks', () => {
     })
     await ask(agent, 'make a tides page in the background')
     await ask(agent, 'actually write it yourself')
-    expect(outputs[0]!.text).toBe('Background task task-1, "tides page", is working on ~/Wren/.stanley/scratch/tides.html: wait for it to finish, or stop it with task_cancel first.')
+    expect(outputs[0]!.text).toBe('Background task task-1, "tides page", is working on ~/Wren/.stanley/scratch/tides.html: wait for it to finish, send it the change with task_steer, or stop it with task_cancel first.')
     finish.open()
     await settle()
     await settle()

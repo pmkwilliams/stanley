@@ -106,7 +106,7 @@ export type AgentDebugEvent =
     }
   /**
    * A background task (see background.ts): started with its brief (`text`), a tool step it took,
-   * how it ended (`text` is its result), stopped, or its result told to the user once they and
+   * what thinking sent it as it worked (`steer`), how it ended (`text` is its result), stopped, or its result told to the user once they and
    * Stanley were quiet (`deliver`).
    */
-  | { type: 'task'; action: 'start' | 'step' | 'end' | 'cancel' | 'deliver'; taskId: string; title: string; text?: string; tool?: string; result?: string; state?: TaskMeta['state']; tickId?: number }
+  | { type: 'task'; action: 'start' | 'step' | 'steer' | 'end' | 'cancel' | 'deliver'; taskId: string; title: string; text?: string; tool?: string; result?: string; state?: TaskMeta['state']; tickId?: number }

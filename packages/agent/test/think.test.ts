@@ -141,6 +141,21 @@ describe('createThinker', () => {
     expect(result.messages.map((x) => x.role)).toEqual(['assistant', 'tool', 'assistant'])
   })
 
+  it('reads what was sent while it worked before its next step, and keeps it where it came', async () => {
+    const inbox: ModelMessage[] = []
+    const m = model([[call('c1', { option: 'Sort' }), finish('tool-calls')], [call('c2', { option: 'Reverse' }), finish('tool-calls')], [...say('Sorted, newest first.'), finish('stop')]])
+    const act = async ({ option }: { option: string }) => (option === 'Sort' && inbox.push({ role: 'user', content: 'From Stanley: newest first' }), `Did ${option}.`)
+    const result = await createThinker({ model: m }).run(request({ act, inbox: () => inbox.splice(0) }))
+    const [first, second, third] = m.doStreamCalls.map((c) => c.prompt.map((p) => p.role))
+    expect(first).toEqual(['system', 'user', 'user'])
+    // Read after the step it arrived in, and still there in the steps after.
+    expect(second).toEqual(['system', 'user', 'user', 'assistant', 'tool', 'user'])
+    expect(third).toEqual(['system', 'user', 'user', 'assistant', 'tool', 'user', 'assistant', 'tool'])
+    expect(result.messages.map((x) => x.role)).toEqual(['assistant', 'tool', 'user', 'assistant', 'tool', 'assistant'])
+    expect(result.messages[2]).toEqual({ role: 'user', content: 'From Stanley: newest first' })
+    expect(result.sent).toBe(5)
+  })
+
   it('returns the steps that finished when the turn is aborted', async () => {
     const controller = new AbortController()
     const m = model([[call('c1', { option: 'Sort' }), finish('tool-calls')], [...say('Sorted.'), finish('stop')]])
