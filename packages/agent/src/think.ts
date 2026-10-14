@@ -37,7 +37,7 @@ export interface ThinkRequest {
   search?(query: string, toolCallId: string): Promise<SearchOutput>
   /** Reads a web page in the background. Absent without web access. Throws when it fails. */
   fetch?(url: string, toolCallId: string): Promise<PageOutput>
-  /** Puts a web page on screen by its address, and returns what is on screen then. Absent when pages can't be opened. */
+  /** Puts a web page on screen by its address, or a file by its path, and returns what is on screen then. Absent when pages can't be opened. */
   openPage?(url: string, toolCallId: string): Promise<string>
   /** Runs a command on the user's files, in the background, and returns what it printed. Absent without them. */
   bash?(command: string, toolCallId: string): Promise<string>
@@ -218,8 +218,13 @@ function tools(req: ThinkRequest): ToolSet {
     }),
     ...(req.openPage && {
       open_page: tool({
-        description: 'Put a web page on screen, in front of the user, by its address. Returns what is on screen then.',
-        inputSchema: urlInput,
+        description: "Put a web page on screen, in front of the user, by its address, or a file from the user's folder by its path. Returns what is on screen then.",
+        inputSchema: jsonSchema<{ url: string }>({
+          type: 'object',
+          properties: { url: { type: 'string', description: "The page's full address, starting with https://, or the path of a file in the user's folder." } },
+          required: ['url'],
+          additionalProperties: false,
+        }),
         execute: ({ url }: { url: string }, { toolCallId }: { toolCallId: string }) => req.openPage!(url, toolCallId),
       }),
     }),

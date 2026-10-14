@@ -495,7 +495,10 @@ export class Agent {
   private async knownFiles(): Promise<KnownFile[] | undefined> {
     if (!this.files) return undefined
     const paths = await this.files.paths().catch(() => [])
-    return knownFiles(recentEntries(this.view(), this.config.jevTurns), paths)
+    return knownFiles(recentEntries(this.view(), this.config.jevTurns), paths).map((f) => {
+      const url = f.path.endsWith('/') ? undefined : this.world.fileUrl?.(f.path)
+      return url ? { ...f, url } : f
+    })
   }
 
   /** The history as Jev reads it: committed, and what is staged placed as it would be now. */
@@ -1272,23 +1275,34 @@ export class Agent {
     }
   }
 
-  /** Thinking puts a page on screen by its address: any page, not only ones offered as options. */
-  private async openPage(id: number, url: string, toolCallId: string, signal: AbortSignal, ran: Map<string, Ran>): Promise<string> {
+  /**
+   * Thinking puts a page on screen by its address: any page, not only ones offered as options. A
+   * path without an address is a file in the user's folder.
+   */
+  private async openPage(id: number, written: string, toolCallId: string, signal: AbortSignal, ran: Map<string, Ran>): Promise<string> {
     signal.throwIfAborted()
+    const address = /^[a-z][a-z\d+.-]*:/i.test(written) ? written : this.world.fileUrl?.(written)
+    if (!address) {
+      const result = `There is no file "${written}" in the user's folder that the screen can show.`
+      this.events.debug?.({ type: 'think-step', tickId: id, option: 'open_page', text: written, result })
+      return result
+    }
+    const url = address
     const known = knownPages(this.view()).find((p) => sameUrl(p.url, url))
     this.events.status?.('acting')
     let step: StepMeta | undefined
     let outcome: string
     try {
-      outcome = (await this.step(id, `open page: ${url}`, { kind: 'page', url, title: known?.title ?? shortUrl(url) }, {}, 'thinking', { turn: (s) => (step = s) })).summary
+      const title = known?.title ?? (address === written ? shortUrl(url) : written.split('/').at(-1)!)
+      outcome = (await this.step(id, `open page: ${url}`, { kind: 'page', url, title }, {}, 'thinking', { turn: (s) => (step = s) })).summary
     } catch (err) {
       outcome = `That failed: ${err instanceof Error ? err.message : String(err)}`
     }
     this.events.status?.('thinking')
     const screen = await this.screenText()
     const result = `${outcome}\n\n${screen}`
-    if (step) ran.set(toolCallId, { tool: 'open_page', input: { url }, output: { type: 'text', value: result }, result: { toolCallId, step }, screen })
-    this.events.debug?.({ type: 'think-step', tickId: id, option: 'open_page', text: url, result })
+    if (step) ran.set(toolCallId, { tool: 'open_page', input: { url: written }, output: { type: 'text', value: result }, result: { toolCallId, step }, screen })
+    this.events.debug?.({ type: 'think-step', tickId: id, option: 'open_page', text: written, result })
     return result
   }
 

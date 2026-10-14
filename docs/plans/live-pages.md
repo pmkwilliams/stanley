@@ -5,7 +5,7 @@ write an HTML page (a diagram, a small app), show it, and change it while it's o
 one mechanism: an HTML file in the user's folder, shown in the Web app, reloaded when it changes.
 Writing a page is writing that file; changing it live is editing the file while it is on screen.
 
-Status: stage 1 implemented. See **Notes** under each stage for where the code differs from the plan.
+Status: stages 1 and 2 implemented. See **Notes** under each stage for where the code differs from the plan.
 
 ## Decisions
 
@@ -72,6 +72,28 @@ libraries; requests to their usual CDN addresses are answered from the bundle.
 - Thinking's `open_page` takes a path in the folder as well as an address.
 - Main watches the file on screen; when it changes (Stanley, bash, or the user's own editor), the
   view reloads, keeping its scroll position.
+
+**Notes**
+- `folder-pages.ts` serves both hosts. Files are served from their real path, so a symlink out of
+  the folder, a hidden file or `..` gets a 404. A folder shows its `index.html`, or a list of what
+  is in it. Media files answer range requests, so video seeks.
+- The policy (`PAGE_CSP`) is sent with HTML and SVG: `default-src stanley: data: blob:`, inline
+  and eval'd scripts allowed, forms only to the folder. Leaving the folder is stopped in the view:
+  `will-navigate`, and a new window from a folder page, to anything but `stanley:` is refused.
+- CDN addresses are rewritten in the files the page loads from the folder (HTML, JS, SVG), not
+  intercepted on the network: jsDelivr and unpkg (any version, any path, `+esm`), esm.sh, cdnjs and
+  d3js.org, for `mermaid`, `three` (with `three/addons/` as `examples/jsm/`), `d3` and `chart.js`.
+  The served version is the bundled one whatever version the address names. D3 and Chart.js have
+  no browser ES module of their own, so `+esm` is a module made from the classic build.
+- Jev's `open file:` is a `page` target (`World.fileUrl` gives the address), so it runs, reads and
+  is recorded as opening a page does. `open_page` takes a path the way a person or a model writes
+  one: relative, `./`, `~/Stanley/…` or absolute.
+- A PDF shows in Chromium's viewer (`plugins` on the view), but the extractor can't read inside it:
+  Stanley sees an empty page.
+- Not covered by the policy: WebRTC can still reach a STUN server.
+- Verified in the built app: a page loading all four libraries by CDN address and a CSV beside it
+  (all rendered), the page reloading when its file changed on disk, a page's fetch, image and
+  redirect out all blocked, and a PDF opened by Jev from "show me the quarterly report pdf".
 
 ## 3. Stop or hold
 

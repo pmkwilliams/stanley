@@ -74,6 +74,9 @@ export interface PageView {
   elements: AgentNode[]
 }
 
+/** Where the desktop's web view shows the user's files: `stanley://files/<path>`. */
+export const FILES_URL = 'stanley://files/'
+
 /**
  * A real web page, as a browser shows it, which Stanley reads and works like a person would: the
  * desktop's web view. The app that shows web pages draws into it.

@@ -103,7 +103,8 @@ export function findElement(screen: Screen, nodeId: string): { node: AgentNode; 
 /**
  * What Stanley can do next: the screen's elements in screen order, the pages it found or read on
  * the web and the files it has seen (up to `limit` together, see `pick`), the apps, back / home
- * (and lock, when `lock`), and listing the user's files (when there are `files`). Names are unique;
+ * (and lock, when `lock`), and listing the user's files (when there are `files`). A file the screen
+ * can show can also be opened, unless it is the one on screen. Names are unique;
  * a clash gets a counter. `focus` is what the user is asking for, used to choose when there are too
  * many. The page already on screen isn't offered: opening it again does nothing.
  */
@@ -136,7 +137,11 @@ export function stepOptions(screen: Screen, apps: AppEntry[], limit: number, foc
       const { path } = c.file
       const folder = path.endsWith('/')
       if (folder) add(`list folder: ${path.slice(0, -1)}`, "folder in the user's files", { kind: 'folder', path: path.slice(0, -1) })
-      else add(`read file: ${path}`, "file in the user's files", { kind: 'file', path })
+      else {
+        add(`read file: ${path}`, "file in the user's files", { kind: 'file', path })
+        const { url } = c.file
+        if (url && !(screen.url && sameUrl(url, screen.url))) add(`open file: ${path}`, "file in the user's files, put on screen", { kind: 'page', url, title: path.split('/').at(-1)! })
+      }
     } else {
       const { url, title } = c.page
       const domain = domainOf(url)

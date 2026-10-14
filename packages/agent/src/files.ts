@@ -31,6 +31,8 @@ export interface KnownFile {
   path: string
   /** From the latest listing or read, so the likeliest to be meant by "that". */
   latest: boolean
+  /** Where the screen shows it, for a file it can show (a web page, a PDF, a picture). */
+  url?: string
 }
 
 /** For thinking, when the session has the user's files. */
@@ -39,11 +41,12 @@ export function filesPrompt(root: string): string {
 The user's files are in a folder on their computer, ${root}. \`bash\` runs a command there, in the background: the folder is your working directory and your home, and the screen doesn't change. The user can't see what you do there, so say what you found or did, in spoken sentences, not the file's formatting.
 - Look before you change anything. Only overwrite, move or delete the user's files when they asked for that; making new files is fine.
 - Commands have no network access.
-- Every change to the folder is kept. To see an earlier version of a file or bring it back: git --git-dir="$STANLEY_HISTORY" log -- <file>, then git --git-dir="$STANLEY_HISTORY" show <commit>:<file>.`
+- Every change to the folder is kept. To see an earlier version of a file or bring it back: git --git-dir="$STANLEY_HISTORY" log -- <file>, then git --git-dir="$STANLEY_HISTORY" show <commit>:<file>.
+- \`open_page\` puts a file from the folder on screen by its path, as a browser shows it: a web page, a PDF, a picture or a video. A web page from the folder can use files next to it, but nothing from the internet.`
 }
 
 /** For Jev, when the session has the user's files. */
-export const JEV_FILES = `The user's files are in a folder Stanley can look into in the background: "list files" lists it, and its folders and files each have a step to list or read them. Looking at files shows nothing on screen. Finding something in them, answering from them, or changing them is for \`think\`.`
+export const JEV_FILES = `The user's files are in a folder Stanley can look into in the background: "list files" lists it, and its folders and files each have a step to list or read them. Looking at files shows nothing on screen. Files the screen can show (web pages, PDFs, pictures, videos) also have an "open file" step, which puts them on screen as a browser would. Finding something in them, answering from them, or changing them is for \`think\`.`
 
 /** `'it'\''s'`: a word bash reads back exactly. */
 export function quote(text: string): string {

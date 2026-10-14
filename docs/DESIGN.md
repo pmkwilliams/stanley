@@ -412,6 +412,13 @@ writes there is usable outside it.
   the command did), the folder is committed to a git directory of its own outside it
   (`userData/files-history.git`). Commands can read it (`$STANLEY_HISTORY`), so thinking can bring
   an earlier version back with `git show`, but not change it.
+- **Shown on screen** in the Web app: files the web view can show (web pages, PDFs, pictures,
+  video, text) have `open file: <path>` next to `read file:`, and thinking's `open_page` takes a
+  path. They load from `stanley://files/…`, which serves the folder and nothing else, with a policy
+  that keeps pages off the network: a page can use files beside it and the bundled libraries
+  (`stanley://lib/`: Mermaid, Three.js, D3, Chart.js, with their usual CDN addresses pointed at the
+  bundle), but can't fetch, load or navigate out. A file on screen reloads when it changes, by
+  Stanley, a command or the user's own editor. See `docs/plans/live-pages.md`.
 - **Sandboxed** (`packages/files`, macOS `sandbox-exec`, deny by default): writes only in the folder
   and a temporary directory; no reading the rest of the user's home (paths can be stat'ed, not
   read or listed); no network, no opening apps or URLs, no Apple Events, no signals outside the

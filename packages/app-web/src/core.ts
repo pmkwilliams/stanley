@@ -1,4 +1,4 @@
-import { defineApp, type PageView } from '@stanley/app-sdk'
+import { defineApp, FILES_URL, type PageView } from '@stanley/app-sdk'
 import { clip, domainOf, parallelWeb, type PageContent } from './parallel'
 
 export interface WebState {
@@ -19,7 +19,15 @@ const current = (s: WebState): PageContent | null => (s.route.startsWith('page/'
 const samePage = (a: string, b: string) => a.replace(/#.*$/, '').replace(/\/$/, '') === b.replace(/#.*$/, '').replace(/\/$/, '')
 
 /** A page someone can be on, not the blank or error page a web view shows between them. */
-const real = (url: string) => /^https?:/.test(url)
+const real = (url: string) => /^(https?|stanley):/.test(url)
+
+/** Where a page is from, for saying so: its site, or the user's files. */
+export function sourceOf(url: string): string {
+  return url.startsWith(FILES_URL) ? "the user's files" : domainOf(url)
+}
+
+/** A page's title, or failing that the file it is or its site. */
+const titleOf = (url: string, title: string) => title || (url.startsWith(FILES_URL) ? decodeURIComponent(url.split('/').at(-1)!) : domainOf(url))
 
 /**
  * The live page as read into the state. A page other than the one open was reached from it (a link
@@ -28,7 +36,7 @@ const real = (url: string) => /^https?:/.test(url)
 function follow(s: WebState, view: PageView): WebState {
   const page = current(s)
   if (!page || !real(view.url)) return { ...s, view: null }
-  const title = view.title || domainOf(view.url)
+  const title = titleOf(view.url, view.title)
   if (samePage(view.url, page.url)) {
     const pages = s.pages.map((p) => (p === page ? { ...p, url: view.url, title } : p))
     return { ...s, pages, view }
@@ -61,7 +69,7 @@ export const webApp = defineApp<WebState>({
     if (nodeId.startsWith('page/')) {
       const page = s.pages[Number(nodeId.slice(5))]
       if (!page) return { state: s, summary: `Unknown action ${nodeId}` }
-      const summary = `Opened "${page.title}" (${domainOf(page.url)})`
+      const summary = `Opened "${page.title}" (${sourceOf(page.url)})`
       if (!ctx.page) return { state: { ...s, route: nodeId, error: null }, summary }
       try {
         await ctx.page.goto(page.url)
@@ -82,11 +90,12 @@ export const webApp = defineApp<WebState>({
       try {
         await ctx.page.goto(url)
         const view = await ctx.page.read()
-        const page = { url: view.url, title: view.title || domainOf(view.url), markdown: '' }
-        return { state: { ...open(page, null), view }, summary: `Opened "${page.title}" (${domainOf(page.url)})`, observation: `# ${page.title}\n${page.url}\n\n${view.markdown}`, title: page.title }
+        const page = { url: view.url, title: titleOf(view.url, view.title), markdown: '' }
+        return { state: { ...open(page, null), view }, summary: `Opened "${page.title}" (${sourceOf(page.url)})`, observation: `# ${page.title}\n${page.url}\n\n${view.markdown}`, title: page.title }
       } catch (err) {
         const error = `Couldn't open the page: ${errorText(err)}`
-        return { state: open({ url, title: domainOf(url), markdown: '' }, error), summary: `Opened ${domainOf(url)}; ${error}`, title: domainOf(url) }
+        const title = titleOf(url, '')
+        return { state: open({ url, title, markdown: '' }, error), summary: `Opened ${title}; ${error}`, title }
       }
     }
     const key = ctx.env.PARALLEL_API_KEY

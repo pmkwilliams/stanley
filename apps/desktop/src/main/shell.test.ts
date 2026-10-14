@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { AppStore, LivePage } from '@stanley/app-sdk'
 import { emailApp } from '@stanley/app-email/core'
@@ -162,5 +165,20 @@ describe('Shell', () => {
     const result = await shell.openUrl('https://nowhere.test/')
     expect(result.summary).toBe("Opened nowhere.test; Couldn't open the page: ERR_NAME_NOT_RESOLVED")
     expect(await shell.screen()).toMatchObject({ id: 'web:page/0', elements: [] })
+  })
+
+  it("gives the address of a file in the user's folder the Web app can show, however the path is written", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'shell-folder-')))
+    mkdirSync(join(root, 'My pages'))
+    writeFileSync(join(root, 'My pages', 'plan.html'), '<h1>Plan</h1>')
+    writeFileSync(join(root, 'notes.docx'), '')
+    const shell = new Shell([webApp], { env: {}, fetch }, () => {}, undefined, { root, shown: '~/Stanley' })
+    expect(shell.fileUrl('My pages/plan.html')).toBe('stanley://files/My%20pages/plan.html')
+    expect(shell.fileUrl('~/Stanley/My pages/plan.html')).toBe('stanley://files/My%20pages/plan.html')
+    expect(shell.fileUrl(join(root, 'My pages/plan.html'))).toBe('stanley://files/My%20pages/plan.html')
+    expect(shell.fileUrl('notes.docx')).toBeUndefined()
+    expect(shell.fileUrl('gone.html')).toBeUndefined()
+    expect(shell.fileUrl('../plan.html')).toBeUndefined()
+    expect(new Shell([todoApp], { env: {}, fetch }, () => {}, undefined, { root, shown: '~/Stanley' }).fileUrl('My pages/plan.html')).toBeUndefined()
   })
 })

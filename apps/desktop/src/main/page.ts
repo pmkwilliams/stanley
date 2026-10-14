@@ -1,3 +1,6 @@
+import { watch, type FSWatcher } from 'node:fs'
+import { basename, dirname } from 'node:path'
+import { FILES_URL } from '@stanley/app-sdk'
 import { DROPDOWN, EXTRACT, type Extracted, type PageDriver } from '@stanley/browser'
 import type { WebContents } from 'electron'
 
@@ -122,8 +125,17 @@ export class WebviewPage implements PageDriver {
   private steps = 0
   /** Navigations started in the page, to tell whether input led to one. */
   private navigations = 0
+  /** Watches the file on screen, when it is one of the user's. */
+  private watcher: { path: string; close(): void } | null = null
 
-  constructor(private events: { navigated(): void }) {}
+  constructor(
+    private events: {
+      /** The page changed by itself or by the user's hand: another page, or a new title. */
+      navigated(): void
+      /** The file an address shows, when it is one of the user's. */
+      fileOf(url: string): string | null
+    },
+  ) {}
 
   /** Stanley is loading the page or working it. */
   get busy(): boolean {
@@ -140,8 +152,12 @@ export class WebviewPage implements PageDriver {
     this.wc = wc
     // A link that opens a new window opens here instead, as one tab would.
     wc.setWindowOpenHandler(({ url }) => {
-      void wc.loadURL(url)
+      if (!leaves(wc.getURL(), url)) void wc.loadURL(url)
       return { action: 'deny' }
+    })
+    // A page from the user's folder can't take what it holds anywhere: it stays among their files.
+    wc.on('will-navigate', (e) => {
+      if (leaves(wc.getURL(), e.url)) e.preventDefault()
     })
     wc.on('did-start-navigation', (e) => {
       if (!e.isMainFrame) return
@@ -149,11 +165,17 @@ export class WebviewPage implements PageDriver {
       if (!e.isSameDocument) this.domReady = false
     })
     wc.on('dom-ready', () => (this.domReady = true))
-    wc.on('did-navigate', () => this.navigated())
+    wc.on('did-navigate', () => {
+      this.watch(wc)
+      this.navigated()
+    })
     wc.on('did-navigate-in-page', (_, __, isMainFrame) => isMainFrame && this.navigated())
     wc.on('page-title-updated', () => this.navigated())
     wc.once('destroyed', () => {
-      if (this.wc === wc) this.wc = null
+      if (this.wc !== wc) return
+      this.wc = null
+      this.watcher?.close()
+      this.watcher = null
     })
     if (this.url !== 'about:blank') void wc.loadURL(this.url).catch(() => {})
     for (const resolve of this.waiting.splice(0)) resolve(wc)
@@ -323,4 +345,40 @@ export class WebviewPage implements PageDriver {
   private navigated(): void {
     if (!this.busy) this.events.navigated()
   }
+
+  /**
+   * While a file of the user's is on screen, it is shown as it is now: changed by Stanley, by a
+   * command, or in the user's own editor, it reloads, where it was scrolled to. Editors save by
+   * replacing the file, so its folder is watched.
+   */
+  private watch(wc: WebContents): void {
+    const path = this.events.fileOf(wc.getURL())
+    if (path === this.watcher?.path) return
+    this.watcher?.close()
+    this.watcher = null
+    if (!path) return
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let watcher: FSWatcher
+    try {
+      watcher = watch(dirname(path), (_, name) => {
+        if (name !== basename(path)) return
+        clearTimeout(timer)
+        timer = setTimeout(() => !wc.isDestroyed() && wc.reload(), 150)
+      })
+    } catch {
+      return
+    }
+    this.watcher = {
+      path,
+      close: () => {
+        clearTimeout(timer)
+        watcher.close()
+      },
+    }
+  }
+}
+
+/** Going from a page of the user's files to anywhere else. */
+function leaves(from: string, to: string): boolean {
+  return from.startsWith(FILES_URL) && !to.startsWith('stanley:')
 }

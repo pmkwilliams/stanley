@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { readSettings } from '@stanley/app-settings/core'
@@ -10,15 +10,18 @@ import { Agent, BargeIn, createThinker, defaultConfig, findElement, named, scree
 import { createJevClient, createMockJevClient, type DecisionClient } from '@stanley/jev'
 import { SAMPLE_RATE, Transcriber, writeWav, type HeardWord } from '@stanley/stt'
 import { KOKORO, loadKokoro, Speaker } from '@stanley/tts'
-import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, Menu, nativeTheme, session } from 'electron'
+import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, Menu, nativeTheme, protocol, session } from 'electron'
 import type { AppDebugEvent, CaptionWord, ReplayRequest, Snapshot } from '../shared/ipc'
 import { apps } from './apps'
 import { DebugRecorder } from './debug'
+import { filePath, SCHEME, serveFile, serveLib } from './folder-pages'
 import { WebviewPage } from './page'
 import { Shell } from './shell'
 import { fileStore } from './store'
 
 app.setName('Stanley')
+// The user's folder and the page libraries, as the web view loads them (see folder-pages.ts).
+protocol.registerSchemesAsPrivileged([{ scheme: SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true, codeCache: true } }])
 
 const root = join(import.meta.dirname, '../../../..')
 const envFile = join(root, '.env')
@@ -93,7 +96,13 @@ function refreshHotwords() {
 }
 
 /** The Web app's page, live in the main window: Stanley reads it and works it like a person in a browser. */
-const webview = new WebviewPage({ navigated: () => pageNavigated() })
+const webview = new WebviewPage({
+  navigated: () => pageNavigated(),
+  fileOf: (url) => {
+    const path = folder && filePath(url)
+    return folder && path !== null && path !== undefined ? join(folder.root, path) : null
+  },
+})
 const page = livePage(webview)
 let navigatedTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -130,8 +139,10 @@ const sessionsDir = join(app.getPath('userData'), 'sessions')
  * The user's files: one real folder (`STANLEY_FILES`, else ~/Stanley), outlasting sessions. Every
  * version of it is kept next to the settings, where commands can read it but not change it.
  */
-const files: FileTools | undefined =
-  process.platform === 'darwin' ? localFiles({ root: process.env.STANLEY_FILES || join(homedir(), 'Stanley'), history: join(app.getPath('userData'), 'files-history.git') }) : undefined
+const filesRoot = process.env.STANLEY_FILES || join(homedir(), 'Stanley')
+const files: FileTools | undefined = process.platform === 'darwin' ? localFiles({ root: filesRoot, history: join(app.getPath('userData'), 'files-history.git') }) : undefined
+/** The folder as the web view shows it: its real path, and its name for people. */
+const folder = files && { root: realpathSync(filesRoot), shown: files.root }
 /** Settings, which outlast sessions: locking starts every app over, but not these. */
 const store = fileStore(join(app.getPath('userData'), 'settings.json'), applySettings)
 /** What the user calls the assistant (Settings). */
@@ -189,6 +200,7 @@ function startSession() {
     },
     // The agent locks the way the lock button does.
     () => world === shell && lock(),
+    folder,
   )
   shell = world
   const self: Agent = new Agent({
@@ -553,6 +565,8 @@ function createWindow() {
     prefs.sandbox = true
     // A page with no background of its own is white (or dark, by its color scheme), as in a browser.
     prefs.transparent = false
+    // For PDFs.
+    prefs.plugins = true
   })
   win.webContents.on('did-attach-webview', (_, wc) => webview.attach(wc))
   win.on('closed', () => {
@@ -672,6 +686,16 @@ ipcMain.handle('debug:replay', (_, req: ReplayRequest) => jev.decide(req))
 ipcMain.on('debug:copy', (_, text: string) => clipboard.writeText(text))
 
 app.whenReady().then(() => {
+  protocol.handle(SCHEME, async (request) => {
+    try {
+      const { host } = new URL(request.url)
+      if (host === 'files' && folder) return await serveFile(folder.root, request.url, request.headers)
+      if (host === 'lib') return await serveLib(request.url)
+    } catch (err) {
+      console.error('Serving', request.url, err)
+    }
+    return new Response('Not found', { status: 404 })
+  })
   // Only our own renderer gets the mic. Pages in the Web app's <webview> share this session and get nothing.
   session.defaultSession.setPermissionRequestHandler((contents, permission, cb, details) => {
     const audioOnly = 'mediaTypes' in details && !!details.mediaTypes?.length && details.mediaTypes.every((t) => t === 'audio')

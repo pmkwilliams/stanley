@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { DEFAULT_AGENT_NAME, type AppUiProps } from '@stanley/app-sdk'
+  import { DEFAULT_AGENT_NAME, FILES_URL, type AppUiProps } from '@stanley/app-sdk'
   import Icon from '@stanley/app-ui/Icon.svelte'
   import * as Alert from '@stanley/app-ui/components/alert'
   import * as App from '@stanley/app-ui/components/app'
@@ -10,10 +10,12 @@
   let { data, agentName = DEFAULT_AGENT_NAME }: AppUiProps<WebState> = $props()
 
   let open = $derived(data.route.startsWith('page/') ? (data.pages[Number(data.route.slice(5))] ?? null) : null)
-  let domain = $derived(open ? domainOf(open.url) : '')
-  let secure = $derived(open?.url.startsWith('https:') ?? false)
-  // A page Stanley couldn't read is titled with its domain; don't say it twice.
-  let title = $derived(open && open.title !== domain ? open.title : '')
+  /** A file of the user's is named by its path in their folder, a page by its site. */
+  let file = $derived(open?.url.startsWith(FILES_URL) ? decodeURIComponent(open.url.slice(FILES_URL.length)) : null)
+  let place = $derived(open ? (file ?? domainOf(open.url)) : '')
+  let icon = $derived<'folder' | 'lock' | 'globe'>(file !== null ? 'folder' : open?.url.startsWith('https:') ? 'lock' : 'globe')
+  // A page Stanley couldn't read is titled with its domain, a file without a title with its name; don't say it twice.
+  let title = $derived(open && open.title !== place && open.title !== place.split('/').at(-1) ? open.title : '')
 </script>
 
 {#snippet notice(text: string, className: string)}
@@ -35,8 +37,8 @@
         class="flex h-8 w-full max-w-140 cursor-default items-center justify-center gap-1.5 rounded-full bg-accent px-3.5 leading-none whitespace-nowrap"
         title={open.url}
       >
-        <span class="flex-none text-muted-foreground"><Icon name={secure ? 'lock' : 'globe'} size={14} weight={2} /></span>
-        <span class="max-w-3/5 flex-none truncate font-semibold">{domain}</span>
+        <span class="flex-none text-muted-foreground"><Icon name={icon} size={14} weight={2} /></span>
+        <span class="max-w-3/5 flex-none truncate font-semibold">{place}</span>
         {#if title}
           <span class="min-w-0 truncate text-muted-foreground before:mr-1.5 before:text-muted-foreground/60 before:content-['·']">{title}</span>
         {/if}

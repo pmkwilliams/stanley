@@ -39,6 +39,11 @@ export interface World {
   perform(node: AgentNode, args: ActionArgs): Promise<StepResult>
   /** Opens a web page by its address, as typing it into a browser would. Without it, pages Stanley found can't be opened. */
   openUrl?(url: string): Promise<StepResult>
+  /**
+   * The address `openUrl` shows a file from the user's folder at, written as a path from its top
+   * (or as a person would write it), when it is there and the screen can show it.
+   */
+  fileUrl?(path: string): string | undefined
   global(option: 'show' | 'home' | 'back'): Promise<void>
   /** Goes to the lock screen, ending the session. Without it, the agent can't lock. */
   lock?(): Promise<void>

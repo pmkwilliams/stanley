@@ -1,5 +1,8 @@
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import type { AppEntry, Screen, StepResult, World } from '@stanley/agent'
 import type { ActionArgs, AgentNode, AppContext, AppModule, Layout } from '@stanley/app-sdk'
+import { fileUrl, inFolder, viewable } from './folder-pages'
 
 const SEP = ':'
 
@@ -23,6 +26,8 @@ export class Shell implements World {
     private onChange: () => void,
     /** Goes to the lock screen, which ends the session. */
     private onLock?: () => void,
+    /** The user's folder, whose files the app that shows web pages can show: its real path, and its name for people (`~/Stanley`). */
+    private folder?: { root: string; shown: string },
   ) {}
 
   /** The surface Stanley is working on (which may be hidden): what it reads and its elements. */
@@ -80,6 +85,14 @@ export class Shell implements World {
    */
   appList(): AppEntry[] {
     return this.apps.filter((a) => !a.openUrl || (this.surfaces.has(a.id) && a.url?.(this.surfaces.get(a.id)))).map(({ id, title, description }) => ({ id, title, description }))
+  }
+
+  /** Where the app that shows web pages shows a file from the user's folder, when it is there and can be shown. */
+  fileUrl(written: string): string | undefined {
+    if (!this.folder || !this.apps.some((a) => a.openUrl)) return undefined
+    const path = inFolder(written, this.folder.root, this.folder.shown)
+    if (!path || !viewable(path) || !existsSync(join(this.folder.root, path))) return undefined
+    return fileUrl(path)
   }
 
   async perform(node: AgentNode, args: ActionArgs) {

@@ -40,6 +40,7 @@ function fakeWorld(opts: { screenChanges?: boolean; failOn?: string; titles?: Re
       performed.push(`url ${url}`)
       return { summary: `Opened ${url}`, title: opts.titles?.[url] }
     },
+    fileUrl: (path) => (/\.(html|pdf)$/.test(path) && !path.startsWith('missing') ? `stanley://files/${path.replace(/^~\/Stanley\//, '')}` : undefined),
   }
   return { world, performed }
 }
@@ -1289,6 +1290,38 @@ describe('Agent files', () => {
     expect(context).toContain("Stanley ran `ls -p` on the user's files.")
     expect(context).toContain("Stanley ran `rm nothing` on the user's files: failed (exit code 127).")
     expect(agent.instructions).toContain('~/Stanley')
+  })
+
+  it('offers to open a file the screen can show, and thinking opens one by its path', async () => {
+    const f = fakeFiles({})
+    f.paths = async () => ['plan.html', 'notes.md']
+    let options: string[] = []
+    const results: string[] = []
+    const { agent, performed } = setup(
+      (req) => {
+        options = Object.keys(req.questions.step!.options)
+        return { next: 'think' }
+      },
+      {
+        thinker: {
+          run: async (req) => {
+            results.push(await req.openPage!('~/Stanley/plan.html', 'o1'))
+            results.push(await req.openPage!('missing.html', 'o2'))
+            return { text: '' }
+          },
+        },
+        deps: { files: f },
+      },
+    )
+    agent.utteranceStart()
+    agent.segment('show me the plan')
+    agent.utteranceEnd()
+    await settle()
+    expect(options).toEqual(expect.arrayContaining(['read file: plan.html', 'open file: plan.html', 'read file: notes.md']))
+    expect(options).not.toContain('open file: notes.md')
+    expect(performed).toContain('url stanley://files/plan.html')
+    expect(results[1]).toBe(`There is no file "missing.html" in the user's folder that the screen can show.`)
+    expect(await agent.context()).toContain('Stanley opened the page "plan.html"')
   })
 
   it("reports a file that couldn't be read", async () => {
