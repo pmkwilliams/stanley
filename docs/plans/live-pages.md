@@ -204,3 +204,26 @@ replacement), on the user's folder through `FileTools`, so every change is kept 
   from about 4 s in; Sonnet looked at the picture, fixed oversized arrowheads and overlaps, and was
   done in about 27 s. "And make the arrows blue", said while it drew, was held, then done with one
   `edit_file` (`all`) in about 4 s.
+
+### Stanley's look (added after stage 4)
+
+Pages Stanley writes used to pick their own colours and showed white with no background of their
+own. Adapted from T3 Code's guidance for pages it shows in a thread (`HTML_RENDER_THEME_GUIDE` and
+`HTML_RENDER_LAYOUT_GUIDE` in pingdotgg/t3code):
+
+- **Tokens.** An `.html` page in `Pages/` is served (and drawn as it is written) with a `<style>`
+  holding the shell's tokens from `theme.css` (less the shell-only ones), fonts, and the body's
+  background, colour, font and no margin. The font is Inter, as in the shell: its fontsource
+  package is served with the libraries and imported into the same layer. Dark is the base and light the `prefers-color-scheme`
+  override, which main already sets from the theme, so a page follows a change without reloading.
+  It is all in `@layer stanley`, so what the page sets wins wherever it is. The file on disk stays
+  as written. Other HTML in the folder is served as it is.
+- **Where it goes.** After the doctype and any comments before it: a style before the doctype
+  would put the page in quirks mode. While a page streams, the style waits until that is clear.
+- **Charts.** `--chart-1…6` replaced the taupe ramp (unused in the shell) with a categorical
+  palette: the dataviz skill's reference hues, validated on Stanley's backgrounds (worst adjacent
+  CVD ΔE 9.1 light / 8.4 dark). Three light slots are under 3:1 on white, so series are labelled.
+- **Instructions.** The Pages section lists the variables and the layout rules kept from T3's: no
+  card, border or banner around the whole page; a panel with its own background has 16px of
+  padding and `var(--radius)` corners. T3's rules for a frame that grows to its content (fixed
+  chart heights, no `100vh`) don't apply to a window of fixed size.

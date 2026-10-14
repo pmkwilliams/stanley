@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { fileUrl, filePath, inFolder, PAGE_CSP, rewriteCdn, serveFile, serveLib, viewable } from './folder-pages'
+import { pageStyle } from './page-theme'
 
 describe('folder pages', () => {
   it('points the usual CDN addresses of the bundled libraries at the bundle, and leaves others alone', () => {
@@ -45,6 +46,8 @@ describe('folder pages', () => {
     const outside = realpathSync(mkdtempSync(join(tmpdir(), 'folder-outside-')))
     mkdirSync(join(root, 'site'))
     writeFileSync(join(root, 'site', 'index.html'), '<script src="https://unpkg.com/mermaid@11"></script>')
+    mkdirSync(join(root, 'Pages'))
+    writeFileSync(join(root, 'Pages', 'rain.html'), '<!doctype html><h1>Rain</h1>')
     writeFileSync(join(root, 'clip.mp4'), Buffer.alloc(100, 1))
     writeFileSync(join(root, '.secret'), 'no')
     writeFileSync(join(outside, 'secret.txt'), 'no')
@@ -53,6 +56,7 @@ describe('folder pages', () => {
     const page = await get('site/')
     expect(page.headers.get('Content-Security-Policy')).toBe(PAGE_CSP)
     expect(await page.text()).toBe('<script src="stanley://lib/mermaid"></script>')
+    expect(await (await get('Pages/rain.html')).text()).toBe(`<!doctype html>${pageStyle()}<h1>Rain</h1>`)
     const part = await get('clip.mp4', { Range: 'bytes=10-19' })
     expect(part.status).toBe(206)
     expect(part.headers.get('Content-Range')).toBe('bytes 10-19/100')

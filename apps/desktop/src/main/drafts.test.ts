@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Drafts } from './drafts'
 import { PAGE_CSP } from './folder-pages'
+import { pageStyle } from './page-theme'
 
 /** Reads a stream as it comes: everything so far, and whether it ended. */
 function reader(response: Response) {
@@ -28,14 +29,14 @@ describe('Drafts', () => {
     expect(response.headers.get('Content-Security-Policy')).toBe(PAGE_CSP)
     const page = reader(response)
     await tick()
-    expect(page.text).toBe('<h1>Rain</h1><script src="')
+    expect(page.text).toBe(pageStyle() + '<h1>Rain</h1><script src="')
     draft.write('<h1>Rain</h1><script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script><p>It ')
     await tick()
-    expect(page.text).toBe('<h1>Rain</h1><script src="stanley://lib/mermaid/dist/mermaid.min.js"></script><p>It ')
+    expect(page.text).toBe(pageStyle() + '<h1>Rain</h1><script src="stanley://lib/mermaid/dist/mermaid.min.js"></script><p>It ')
     expect(page.done).toBe(false)
     draft.end('<h1>Rain</h1><script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script><p>It falls.</p>')
     await tick()
-    expect(page.text).toBe('<h1>Rain</h1><script src="stanley://lib/mermaid/dist/mermaid.min.js"></script><p>It falls.</p>')
+    expect(page.text).toBe(pageStyle() + '<h1>Rain</h1><script src="stanley://lib/mermaid/dist/mermaid.min.js"></script><p>It falls.</p>')
     expect(page.done).toBe(true)
     expect(drafts.has('Pages/rain.html')).toBe(false)
     expect(drafts.serve('Pages/rain.html')).toBeNull()

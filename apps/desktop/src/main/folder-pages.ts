@@ -5,6 +5,7 @@ import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import { runInNewContext } from 'node:vm'
 import { FILES_URL } from '@stanley/app-sdk'
+import { themed, withTheme } from './page-theme'
 
 /**
  * The user's folder and a few libraries, as the web view loads them: `stanley://files/<path>` and
@@ -22,7 +23,7 @@ export const LIB_URL = 'stanley://lib/'
 export const PAGE_CSP = ["default-src stanley: data: blob:", "script-src stanley: data: blob: 'unsafe-inline' 'unsafe-eval'", "style-src stanley: data: blob: 'unsafe-inline'", 'form-action stanley:', 'base-uri stanley:'].join('; ')
 
 /**
- * The libraries a page can use without the network, by npm name: the file a bare address gives
+ * The libraries a page can use without the network, by npm name (and Inter, the shell's font): the file a bare address gives
  * (what CDNs serve for it), and its ES module. `+esm` is made from the classic build, whose global
  * is `global`.
  */
@@ -31,6 +32,8 @@ export const LIBS: Record<string, { main: string; esm: string; global?: string }
   three: { main: 'build/three.module.js', esm: 'build/three.module.js' },
   d3: { main: 'dist/d3.min.js', esm: '+esm', global: 'd3' },
   'chart.js': { main: 'dist/chart.umd.min.js', esm: '+esm', global: 'Chart' },
+  // The shell's font, for pages Stanley writes (`page-theme.ts`).
+  '@fontsource-variable/inter': { main: 'index.css', esm: 'index.css' },
 }
 
 /** cdnjs names for the libraries. */
@@ -132,7 +135,7 @@ const notFound = () => new Response('Not found', { status: 404, headers: { 'Cont
 /**
  * Answers a request for `stanley://files/…` from the folder at `root` (a real path). Nothing
  * outside it, and nothing hidden, is served. A folder shows its `index.html`, or a list of what is
- * in it.
+ * in it. Pages Stanley writes are served in its look (`page-theme.ts`).
  */
 export async function serveFile(root: string, url: string, headers: Headers): Promise<Response> {
   const path = filePath(url)
@@ -152,7 +155,10 @@ export async function serveFile(root: string, url: string, headers: Headers): Pr
   const type = TYPES[ext(full)] ?? 'application/octet-stream'
   const page = type.startsWith('text/html') || type === 'image/svg+xml'
   const base: Record<string, string> = { 'Content-Type': type, 'Cache-Control': 'no-cache', 'X-DNS-Prefetch-Control': 'off', ...(page && { 'Content-Security-Policy': PAGE_CSP }) }
-  if (REWRITTEN.has(ext(full))) return new Response(rewriteCdn(await readFile(full, 'utf8')), { headers: base })
+  if (REWRITTEN.has(ext(full))) {
+    const text = rewriteCdn(await readFile(full, 'utf8'))
+    return new Response(themed(path) ? withTheme(text) : text, { headers: base })
+  }
   return ranged(full, info.size, headers, base)
 }
 

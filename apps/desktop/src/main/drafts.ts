@@ -1,4 +1,5 @@
 import { PAGE_CSP, rewriteCdn } from './folder-pages'
+import { themed, withTheme } from './page-theme'
 
 const encoder = new TextEncoder()
 
@@ -12,7 +13,8 @@ function settled(text: string): string {
  * A page being written, served as it comes: a request for it gets what is written so far, then the
  * rest as it is written, so the web view draws it the way a browser draws a page arriving slowly
  * over the network. CDN addresses are pointed at the libraries as the files are (`rewriteCdn`); an
- * address is held back until it is complete.
+ * address is held back until it is complete. A page Stanley writes is drawn in its look from the
+ * start (`page-theme.ts`).
  */
 export class Draft {
   /** What has been sent, rewritten. */
@@ -20,16 +22,20 @@ export class Draft {
   private done = false
   private readers = new Set<ReadableStreamDefaultController<Uint8Array>>()
 
-  constructor(private onClose: () => void) {}
+  constructor(
+    private onClose: () => void,
+    /** Drawn in Stanley's look. */
+    private themed = false,
+  ) {}
 
   /** All of the page written so far. */
   write(content: string): void {
-    this.send(rewriteCdn(settled(content)))
+    this.send(this.look(rewriteCdn(settled(content)), true))
   }
 
   /** The whole page: the rest is sent, and the page is complete. */
   end(content: string): void {
-    this.send(rewriteCdn(content))
+    this.send(this.look(rewriteCdn(content), false))
     this.close()
   }
 
@@ -50,6 +56,10 @@ export class Draft {
       cancel: () => void this.readers.delete(reader),
     })
     return new Response(body, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': PAGE_CSP, 'Cache-Control': 'no-store' } })
+  }
+
+  private look(html: string, partial: boolean): string {
+    return this.themed ? withTheme(html, partial) : html
   }
 
   private send(text: string): void {
@@ -76,7 +86,7 @@ export class Drafts {
   /** Starts serving `path` as it is written. A page written again replaces the one being written. */
   begin(path: string): Draft {
     this.open.get(path)?.cancel()
-    const draft: Draft = new Draft(() => this.open.get(path) === draft && this.open.delete(path))
+    const draft: Draft = new Draft(() => this.open.get(path) === draft && this.open.delete(path), themed(path))
     this.open.set(path, draft)
     return draft
   }

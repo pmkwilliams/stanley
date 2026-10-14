@@ -439,6 +439,11 @@ writes there is usable outside it.
   written: the tool's input is read as it streams and served to the view at the file's address as
   a streaming response. Then thinking gets the page's console errors and a picture of it, so it can
   fix what didn't work. "Make it blue" is an `edit_file`, and the page reloads where it was.
+  A page in `Pages/` takes Stanley's look: it is served with the shell's tokens from `theme.css`
+  as CSS variables (dark, or light with the user's theme, live) and its background, text colour
+  and font (Inter, served with the libraries) set from them, in a cascade layer the page's own CSS wins over
+  (`apps/desktop/src/main/page-theme.ts`). The `--chart-1…6` tokens are a categorical palette
+  validated for colour-blind separation on both backgrounds.
 - **Sandboxed** (`packages/files`, macOS `sandbox-exec`, deny by default): writes only in the folder
   and a temporary directory; no reading the rest of the user's home (paths can be stat'ed, not
   read or listed); no network, no opening apps or URLs, no Apple Events, no signals outside the
