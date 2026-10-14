@@ -4,11 +4,39 @@ import { join } from 'node:path'
 import type { AppEntry, Screen, StepResult, World } from '@stanley/agent'
 import type { ActionArgs, AgentNode } from '@stanley/app-sdk'
 import type { Page } from 'playwright-core'
-import { EXTRACT, type Extracted, type ExtractedElement } from './extract'
+import { DROPDOWN, pageNodes, stepOnPage, type PageDriver } from './driver'
+import { EXTRACT, type Extracted } from './extract'
 
 /** A website Stanley can open from anywhere, like a bookmark. */
 export interface Site extends AppEntry {
   url: string
+}
+
+/**
+ * A Playwright page's controls. Short timeouts: a control that can't be used (covered by a banner,
+ * disabled) should fail fast, so the agent sees the failure and tries something else.
+ */
+export function playwrightDriver(page: Page, opts: { settleMs?: number; actionTimeoutMs?: number } = {}): PageDriver {
+  const timeout = opts.actionTimeoutMs ?? 1500
+  const element = (id: string) => page.locator(`[data-stanley-id="${id}"]`)
+  return {
+    async goto(url) {
+      await page.goto(url)
+    },
+    extract: (maxText) => page.evaluate(`${EXTRACT}(${JSON.stringify({ maxText })})`) as Promise<Extracted>,
+    click: (id) => element(id).click({ timeout }),
+    fill: (id, text) => element(id).fill(text, { timeout }),
+    press: (id, key) => element(id).press(key, { timeout }),
+    dropdown: (id) => page.evaluate(`${DROPDOWN}(${JSON.stringify(id)})`) as Promise<string[] | null>,
+    async select(id, label) {
+      await element(id).selectOption({ label }, { timeout })
+    },
+    scroll: (direction) => page.mouse.wheel(0, (direction === 'up' ? -0.8 : 0.8) * (page.viewportSize()?.height ?? 800)),
+    async settle() {
+      await page.waitForLoadState('domcontentloaded').catch(() => null)
+      await page.waitForTimeout(opts.settleMs ?? 120)
+    },
+  }
 }
 
 /**
@@ -18,12 +46,15 @@ export interface Site extends AppEntry {
 export class PageWorld implements World {
   /** Whether the user can see the page; a desktop adapter would track its window. */
   visible = true
+  private driver: PageDriver
 
   constructor(
     readonly page: Page,
     private sites: Site[],
     private opts: { maxText?: number; settleMs?: number; actionTimeoutMs?: number } = {},
-  ) {}
+  ) {
+    this.driver = playwrightDriver(page, opts)
+  }
 
   appList(): AppEntry[] {
     return this.sites.map(({ id, title, description }) => ({ id, title, description }))
@@ -34,7 +65,7 @@ export class PageWorld implements World {
       const list = this.sites.map((s) => `- ${s.title}: ${s.description}`).join('\n')
       return { id: 'home', title: 'Home', visible: this.visible, markdown: `# Home\n${list}`, elements: [] }
     }
-    const page = await this.extract()
+    const page = await this.driver.extract(this.maxText)
     const site = this.siteOf(page.url)
     return {
       id: `${site?.id ?? new URL(page.url).host}:${new URL(page.url).pathname}${new URL(page.url).hash}`,
@@ -42,112 +73,43 @@ export class PageWorld implements World {
       visible: this.visible,
       url: page.url,
       markdown: page.markdown,
-      elements: [
-        ...toNodes(page.elements),
-        ...(page.more.above ? [{ id: 'scroll/up', kind: 'action' as const, label: 'Scroll up' }] : []),
-        ...(page.more.below ? [{ id: 'scroll/down', kind: 'action' as const, label: 'Scroll down' }] : []),
-      ],
+      elements: pageNodes(page),
     }
   }
 
   async open(appId: string): Promise<StepResult> {
     const site = this.sites.find((s) => s.id === appId)
     if (!site) throw new Error(`Unknown site ${appId}`)
-    await this.page.goto(site.url)
-    await this.settle()
+    await this.driver.goto(site.url)
+    await this.driver.settle()
     return { summary: `Opened ${site.title}` }
   }
 
   async openUrl(url: string): Promise<StepResult> {
-    await this.page.goto(url)
-    await this.settle()
+    await this.driver.goto(url)
+    await this.driver.settle()
     const title = await this.page.title()
     return { summary: `Opened "${title}"`, title }
   }
 
   async perform(node: AgentNode, args: ActionArgs): Promise<StepResult> {
-    const [id, key] = node.id.split('/')
-    const element = this.page.locator(`[data-stanley-id="${id}"]`)
-    const before = await this.fingerprint()
-    // Short timeouts: a control that can't be used (covered by a banner, disabled) should fail
-    // fast, so the agent sees the failure and tries something else.
-    const timeout = this.opts.actionTimeoutMs ?? 1500
-    if (id === 'scroll') await this.page.mouse.wheel(0, (key === 'up' ? -0.8 : 0.8) * (this.page.viewportSize()?.height ?? 800))
-    else if (key === 'enter') await element.press('Enter', { timeout })
-    else if (node.kind === 'input' && (await element.evaluate((el) => el.tagName)) === 'SELECT') {
-      const label = await this.optionLabel(element, args.text ?? '')
-      await element.selectOption({ label }, { timeout })
-      return { summary: `"${label}" is chosen` }
-    } else if (node.kind === 'input') await element.fill(args.text ?? '', { timeout })
-    else await element.click({ timeout })
-    await this.settle()
-    const after = await this.fingerprint()
-    // A generic page can't say what a click did, so report what visibly changed.
-    if (node.kind === 'input') return { summary: `"${args.text ?? ''}" is in the field` }
-    if (after.url !== before.url) return { summary: `Now on "${after.title}"` }
-    return { summary: after.text === before.text ? 'Nothing on the page changed' : 'The page changed' }
+    return { summary: await stepOnPage(this.driver, node.id, node.kind === 'input', args, this.maxText) }
   }
 
   async global(option: 'show' | 'home' | 'back'): Promise<void> {
     if (option === 'back') await this.page.goBack().catch(() => null)
     if (option === 'home') await this.page.goto('about:blank')
     if (option === 'show') this.visible = true
-    await this.settle()
+    await this.driver.settle()
   }
 
-  /** The option a spoken choice means: exact, then case-insensitive, then the one that contains it. */
-  private async optionLabel(select: ReturnType<Page['locator']>, wanted: string): Promise<string> {
-    const labels = (await select.evaluate((el) => Array.from((el as HTMLSelectElement).options).map((o) => o.textContent?.trim() ?? ''))) as string[]
-    const w = wanted.trim().toLowerCase()
-    const match = labels.find((l) => l === wanted) ?? labels.find((l) => l.toLowerCase() === w) ?? labels.filter((l) => l.toLowerCase().includes(w) || w.includes(l.toLowerCase()))[0]
-    if (!match) throw new Error(`no option "${wanted}"; the options are ${labels.join(', ')}`)
-    return match
-  }
-
-  private extract(): Promise<Extracted> {
-    return this.page.evaluate(`${EXTRACT}(${JSON.stringify({ maxText: this.opts.maxText ?? 4000 })})`) as Promise<Extracted>
-  }
-
-  private async fingerprint() {
-    if (this.page.url() === 'about:blank') return { url: 'about:blank', title: '', text: '' }
-    const page = await this.extract()
-    return { url: page.url, title: page.title, text: page.markdown }
-  }
-
-  private async settle() {
-    await this.page.waitForLoadState('domcontentloaded').catch(() => null)
-    await this.page.waitForTimeout(this.opts.settleMs ?? 120)
+  private get maxText(): number {
+    return this.opts.maxText ?? 4000
   }
 
   private siteOf(url: string): Site | undefined {
     return this.sites.find((s) => url.startsWith(new URL(s.url).origin))
   }
-}
-
-/** Extracted elements as agent nodes. Elements that share a container are grouped under it. */
-export function toNodes(elements: ExtractedElement[]): AgentNode[] {
-  const out: AgentNode[] = []
-  const groups = new Map<string, AgentNode>()
-  for (const e of elements) {
-    const node: AgentNode = { id: e.id, kind: e.kind, role: e.role, label: e.name || e.role, description: e.state, offscreen: e.offscreen }
-    if (e.kind === 'input') {
-      node.value = e.value ?? ''
-      if (e.submits) node.children = [{ id: `${e.id}/enter`, kind: 'action', role: 'key', label: 'press Enter' }]
-    }
-    const container = e.context.at(-1)
-    if (!container) {
-      out.push(node)
-      continue
-    }
-    let group = groups.get(container)
-    if (!group) {
-      group = { id: `group:${container}`, kind: 'group', label: container, children: [] }
-      groups.set(container, group)
-      out.push(group)
-    }
-    group.children!.push(node)
-  }
-  return out
 }
 
 /** A headless Chromium to drive: $STANLEY_CHROMIUM, else the newest Playwright headless shell, else Homebrew's. */

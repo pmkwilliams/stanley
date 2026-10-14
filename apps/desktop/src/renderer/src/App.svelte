@@ -8,7 +8,7 @@
   import Presence from './Presence.svelte'
   import StatusBar from './StatusBar.svelte'
   import { loudness, mic, voiceOut } from './presence'
-  import { backgrounds, surfaces } from './surfaces'
+  import { backgrounds, kept, surfaces } from './surfaces'
   import { setTheme } from './theme.svelte'
   import { startVoice } from './voice'
 
@@ -77,12 +77,22 @@
     {#if snapshot}
       <!-- Keyed on the app, so switching plays the old window's outro while the new one pops in over it. -->
       <!-- Windows share one cell, so an outgoing one sinks behind the incoming one instead of pushing it aside; Svelte marks it inert. -->
-      {#each visible && surfaces[visible] ? [visible] : [] as id (id)}
+      {#each visible && surfaces[visible] && !kept.has(visible) ? [visible] : [] as id (id)}
         {@const Surface = surfaces[id]}
         <div
           class={[appWindow, 'z-1 col-start-1 row-start-1 inert:z-0']}
           in:scale={{ start: 0.85, duration: 340, easing: cubicOut }}
           out:scale={{ start: 0.88, duration: 260, easing: cubicIn }}
+        >
+          <Surface data={snapshot.surfaces[id]} perform={(nodeId: string, args?: { text?: string }) => window.stanley.perform(id, nodeId, args)} agentName={snapshot.name} />
+        </div>
+      {/each}
+      <!-- A kept window is never taken out: hidden, it stays laid out at full size, out of sight and out of reach, and pops in and out the same way. -->
+      {#each [...kept].filter((id) => snapshot!.surfaces[id] !== undefined) as id (id)}
+        {@const Surface = surfaces[id]}
+        <div
+          class={[appWindow, 'col-start-1 row-start-1 transition-all', visible === id ? 'z-1 duration-340 ease-out' : 'invisible z-0 scale-88 opacity-0 duration-260 ease-in']}
+          inert={visible !== id}
         >
           <Surface data={snapshot.surfaces[id]} perform={(nodeId: string, args?: { text?: string }) => window.stanley.perform(id, nodeId, args)} agentName={snapshot.name} />
         </div>

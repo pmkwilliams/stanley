@@ -22,3 +22,9 @@ export const surfaces: Record<string, Component<any>> = {
 export const backgrounds: Record<string, Component<any>> = {
   music: MusicPlayer,
 }
+
+/**
+ * Apps whose window stays in place while hidden, so what is in it keeps running: a web page goes on
+ * being a page Stanley can read and work in the background, and comes back as it was left.
+ */
+export const kept = new Set(['web'])

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { AppStore } from '@stanley/app-sdk'
+import type { AppStore, LivePage } from '@stanley/app-sdk'
 import { emailApp } from '@stanley/app-email/core'
 import { readSettings, settingsApp } from '@stanley/app-settings/core'
 import { todoApp } from '@stanley/app-todo/core'
@@ -7,6 +7,41 @@ import { webApp } from '@stanley/app-web/core'
 import { Shell } from './shell'
 
 const make = () => new Shell([emailApp, todoApp], { env: {}, fetch }, () => {})
+
+type Site = Record<string, { title: string; text: string; links?: Record<string, string> }>
+
+/** A browser in memory: each page has a title, text and links, and following a link goes to its page. */
+class FakePage implements LivePage {
+  url = 'about:blank'
+  /** Addresses gone to by `goto`. */
+  loads: string[] = []
+
+  constructor(private site: Site) {}
+
+  async goto(url: string) {
+    if (!this.site[url]) throw new Error('ERR_NAME_NOT_RESOLVED')
+    this.url = url
+    this.loads.push(url)
+  }
+
+  async read() {
+    const { title, text, links = {} } = this.site[this.url]!
+    return { url: this.url, title, markdown: text, elements: Object.keys(links).map((label, i) => ({ id: `e${i + 1}`, kind: 'location' as const, role: 'link', label })) }
+  }
+
+  async perform(nodeId: string) {
+    const links = this.site[this.url]!.links ?? {}
+    const label = Object.keys(links)[Number(nodeId.slice(1)) - 1]
+    if (!label) throw new Error("Can't use it: it is no longer on the page")
+    this.url = links[label]!
+    return `Now on "${this.site[this.url]!.title}"`
+  }
+}
+
+const SITE: Site = {
+  'https://a.test/': { title: 'Page A', text: 'All about A.', links: { 'Go to B': 'https://b.test/' } },
+  'https://b.test/': { title: 'Page B', text: 'All about B.', links: { 'Back to A': 'https://a.test/' } },
+}
 
 describe('Shell', () => {
   it('changes the theme in Settings, and keeps it for the next session', async () => {
@@ -81,5 +116,51 @@ describe('Shell', () => {
     await shell.global('back')
     screen = await shell.screen()
     expect(screen).toMatchObject({ id: 'web:page/0', url: 'https://en.wikipedia.org/wiki/Louvre' })
+  })
+
+  it("works a live page: its links are the screen's elements, and a page a link went to can be gone back from", async () => {
+    const page = new FakePage(SITE)
+    const shell = new Shell([webApp, todoApp], { env: {}, fetch, page }, () => {})
+    await shell.openUrl('https://a.test/')
+    let screen = await shell.screen()
+    expect(screen).toMatchObject({ id: 'web:page/0', url: 'https://a.test/' })
+    expect(screen.markdown).toBe('# Web › Page A\nhttps://a.test/\n\nAll about A.')
+    const link = screen.elements.find((e) => e.label === 'Go to B')!
+    expect((await shell.perform(link, {})).summary).toBe('Now on "Page B"')
+    screen = await shell.screen()
+    expect(screen).toMatchObject({ id: 'web:page/1', url: 'https://b.test/' })
+    expect(screen.elements.map((e) => e.label)).toEqual(['Back to A'])
+    await shell.global('back')
+    expect(await shell.screen()).toMatchObject({ id: 'web:page/0', url: 'https://a.test/' })
+    expect(page.loads).toEqual(['https://a.test/', 'https://a.test/'])
+  })
+
+  it('offers the Web app once it has a page, to go back to it from another app', async () => {
+    const shell = new Shell([webApp, todoApp], { env: {}, fetch, page: new FakePage(SITE) }, () => {})
+    expect(shell.appList().map((a) => a.id)).toEqual(['todo'])
+    await shell.openUrl('https://a.test/')
+    await shell.open('todo')
+    expect(shell.appList().map((a) => a.id)).toEqual(['web', 'todo'])
+    await shell.open('web')
+    expect(await shell.screen()).toMatchObject({ id: 'web:page/0', url: 'https://a.test/' })
+  })
+
+  it('takes a page the user went to themselves into the history when it reads the page again', async () => {
+    const page = new FakePage(SITE)
+    const shell = new Shell([webApp], { env: {}, fetch, page }, () => {})
+    await shell.openUrl('https://a.test/')
+    expect(await shell.refresh('web')).toBe(false)
+    page.url = 'https://b.test/'
+    expect(await shell.refresh('web')).toBe(true)
+    expect(shell.screenNow()).toMatchObject({ id: 'web:page/1', url: 'https://b.test/' })
+    await shell.global('back')
+    expect(shell.screenNow()).toMatchObject({ id: 'web:page/0', url: 'https://a.test/' })
+  })
+
+  it("opens a page that can't load with what went wrong, and no elements", async () => {
+    const shell = new Shell([webApp], { env: {}, fetch, page: new FakePage(SITE) }, () => {})
+    const result = await shell.openUrl('https://nowhere.test/')
+    expect(result.summary).toBe("Opened nowhere.test; Couldn't open the page: ERR_NAME_NOT_RESOLVED")
+    expect(await shell.screen()).toMatchObject({ id: 'web:page/0', elements: [] })
   })
 })

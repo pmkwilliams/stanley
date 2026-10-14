@@ -64,6 +64,29 @@ export interface AppStore {
 /** What the assistant is called until the user names it otherwise (in Settings). */
 export const DEFAULT_AGENT_NAME = 'Stanley'
 
+/** What a live web page shows now, read the way an accessibility tree describes it. */
+export interface PageView {
+  url: string
+  title: string
+  /** Its readable text, from where it is scrolled to, controls inline as `[name: value]`. */
+  markdown: string
+  /** Its elements, ids as `LivePage.perform` takes them, plus Scroll up / Scroll down when there is more. */
+  elements: AgentNode[]
+}
+
+/**
+ * A real web page, as a browser shows it, which Stanley reads and works like a person would: the
+ * desktop's web view. The app that shows web pages draws into it.
+ */
+export interface LivePage {
+  /** Goes to an address and waits until the page can be read. Throws when it can't be loaded. */
+  goto(url: string): Promise<void>
+  /** What the page shows now. */
+  read(): Promise<PageView>
+  /** Presses, types into or scrolls by one of the elements `read` gave; returns what visibly changed. Throws when it can't be used. */
+  perform(nodeId: string, args: ActionArgs): Promise<string>
+}
+
 export interface AppContext {
   env: Record<string, string | undefined>
   fetch: typeof fetch
@@ -71,6 +94,8 @@ export interface AppContext {
   store?: AppStore
   /** What the user calls the assistant. Defaults to `DEFAULT_AGENT_NAME`. */
   agentName?: string
+  /** The live page the app that shows web pages draws into. Without one (tests, evals), pages are read through a reader service. */
+  page?: LivePage
 }
 
 export interface AppModule<S = unknown> {
@@ -89,6 +114,12 @@ export interface AppModule<S = unknown> {
   url?(state: S): string | undefined
   /** Apps that show web pages: open one by its address. The shell sends every page Stanley opens here. */
   openUrl?(state: S, url: string, ctx: AppContext): Promise<ActionResult<S>>
+  /**
+   * Apps whose screen changes without them (a live web page, where the user clicks and pages run
+   * scripts): read it again. The shell calls it before its screen is read. Returns `state` itself
+   * when nothing changed.
+   */
+  refresh?(state: S, ctx: AppContext): Promise<S>
 }
 
 export function defineApp<S>(app: AppModule<S>): AppModule<S> {

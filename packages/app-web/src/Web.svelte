@@ -23,9 +23,12 @@
   </Alert.Root>
 {/snippet}
 
-{#if open}
-  <!-- A page has no natural size, so take all the room the shell allows. -->
-  <App.Root size="fill">
+<!--
+  One window whatever is open, so the page's view is never taken out: main loads and works the page
+  in it, even while the window is hidden. A page has no natural size, so take all the room the shell allows.
+-->
+<App.Root size="fill">
+  {#if open}
     <!-- Slim chrome, Safari-style: one centred, read-only address capsule on the glass. -->
     <header class="flex flex-none justify-center px-4 py-2.5">
       <div
@@ -40,11 +43,7 @@
       </div>
     </header>
     {#if data.error}{@render notice(data.error, 'mx-4 mb-2.5 w-auto flex-none')}{/if}
-    <!-- Edge to edge under the chrome, a hairline apart (a white page meets light glass); the bottom corners follow the window's (its radius less its 1px border). -->
-    <webview class="min-h-0 w-full flex-1 overflow-hidden rounded-b-[calc(var(--radius-3xl)-1px)] border-t" src={open.url}></webview>
-  </App.Root>
-{:else}
-  <App.Root>
+  {:else}
     <App.Bar><App.Title>Web</App.Title></App.Bar>
     <App.Body>
       {#if data.error}{@render notice(data.error, 'flex-none')}{/if}
@@ -56,5 +55,14 @@
         </Empty.Header>
       </Empty.Root>
     </App.Body>
-  </App.Root>
-{/if}
+  {/if}
+  <!--
+    Edge to edge under the chrome, a hairline apart (a white page meets light glass); the bottom corners follow the window's (its radius less its 1px border).
+    With no page open it is out of sight behind the empty state, still full size, so a page loads at the size it is seen at.
+  -->
+  <webview
+    class={['min-h-0 w-full flex-1 overflow-hidden rounded-b-[calc(var(--radius-3xl)-1px)] border-t', !open && 'invisible absolute inset-0']}
+    src="about:blank"
+    allowpopups
+  ></webview>
+</App.Root>

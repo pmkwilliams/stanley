@@ -27,10 +27,30 @@ export class Shell implements World {
 
   /** The surface Stanley is working on (which may be hidden): what it reads and its elements. */
   async screen(): Promise<Screen> {
+    if (this.focus) await this.refresh(this.focus)
     return this.screenNow()
   }
 
-  /** `screen()`, synchronously: the shell's surfaces are in memory. */
+  /**
+   * Reads again an app whose screen changes without it (a live web page). A page reached from the
+   * one Stanley is working on goes into the history, as a link would. Returns whether that happened.
+   */
+  async refresh(appId: string): Promise<boolean> {
+    const app = this.app(appId)
+    if (!app.refresh || !this.surfaces.has(appId)) return false
+    return this.serial(appId, async () => {
+      const state = this.surfaces.get(appId)
+      const next = await app.refresh!(state, this.ctx)
+      if (next === state) return false
+      this.surfaces.set(appId, next)
+      const moved = app.current(next) !== app.current(state)
+      if (moved && this.focus === appId) this.navigate(appId)
+      this.onChange()
+      return moved
+    })
+  }
+
+  /** `screen()`, synchronously, as last read: the shell's surfaces are in memory. */
   screenNow(): Screen {
     if (!this.focus) {
       const list = this.appList().map((a) => `- ${a.title}: ${a.description}`).join('\n')
@@ -55,11 +75,11 @@ export class Shell implements World {
   }
 
   /**
-   * Apps Stanley can open. Not the one web pages open in: on its own it shows nothing, and the
-   * pages Stanley found are offered to open directly.
+   * Apps Stanley can open. The one web pages open in only while it has a page to go back to: on
+   * its own it shows nothing, and the pages Stanley found are offered to open directly.
    */
   appList(): AppEntry[] {
-    return this.apps.filter((a) => !a.openUrl).map(({ id, title, description }) => ({ id, title, description }))
+    return this.apps.filter((a) => !a.openUrl || (this.surfaces.has(a.id) && a.url?.(this.surfaces.get(a.id)))).map(({ id, title, description }) => ({ id, title, description }))
   }
 
   async perform(node: AgentNode, args: ActionArgs) {
@@ -120,8 +140,11 @@ export class Shell implements World {
     })
   }
 
+  /** The app's surface exists. A new one is shown to the renderer at once: a live page needs its view in place before it can load. */
   private async ensure(app: AppModule<any>) {
-    if (!this.surfaces.has(app.id)) this.surfaces.set(app.id, await app.init(this.ctx))
+    if (this.surfaces.has(app.id)) return
+    this.surfaces.set(app.id, await app.init(this.ctx))
+    this.onChange()
   }
 
   private serial<T>(appId: string, fn: () => Promise<T>): Promise<T> {

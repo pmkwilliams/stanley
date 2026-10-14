@@ -53,6 +53,9 @@ importers:
       '@stanley/app-web':
         specifier: workspace:*
         version: link:../../packages/app-web
+      '@stanley/browser':
+        specifier: workspace:*
+        version: link:../../packages/browser
       '@stanley/files':
         specifier: workspace:*
         version: link:../../packages/files

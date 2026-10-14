@@ -11,12 +11,11 @@ over a few demo apps, which stand in for arbitrary apps and websites.
 - Push-to-talk (global toggle) with live transcription.
 - An agent that works from what is on screen, so it carries over to arbitrary apps and websites.
 - Background work: the agent can operate on surfaces the user can't see and reveal the result.
-- Toy apps: To-do, Email, Weather, Music, Web (a page viewer; searching happens in the background).
+- Toy apps: To-do, Email, Weather, Music, Web (a live browser page; searching happens in the background).
 - A debug window that explains every decision.
 
 **Not in v1**: wake phrase, multi-window layouts, spoken responses (Stanley's replies are text on
-screen for now), persistence across launches, real websites inside the desktop app (the agent drives
-them in the evals; see **Websites**).
+screen for now), persistence across launches.
 
 ## The agent
 
@@ -375,12 +374,21 @@ sessions near 100K, the plan is server-side compaction (`docs/plans/one-history.
   state (checked, on/off, selected, expanded, disabled), field values, and for repeated names the
   container's label, heading or main link. Elements with no name are dropped. The markdown is the
   page's `main` content from the scroll position on, with controls inline as `[name: value]`.
-- **`PageWorld`** is a `World` over a Playwright page: bookmarked sites are the apps, steps are real
-  clicks, typing and Enter, `Scroll up/down` are elements, and a step reports what visibly changed
-  (a generic page can't say what a click did).
+- **Steps** (`driver.ts`) run through a `PageDriver`, a page's controls as a person uses them:
+  real clicks, typing and Enter, `Scroll up/down` as elements, and a step reports what visibly
+  changed (a generic page can't say what a click did). `livePage` turns a driver into the
+  `LivePage` an app gets (`AppContext.page`).
+- **`PageWorld`** is a `World` over a Playwright page, for the evals: bookmarked sites are the apps.
 
-It runs in the evals today. Being plain JS, the extractor can run in an Electron `WebContentsView`
-next, which is how the desktop app would drive real sites.
+**In the desktop app** the Web app's page is live: a `<webview>` that main drives as Playwright
+drives a browser (`WebviewPage`, `apps/desktop/src/main/page.ts`). It reads with the extractor
+through `executeJavaScript` and sends input through the DevTools protocol. The Web app's screen is
+the page's elements and text; a link, a form or a redirect that lands on another page is the next
+page in its history; and a page the user goes to themselves goes into the conversation as their
+step. The view stays in the window, out of sight, while the app is hidden, so Stanley works pages in
+the background too. Chromium drops input to a view out of sight, so there each step checks whether
+real input arrived and otherwise does it from inside the page (`click()`, `requestSubmit()`,
+`scrollBy`). See `docs/plans/live-pages.md`.
 
 ## Files
 
@@ -418,7 +426,9 @@ writes there is usable outside it.
 - Background = acting on a surface not in the layout. `show` puts the working surface in the layout.
   Example: "weather in Denver" → agent drives a hidden weather surface (open Weather, thinking types
   "Denver", Enter, says the forecast) → `show`. The user sees one jump.
-- Later: web views are `WebContentsView`s kept offscreen; layout gains options like "side by side".
+- A surface whose window holds something live (the Web app's page) keeps its window while hidden:
+  out of sight and out of reach, still laid out, so the page keeps running and can be worked.
+- Later: layout gains options like "side by side".
 
 ## Voice
 
@@ -506,7 +516,8 @@ All via **Vercel AI Gateway** with the AI SDK (`ai`, pinned exactly), one `AI_GA
   `Thinker` interface with one method, `run`: a tool loop with `act`, plus `search`, `fetch` and
   `open_page` when the agent has them, or one step whose calls come back unrun (write, confirm).
 - **Web**: Parallel Search and Extract APIs (`PARALLEL_API_KEY`), in `@stanley/app-web/parallel`:
-  the agent's background search and fetch, and the Web app's page reader.
+  the agent's background search and fetch, and the Web app's page reader where it has no live page
+  (tests and evals).
 - **Weather**: Open-Meteo forecast + geocoding (no key).
 - **Lights**: the Hue Bridge's local API (v1, HTTP). The bridge is found by Philips' discovery service or
   `HUE_BRIDGE`; Connect gets a key in the 30 s after its link button is pressed, kept in the shell's store.
@@ -520,7 +531,7 @@ All via **Vercel AI Gateway** with the AI SDK (`ai`, pinned exactly), one `AI_GA
 | Weather | Open-Meteo | "Search a city" box (Enter looks up), current conditions, one button per day |
 | Music | a hard-coded 12-track playlist (streamed from Jamendo) | Previous / Play / Next / Volume buttons, one button per track |
 | Lights | your Philips Hue Bridge | Rooms and zones, each a row with a switch, and "Turn all off"; a room has its switch, a Brightness slider (a field taking a percentage), scene buttons, color swatches and a switch per light |
-| Web | Parallel extract + webview | No elements: shows the page Stanley opened (`openUrl`). Not in the agent's app list, since it shows nothing on its own; known pages open in it |
+| Web | a live webview | The page's own elements and text (see **Websites**). Offered as an app once it has a page; pages Stanley found open in it |
 
 Each app's `nodes()` lists only what its screen shows, labelled as the UI labels it.
 
@@ -593,8 +604,8 @@ Not yet verified / known gaps:
   as soon as a segment lands on a field Jev already chose would save ~0.3 s.
 - Real microphone capture (needs macOS mic permission for the dev Electron binary; a packaged app
   needs `NSMicrophoneUsageDescription`).
-- Real websites inside the desktop app: the Web app still reads pages through Parallel Extract.
-  Next: run `packages/browser`'s extractor in offscreen `WebContentsView` surfaces.
+- Live pages in the desktop app are verified by hand against a local test site, not by an eval:
+  the website evals drive Playwright, not the Electron view.
 - Thinking steps make writing and sending slower than the fast path alone: typically 2–4 s to settle
   after the user stops, vs 1–2 s for pure navigation.
 - Native apps would need an OS accessibility adapter producing the same `Screen`.

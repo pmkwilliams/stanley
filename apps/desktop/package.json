@@ -23,6 +23,7 @@
     "@stanley/app-ui": "workspace:*",
     "@stanley/app-weather": "workspace:*",
     "@stanley/app-web": "workspace:*",
+    "@stanley/browser": "workspace:*",
     "@stanley/files": "workspace:*",
     "@stanley/jev": "workspace:*",
     "@stanley/stt": "workspace:*",
