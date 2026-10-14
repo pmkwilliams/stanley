@@ -152,12 +152,13 @@ export function instructions(opts: { web: boolean; files?: string; today: Date; 
 }
 
 /** What a single-step turn on a field is told, as a note ending its observation. */
-export function writeNote(field: string): string {
+export function writeNote(field: string, files = false): string {
   return [
     `Next: typing into [${field}]. To type, call act on it once, with exactly what should appear in it: the finished words only, as they would be sent or saved. Typing sends nothing: pressing Enter or a button comes after, separately.`,
     `- When the user dictated the words ("saying …", "called …", or a value like a city or a name), type exactly their words, tidied, never reworded or added to (no greeting, sign-off or extra words), with wrote: user. While they are still speaking, only the words dictated so far; when they corrected themselves ("at five, no, six"), only the corrected version.`,
     `- When they only described what to write (a tone, an idea, a gist, "something funny"), compose it yourself and type it, with wrote: stanley. It is read back to them before anything is sent.`,
     `- When they haven't said yet what to write, or words marked (?) that matter make no sense here, don't call act: once they have finished, say what you need to ask.`,
+    ...(files ? [`- When what they named isn't this field's (a list, a note or a document of theirs that isn't on screen), it may be one of their files: look there with bash before typing or asking.`] : []),
   ].join('\n')
 }
 
@@ -264,7 +265,7 @@ function tools(req: ThinkRequest): ToolSet {
     ...(req.writeFile && {
       write_file: tool({
         description:
-          "Write a file in the user's folder, replacing it if it is there. A web page (.html) is put on screen and drawn as you write it; then you get the errors it reported and a picture of it.",
+          "Write a file in the user's folder, replacing it if it is there.",
         inputSchema: jsonSchema<{ path: string; content: string }>({
           type: 'object',
           properties: {
@@ -281,7 +282,7 @@ function tools(req: ThinkRequest): ToolSet {
     ...(req.editFile && {
       edit_file: tool({
         description:
-          "Change part of a file in the user's folder: `old` is replaced by `new`. `old` must be exactly as it is in the file, and appear in it once unless `all` is set. A web page is put on screen as it is now; then you get the errors it reported and a picture of it.",
+          "Change part of a file in the user's folder: `old` is replaced by `new`. `old` must be exactly as it is in the file, and appear in it once unless `all` is set.",
         inputSchema: jsonSchema<{ path: string; old: string; new: string; all?: boolean }>({
           type: 'object',
           properties: {

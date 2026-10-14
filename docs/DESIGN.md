@@ -51,7 +51,8 @@ Each tick the world provides (`World` in `packages/agent/src/world.ts`):
   `Blue ceramic mug › Add to cart`).
 - **Apps** that can be opened from anywhere, plus `back` (the previous screen, like a browser's
   back button) and `home`.
-- **Known web pages**: every page a background search found or thinking read, while the
+- **Known web pages**: every page a background search found, thinking read, or Stanley or the
+  user opened (but not pages of the user's files, which are offered as files), while the
   conversation still shows it, as `open page: <title>` (told apart by site when titles repeat).
   Opening one is a single navigation step, like typing its address into a browser
   (`World.openUrl`). The page already on screen isn't offered.
@@ -550,7 +551,7 @@ All via **Vercel AI Gateway** with the AI SDK (`ai`, pinned exactly), one `AI_GA
 | Weather | Open-Meteo | "Search a city" box (Enter looks up), current conditions, one button per day |
 | Music | a hard-coded 12-track playlist (streamed from Jamendo) | Previous / Play / Next / Volume buttons, one button per track |
 | Lights | your Philips Hue Bridge | Rooms and zones, each a row with a switch, and "Turn all off"; a room has its switch, a Brightness slider (a field taking a percentage), scene buttons, color swatches and a switch per light |
-| Web | a live webview | The page's own elements and text (see **Websites**). Offered as an app once it has a page; pages Stanley found open in it |
+| Web | a live webview | The page's own elements and text (see **Websites**). Not in the agent's app list, since it shows nothing on its own; known pages open in it, the ones it opened included |
 
 Each app's `nodes()` lists only what its screen shows, labelled as the UI labels it.
 

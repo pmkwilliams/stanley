@@ -52,11 +52,11 @@ The user's files are in a folder on their computer, ${root}. \`bash\` runs a com
 - Commands have no network access.
 - Every change to the folder is kept. To see an earlier version of a file or bring it back: git --git-dir="$STANLEY_HISTORY" log -- <file>, then git --git-dir="$STANLEY_HISTORY" show <commit>:<file>.
 - \`open_page\` puts a file from the folder on screen by its path, as a browser shows it: a web page, a PDF, a picture or a video. A web page from the folder can use files next to it, but nothing from the internet.
-- \`write_file\` writes a file and \`edit_file\` changes part of one. Prefer them to bash for writing text.
+- \`write_file\` writes a file and \`edit_file\` changes part of one.
 
 ## Pages
-When the user wants to see something that isn't already on a website or on screen (a diagram, a chart, a timeline, a table, a small app), make it a web page: one .html file in Pages/, named for what it shows, written with \`write_file\`.
-- It comes on screen as you write it, and is drawn as it comes. Then you get the errors it reported and a picture of it: if something didn't work or doesn't look right, fix that part with \`edit_file\`.
+When the user asks you to make something to look at (a diagram, a chart, a timeline, a small app), make it a web page: one .html file in Pages/, named for what it shows, written with \`write_file\`. Anything else they ask about is answered as before: from the screen, their files or a lookup.
+- It comes on screen as you write it, and is drawn as it comes. Then you get the errors it reported and a picture of it. If something is broken (an error, something missing, overlapping or cut off), fix that part with \`edit_file\`; otherwise leave it as it is: the user is waiting.
 - To change a page the user is looking at, use \`edit_file\` on just the part that changes: the page reloads where they were looking. Write the whole page again only when most of it changes.
 - Every line takes time to write while the user waits, so keep a page as short as it can be and still be good. It fills a large window, about 1200 by 560: lay it out to fit without scrolling (an SVG with a viewBox that scales to the window does), with text large enough to read from a little way off.
 - A page can't reach the internet. Mermaid, Three.js, D3 and Chart.js load from their usual addresses (https://cdn.jsdelivr.net/npm/mermaid, …/three, …/d3, …/chart.js); a page can fetch files next to it in the folder. Write everything else into the page itself.
@@ -64,7 +64,7 @@ When the user wants to see something that isn't already on a website or on scree
 }
 
 /** For Jev, when the session has the user's files. */
-export const JEV_FILES = `The user's files are in a folder Stanley can look into in the background: "list files" lists it, and its folders and files each have a step to list or read them. Looking at files shows nothing on screen. Files the screen can show (web pages, PDFs, pictures, videos) also have an "open file" step, which puts them on screen as a browser would. Finding something in them, answering from them, or changing them is for \`think\`, which reads them itself. So is making a page to look at (a diagram, a chart) and changing one on screen ("make it blue", "add a title"): don't read the page's file first.`
+export const JEV_FILES = `The user's files are in a folder Stanley can look into in the background: "list files" lists it, and its folders and files each have a step to list or read them. Looking at files shows nothing on screen. Files the screen can show (web pages, PDFs, pictures, videos) also have an "open file" step, which puts them on screen as a browser would. Finding something in them, answering from them, or changing them is for \`think\`.`
 
 /** `'it'\''s'`: a word bash reads back exactly. */
 export function quote(text: string): string {

@@ -43,8 +43,10 @@ works in the background is still a page, and comes back as it was left. Main dri
 - `AppModule.refresh` reads a live screen again: the shell calls it before every `screen()`, and
   main calls it when the page navigates or retitles by itself. A page the user went to themselves
   goes into the conversation as their own step.
-- Once the Web app has a page, it is offered as an app ("open Web"), so Stanley can go back to the
-  page from another app.
+- Pages Stanley or the user opened are known pages, offered as `open page: <title>` like pages a
+  search found, so Stanley can go back to one from another app. (Offering the Web app itself,
+  "open Web", misled Jev: in `show-from-a-page` it reopened the old page instead of finding the
+  new one, 0/6.)
 
 **Notes**
 - Chromium drops mouse and key input for a view that is out of sight, though it can still be
@@ -161,6 +163,16 @@ replacement), on the user's folder through `FileTools`, so every change is kept 
   cut off the first page sent to it; the extractor handles a document with nothing in it yet; the
   file on screen isn't offered to read or open (Jev kept reading the page's file instead of handing
   "make it blue" to thinking).
+- Adding `write_file` and `edit_file` changed what thinking does when Jev picks the wrong field:
+  in `files-add-a-line` ("put sunscreen on the Lisbon list", Jev opens To-do and picks New to-do)
+  thinking stopped looking in the files and asked instead (about 20%, against about 60% on main).
+  The write note now says that what the user named may be one of their files (10/12). The tool
+  descriptions are short; what a page write does is in the instructions' Pages section, which
+  is only for when the user asks for something to look at (the broader first wording made
+  `files-answer` worse). `pnpm eval` on the files, web and turn-taking scenarios: as on main or
+  better; `files-answer` and `navigate-and-ask` fail on main as often.
+- Sonnet often reworks a page after seeing its picture: one rewrite or a few edits, 10 to 20 s
+  more. The instructions ask it to fix only what is broken.
 - Verified in the built app with real models: "draw me a diagram of the water cycle" draws on screen
   from about 4 s in; Sonnet looked at the picture, fixed oversized arrowheads and overlaps, and was
   done in about 27 s. "And make the arrows blue", said while it drew, was held, then done with one

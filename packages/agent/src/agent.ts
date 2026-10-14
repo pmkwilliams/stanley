@@ -1195,7 +1195,7 @@ export class Agent {
   ): Promise<{ result: ThinkResult; options: OptionSet; steps: number } | null> {
     const screen = await this.world.screen()
     const options = this.options(screen, this.config.thinkingElements)
-    const next = single ? (single.kind === 'write' ? writeNote(single.option) : confirmNote(single.option)) : note
+    const next = single ? (single.kind === 'write' ? writeNote(single.option, !!this.files) : confirmNote(single.option)) : note
     const sent = this.history.send(this.observe(screen, options, next ? [next] : []), this.live())
     this.events.debug?.({ type: 'think-start', tickId: id, mode, handover, option: single?.option, entries: sent.entries, cacheAt: sent.cacheAt })
     const controller = new AbortController()

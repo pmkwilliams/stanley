@@ -138,16 +138,6 @@ describe('Shell', () => {
     expect(page.loads).toEqual(['https://a.test/', 'https://a.test/'])
   })
 
-  it('offers the Web app once it has a page, to go back to it from another app', async () => {
-    const shell = new Shell([webApp, todoApp], { env: {}, fetch, page: new FakePage(SITE) }, () => {})
-    expect(shell.appList().map((a) => a.id)).toEqual(['todo'])
-    await shell.openUrl('https://a.test/')
-    await shell.open('todo')
-    expect(shell.appList().map((a) => a.id)).toEqual(['web', 'todo'])
-    await shell.open('web')
-    expect(await shell.screen()).toMatchObject({ id: 'web:page/0', url: 'https://a.test/' })
-  })
-
   it('keeps a page opened again as the one page in the history', async () => {
     const page = new FakePage(SITE)
     const shell = new Shell([webApp], { env: {}, fetch, page }, () => {})

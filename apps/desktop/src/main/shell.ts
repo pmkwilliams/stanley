@@ -92,11 +92,11 @@ export class Shell implements World {
   }
 
   /**
-   * Apps Stanley can open. The one web pages open in only while it has a page to go back to: on
-   * its own it shows nothing, and the pages Stanley found are offered to open directly.
+   * Apps Stanley can open. Not the one web pages open in: on its own it shows nothing, and the
+   * pages Stanley found or opened are offered to open directly.
    */
   appList(): AppEntry[] {
-    return this.apps.filter((a) => !a.openUrl || (this.surfaces.has(a.id) && a.url?.(this.surfaces.get(a.id)))).map(({ id, title, description }) => ({ id, title, description }))
+    return this.apps.filter((a) => !a.openUrl).map(({ id, title, description }) => ({ id, title, description }))
   }
 
   /** Where the app that shows web pages shows a file from the user's folder, when it is there and can be shown. */
