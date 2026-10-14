@@ -11,7 +11,7 @@
   import * as Item from '@stanley/app-ui/components/item'
   import * as Tabs from '@stanley/app-ui/components/tabs'
   import { avatarFor } from './avatars'
-  import { formatDate, mailbox, openEmail, openSent, tabs, type EmailState } from './core'
+  import { formatDate, linkify, mailbox, openEmail, openSent, tabs, type EmailState } from './core'
 
   let { data, perform, agentName = DEFAULT_AGENT_NAME }: AppUiProps<EmailState> = $props()
 
@@ -88,6 +88,18 @@
     <Avatar.Fallback class={['font-semibold', a.class]}>{a.letter}</Avatar.Fallback>
     {#if unread}<Avatar.Badge aria-label="Unread" />{/if}
   </Avatar.Root>
+{/snippet}
+
+<!-- A message's text, its web addresses links that open in Web. Kept on few lines: the paragraph keeps whitespace. -->
+{#snippet body(message: string, text: string)}
+  <p class="min-h-0 flex-1 overflow-auto px-6 py-5 leading-relaxed whitespace-pre-wrap">{#each linkify(text) as segment, i (i)}{#if segment.url}<a
+          href={segment.url}
+          class="font-medium wrap-anywhere text-primary underline underline-offset-4"
+          onclick={(e) => {
+            e.preventDefault()
+            perform(`${message}/link/${segment.n}`)
+          }}>{segment.text}</a
+        >{:else}{segment.text}{/if}{/each}</p>
 {/snippet}
 
 {#snippet person(name: string, address: string | undefined, date: string)}
@@ -170,7 +182,7 @@
             </div>
             {@render person(open.from, open.address, formatDate(open.date))}
           </header>
-          <p class="min-h-0 flex-1 overflow-auto px-6 py-5 leading-relaxed whitespace-pre-wrap">{open.body}</p>
+          {@render body(`email/${open.id}`, open.body)}
           <form class="flex-none px-6 pt-1 pb-5" onsubmit={send}>
             <InputGroup.Root>
               <InputGroup.Textarea
@@ -196,7 +208,7 @@
           <h2 class="text-2xl leading-tight font-bold tracking-tight text-balance wrap-anywhere">{sent.subject}</h2>
           {@render person(sent.to, addressOf(sent.to), formatDate(sent.date))}
         </header>
-        <p class="min-h-0 flex-1 overflow-auto px-6 py-5 leading-relaxed whitespace-pre-wrap">{sent.body}</p>
+        {@render body(`sent/${sent.id}`, sent.body)}
       </article>
     {:else if rows.length}
       {@render empty('envelope-open', 'No message selected', `Choose one, or ask ${agentName} to open it.`)}

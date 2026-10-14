@@ -1,7 +1,7 @@
 import { simulateReadableStream, type ModelMessage } from 'ai'
 import { MockLanguageModelV4 } from 'ai/test'
 import { describe, expect, it } from 'vitest'
-import { createThinker, instructions, PartialTurn, type ThinkRequest } from '../src/think'
+import { createThinker, instructions, PartialTurn, unsilenced, type ThinkRequest } from '../src/think'
 
 type Part = Parameters<typeof simulateReadableStream>[0]['chunks'][number]
 
@@ -46,6 +46,16 @@ describe('createThinker', () => {
     expect(result.calls).toEqual([])
   })
 
+  it('never speaks the silence marker, even split across deltas', async () => {
+    const spoken: string[] = []
+    const parts = ['<sil', 'ent', '/>'].flatMap((d) => [{ type: 'text-delta', id: 't', delta: d }]) as Part[]
+    const m = model([[call('c1', { option: 'Sort' }), finish('tool-calls')], [{ type: 'text-start', id: 't' } as Part, ...parts, { type: 'text-end', id: 't' } as Part, finish('stop')]])
+    const result = await createThinker({ model: m }).run(request({ onText: (d) => spoken.push(d) }))
+    expect(spoken).toEqual([])
+    expect(result.text).toBe('')
+    expect(JSON.stringify(result.messages)).toContain('<silent/>')
+  })
+
   it("brings a single step's call back unrun, and holds its text until the end", async () => {
     const spoken: string[] = []
     let acted = false
@@ -66,5 +76,20 @@ describe('createThinker', () => {
     const error = await run.catch((e: unknown) => e)
     expect(error).toBeInstanceOf(PartialTurn)
     expect((error as PartialTurn).messages.map((x) => x.role)).toEqual(['assistant', 'tool'])
+  })
+})
+
+describe('unsilenced', () => {
+  it('drops the marker and its near misses', () => {
+    expect(unsilenced('<silent/>', true)).toBe('')
+    expect(unsilenced('<silent />', true)).toBe('')
+    expect(unsilenced('Sam sent it. <SILENT/>', true)).toBe('Sam sent it. ')
+  })
+
+  it('holds back what may still become the marker, and only that', () => {
+    expect(unsilenced('<sil', false)).toBe('')
+    expect(unsilenced('Six <', false)).toBe('Six ')
+    expect(unsilenced('Six <b', false)).toBe('Six <b')
+    expect(unsilenced('<sil', true)).toBe('<sil')
   })
 })

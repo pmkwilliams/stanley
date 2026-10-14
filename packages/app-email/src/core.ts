@@ -116,6 +116,47 @@ export function formatDate(iso: string): string {
   return `${formatDay(iso)}, ${(iso.split('T')[1] ?? '').slice(0, 5)}`
 }
 
+/** A run of a message's text: plain, or its `n`th web address. */
+export type Segment = { text: string; url?: undefined } | { text: string; url: string; n: number }
+
+/**
+ * A message's text split around its web addresses (`https://…`, `www.…`), as a mail app finds them.
+ * Punctuation that ends the sentence isn't part of the address, nor is a closing bracket it didn't open.
+ */
+export function linkify(body: string): Segment[] {
+  const segments: Segment[] = []
+  let at = 0
+  for (const match of body.matchAll(/\b(?:https?:\/\/|www\.)[^\s<>"]+/gi)) {
+    let text = match[0]
+    while (/[.,;:!?']$/.test(text) || unopened(text)) text = text.slice(0, -1)
+    if (match.index > at) segments.push({ text: body.slice(at, match.index) })
+    segments.push({ text, url: /^www\./i.test(text) ? `https://${text}` : text, n: segments.filter((p) => p.url).length })
+    at = match.index + text.length
+  }
+  if (at < body.length) segments.push({ text: body.slice(at) })
+  return segments
+}
+
+/** Whether the text ends in a closing bracket with no opening one to match it: `(see https://x.com)`. */
+function unopened(text: string): boolean {
+  const open = { ')': '(', ']': '[', '}': '{' }[text.at(-1) ?? '']
+  return !!open && text.split(open).length < text.split(text.at(-1)!).length
+}
+
+/** A message's links, in order: each is the element `<message>/link/<n>`. */
+const links = (body: string) => linkify(body).filter((p) => p.url !== undefined)
+
+/** A message's links as elements: they sit in its body, between the header and the reply box. */
+const linkNodes = (message: string, body: string): AgentNode[] =>
+  links(body).map((l, n) => ({ id: `${message}/link/${n}`, kind: 'location', role: 'link', label: l.text }))
+
+/** Pressing a message's link opens its page in the Web app. */
+function openLink<S>(state: S, body: string, n: string | undefined) {
+  const link = links(body)[Number(n)]
+  if (!link) return { state, summary: `No such link ${n}` }
+  return { state, summary: `Opened the link ${link.text}`, openUrl: link.url }
+}
+
 /** The open email, in the inbox or the archive. */
 export const openEmail = (s: EmailState) => (s.route.startsWith('email/') ? s.emails.find((e) => `email/${e.id}` === s.route) : undefined)
 
@@ -184,7 +225,9 @@ export const emailApp = defineApp<EmailState>({
         description: open?.id === m.id ? 'open' : undefined,
       }))
       if (!open) return [...switcher, ...rows]
-      return [...switcher, ...rows, { id: `sent/${open.id}/article`, kind: 'group', role: 'article', label: `"${open.subject}"`, description: `To ${open.to}, ${formatDate(open.date)}` }]
+      const article: AgentNode = { id: `sent/${open.id}/article`, kind: 'group', role: 'article', label: `"${open.subject}"`, description: `To ${open.to}, ${formatDate(open.date)}` }
+      const children = linkNodes(`sent/${open.id}`, open.body)
+      return [...switcher, ...rows, children.length ? { ...article, children } : article]
     }
     const open = openEmail(s)
     const rows = s.emails
@@ -206,6 +249,7 @@ export const emailApp = defineApp<EmailState>({
         { id: `email/${open.id}/unread`, kind: 'action', label: 'Mark unread' },
         open.archived ? { id: `email/${open.id}/restore`, kind: 'action', label: 'Move to Inbox' } : { id: `email/${open.id}/archive`, kind: 'action', label: 'Archive' },
         { id: `email/${open.id}/delete`, kind: 'action', label: 'Delete' },
+        ...linkNodes(`email/${open.id}`, open.body),
         { id: `email/${open.id}/reply`, kind: 'input', label: `Reply to ${open.from}`, value: s.drafts[open.id] ?? '' },
         { id: `email/${open.id}/send`, kind: 'action', label: 'Send reply' },
       ],
@@ -219,12 +263,14 @@ export const emailApp = defineApp<EmailState>({
     if (nodeId === 'archived') return { state: { ...s, route: 'archived' }, summary: 'Opened archived mail' }
 
     if (nodeId.startsWith('sent/')) {
-      const sent = s.sent.find((m) => `sent/${m.id}` === nodeId)
+      const [, id, verb, n] = nodeId.split('/')
+      const sent = s.sent.find((m) => m.id === id)
       if (!sent) return { state: s, summary: `No such sent message ${nodeId}` }
+      if (verb === 'link') return openLink(s, sent.body, n)
       return { state: { ...s, route: nodeId }, summary: `Opened "${sent.subject}" to ${sent.to}`, observation: sentMarkdown(sent) }
     }
 
-    const [, id, verb] = nodeId.split('/')
+    const [, id, verb, n] = nodeId.split('/')
     const email = s.emails.find((e) => e.id === id)
     if (!email) return { state: s, summary: `No such email ${id}` }
     const label = `"${email.subject}" from ${email.from}`
@@ -234,6 +280,7 @@ export const emailApp = defineApp<EmailState>({
       const emails = s.emails.map((e) => (e.id === id ? { ...e, read: true } : e))
       return { state: { ...s, emails, route: nodeId }, summary: `Opened ${label}`, observation: emailMarkdown(email) }
     }
+    if (verb === 'link') return openLink(s, email.body, n)
     if (verb === 'unread') {
       const emails = s.emails.map((e) => (e.id === id ? { ...e, read: false } : e))
       return { state: { ...s, emails }, summary: `Marked ${label} unread` }

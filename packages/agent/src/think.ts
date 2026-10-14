@@ -85,8 +85,11 @@ export interface Thinker {
   run(req: ThinkRequest): Promise<ThinkResult>
 }
 
+/** What thinking writes, alone, when there is nothing worth saying. It is never spoken. */
+export const SILENT = '<silent/>'
+
 export const THINKING_PROMPT = `# Stanley
-You are Stanley, a voice assistant that operates apps and websites on the user's computer. You act while the user is still talking, so the conversation shows each step where it happened: a step you took before the user finished comes before the words they said after it. When later words take back or change what you did, don't mention or apologise for it: undo it (untick, put back, retype) before anything else, then do what they meant. If everything you did matches what they asked and nothing is left to say, say nothing.
+You are Stanley, a voice assistant that operates apps and websites on the user's computer. You act while the user is still talking, so the conversation shows each step where it happened: a step you took before the user finished comes before the words they said after it. When later words take back or change what you did, don't mention or apologise for it: undo it (untick, put back, retype) before anything else, then do what they meant. If everything you did matches what they asked and nothing is left to say, write only ${SILENT}.
 
 The user's words are their messages. Notes from the computer are in <note> tags: what the user did in the app themselves, being cut off, the user still speaking, what comes next. Each time you are needed, the screen you're working on and its options come in <screen> and <options>; <screen unchanged/> means it's the same as the last one you saw. Whichever screen you finish on comes to the front by itself.
 
@@ -95,7 +98,8 @@ You act through the \`act\` tool, which runs one of the listed options: open an 
 Everything you write as text is read aloud to the user by text-to-speech as you write it, and shown on screen. So:
 - Write it the way you would say it out loud: no markdown, lists or other formatting.
 - Keep it short: listening takes longer than reading. Give just the answer, without hedging.
-- Speak only when there's something worth hearing: an answer they asked for, a question, what's ready before something is sent, or something that went wrong. The user can see the screen: never narrate it. Don't say where they are, what opened or what is showing ("you're in your inbox", "the calendar is up"), and don't read out or count what's on screen unless they asked. When a step did what they asked, say nothing.
+- Speak only when there's something worth hearing: an answer they asked for, a question, what's ready before something is sent, or something that went wrong. The user can see the screen: never narrate it. Don't say where they are, what opened or what is showing ("you're in your inbox", "the calendar is up"), and don't read out or count what's on screen unless they asked.
+- When there is nothing worth hearing, write only ${SILENT} after your last step: it is never spoken. A turn that only did what was asked ends this way: opening the page they asked for ends with ${SILENT}, never "The page is open" or "Done".
 - When the answer to their question is on screen, say only the answer itself, as if you just knew it: never that it's on screen, which app or page it's in, or that you opened it. "Your flight lands at six", not "the email is open and it says your flight lands at six".
 
 How to act:
@@ -144,10 +148,10 @@ export function writeNote(field: string): string {
 }
 
 /** What thinking is told when the fast part was unsure the task is done. */
-export const DONE_CHECK = `This may already be done. If something is left for the user, such as an answer, do it; if not, say nothing.`
+export const DONE_CHECK = `This may already be done. If something is left for the user, such as an answer, do it; if not, write only ${SILENT}.`
 
 /** What thinking is told when a button was pressed before the user finished speaking. */
-export const EARLY_GUESS = `Stanley pressed something before the user finished speaking. Check each step against everything they said: undo any they took back or corrected, then do what is left. If it all matches, say nothing.`
+export const EARLY_GUESS = `Stanley pressed something before the user finished speaking. Check each step against everything they said: undo any they took back or corrected, then do what is left. If it all matches, write only ${SILENT}.`
 
 /** What a single-step turn on a button that may commit is told. */
 export function confirmNote(option: string): string {
@@ -251,6 +255,17 @@ export function unrunCalls(messages: ModelMessage[]): UnrunCall[] {
   )
 }
 
+/**
+ * `text` without the silence marker (or a near miss like `<silent />`). While it is still being
+ * written, a tail that may become one is held back.
+ */
+export function unsilenced(text: string, ended: boolean): string {
+  const clean = text.replace(/<\s*silent\s*\/?\s*>/gi, '')
+  if (ended) return clean
+  const i = clean.lastIndexOf('<')
+  return i !== -1 && /^<\s*(s(i(l(e(n(t\s*\/?\s*)?)?)?)?)?)?$/i.test(clean.slice(i)) ? clean.slice(0, i) : clean
+}
+
 let scripted = 0
 
 /** A turn that says `text` and makes `call` without running it: for stand-ins and tests. */
@@ -293,6 +308,7 @@ export function createThinker(opts: { model?: LanguageModel; singleModel?: Langu
         })
         // Text from separate steps (before and after a tool call) reads as one reply.
         let text = ''
+        let streamed = ''
         let stepEnded = false
         for await (const part of result.stream) {
           if (part.type === 'error') throw part.error
@@ -303,12 +319,16 @@ export function createThinker(opts: { model?: LanguageModel; singleModel?: Langu
           stepEnded = false
           text += delta
           // A single step's question mustn't be spoken just before it presses: it waits for the end.
-          if (!req.single) req.onText?.(delta)
+          if (req.single || !req.onText) continue
+          const sayable = unsilenced(text, false)
+          if (sayable.length > streamed.length) req.onText(sayable.slice(streamed.length))
+          streamed = sayable
         }
         req.signal.throwIfAborted()
         const messages = await result.responseMessages
         const steps = await result.steps
-        return { text: text.trim(), messages, sent: captured.length, calls: unrunCalls(messages), usage: await result.totalUsage, lastInputTokens: steps.at(-1)?.usage.inputTokens }
+        const said = unsilenced(text, true).replace(/ {2,}/g, ' ').trim()
+        return { text: said, messages, sent: captured.length, calls: unrunCalls(messages), usage: await result.totalUsage, lastInputTokens: steps.at(-1)?.usage.inputTokens }
       } catch (err) {
         throw new PartialTurn(captured, err)
       }

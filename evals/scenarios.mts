@@ -72,6 +72,8 @@ const newFile = (name: RegExp, text: RegExp): Check => (_, __, files) => {
 const said = (pattern = /\S/): Check => (_, agent) =>
   spoken(agent).some((t) => pattern.test(t)) ? undefined : `expected Stanley to say something matching ${pattern}`
 
+const saidNothing: Check = (_, agent) => (spoken(agent).length === 0 ? undefined : `expected nothing said, got "${spoken(agent).join(' ')}"`)
+
 /** Stanley never told the user to look it up themselves, or that it can't know current facts. */
 const noHedge: Check = (_, agent) => {
   const hedge = spoken(agent).find((t) => /check (a|an|the)? ?(current|up-to-date|reliable|official|latest)|as of my (last|knowledge)|(don't|can't|cannot) (have|access) (real-time|current|live)/i.test(t))
@@ -364,7 +366,13 @@ export const scenarios: Scenario[] = [
     // Only going somewhere: nothing to say once it's there.
     name: 'navigate-quietly',
     utterances: ['take me to my to-dos'],
-    checks: [visible('todo'), (_, agent) => (spoken(agent).length === 0 ? undefined : `expected nothing said, got "${spoken(agent).join(' ')}"`)],
+    checks: [visible('todo'), saidNothing],
+  },
+  {
+    // Thinking opens a page from a link on screen: the page is the answer, so nothing is said.
+    name: 'open-link-quietly',
+    utterances: ['open the GitHub email', 'go to the GitHub page for the PR'],
+    checks: [route('web', /^page\//), saidNothing],
   },
   {
     name: 'question-after-pause',

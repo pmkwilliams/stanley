@@ -53,6 +53,8 @@ export interface ActionResult<S> {
   summary: string
   /** `openUrl`: the title of the page that opened. */
   title?: string
+  /** A link pressed: the shell opens this address in the app that shows web pages. */
+  openUrl?: string
 }
 
 /** Values that outlast a session and the app quitting, e.g. settings. */
@@ -89,6 +91,11 @@ export interface AppModule<S = unknown> {
   url?(state: S): string | undefined
   /** Apps that show web pages: open one by its address. The shell sends every page Stanley opens here. */
   openUrl?(state: S, url: string, ctx: AppContext): Promise<ActionResult<S>>
+  /**
+   * Whether the current screen can fill the whole screen, over the status bar (e.g. a web page).
+   * The shell then gives it a Full screen button, as a window's title bar would.
+   */
+  fullscreen?(state: S): boolean
 }
 
 export function defineApp<S>(app: AppModule<S>): AppModule<S> {
@@ -104,7 +111,12 @@ export interface AppUiProps<S> {
   volume?: number
   /** What the user calls the assistant. Defaults to `DEFAULT_AGENT_NAME`. */
   agentName?: string
+  /** Apps that can fill the screen: whether this one does now. Pressing `FULLSCREEN` toggles it. */
+  fullscreen?: boolean
 }
+
+/** The node id of the Full screen button the shell adds to apps that can fill the screen. */
+export const FULLSCREEN = '@fullscreen'
 
 export interface Surface<S = unknown> {
   id: string
@@ -115,6 +127,8 @@ export interface Surface<S = unknown> {
 /** v1: a single visible slot. Later: splits, multiple windows. */
 export interface Layout {
   visible: string | null
+  /** The visible app fills the whole screen, over the status bar. */
+  fullscreen?: boolean
 }
 
 /** Flatten a tree depth-first. */

@@ -1,5 +1,5 @@
 import type { AppEntry, Screen, StepResult, World } from '@stanley/agent'
-import type { ActionArgs, AgentNode, AppContext, AppModule, Layout } from '@stanley/app-sdk'
+import { FULLSCREEN, type ActionArgs, type AgentNode, type AppContext, type AppModule, type Layout } from '@stanley/app-sdk'
 
 const SEP = ':'
 
@@ -9,7 +9,10 @@ const SEP = ':'
  */
 export class Shell implements World {
   readonly surfaces = new Map<string, unknown>()
-  layout: Layout = { visible: null }
+  /** The app in front of the user; `null` = home screen. */
+  private shown: string | null = null
+  /** Apps put in full screen: they fill the screen whenever they're shown and their screen can. */
+  private full = new Set<string>()
   /** Surface the agent is working on; may be hidden. `null` = home screen. */
   focus: string | null = null
   /** Screens visited, as `appId:route` (`home` for the home screen), like a browser's history. */
@@ -34,7 +37,7 @@ export class Shell implements World {
   screenNow(): Screen {
     if (!this.focus) {
       const list = this.appList().map((a) => `- ${a.title}: ${a.description}`).join('\n')
-      return { id: 'home', title: 'Home', visible: this.layout.visible === null, markdown: `# Home\n${list}`, elements: [] }
+      return { id: 'home', title: 'Home', visible: this.shown === null, markdown: `# Home\n${list}`, elements: [] }
     }
     return this.screenOf(this.focus)
   }
@@ -47,11 +50,15 @@ export class Shell implements World {
     return {
       id: `${app.id}${SEP}${app.current(state)}`,
       title: app.title,
-      visible: this.layout.visible === app.id,
+      visible: this.shown === app.id,
       url: app.url?.(state),
       markdown: app.toMarkdown(state, this.ctx),
-      elements: prefix(app.id, app.nodes(state)),
+      elements: [...this.windowControls(app, state), ...prefix(app.id, app.nodes(state))],
     }
+  }
+
+  get layout(): Layout {
+    return { visible: this.shown, fullscreen: this.filling(this.shown) }
   }
 
   /**
@@ -68,7 +75,7 @@ export class Shell implements World {
   }
 
   async global(option: 'show' | 'home' | 'back') {
-    if (option === 'show') this.layout = { visible: this.focus }
+    if (option === 'show') this.shown = this.focus
     if (option === 'home') this.navigate(null)
     if (option === 'back') await this.back()
     this.onChange()
@@ -110,14 +117,37 @@ export class Shell implements World {
 
   async performIn(appId: string, nodeId: string, args: ActionArgs) {
     const app = this.app(appId)
-    return this.serial(appId, async () => {
+    if (nodeId === FULLSCREEN) return this.toggleFullscreen(app)
+    const result = await this.serial(appId, async () => {
       await this.ensure(app)
       const result = await app.perform(this.surfaces.get(appId), nodeId, args, this.ctx)
       this.surfaces.set(appId, result.state)
       this.navigate(appId)
       this.onChange()
-      return { summary: result.summary, observation: result.observation }
+      return result
     })
+    // A link: the page opens in the app that shows them, as a link in a mail app opens the browser.
+    if (result.openUrl && this.apps.some((a) => a.openUrl)) return this.openUrl(result.openUrl)
+    return { summary: result.summary, observation: result.observation }
+  }
+
+  /** Window controls, ahead of the app's own elements as a title bar is: Full screen, for an app that can fill the screen. */
+  private windowControls(app: AppModule<any>, state: unknown): AgentNode[] {
+    if (!app.fullscreen?.(state)) return []
+    const label = this.full.has(app.id) ? 'Exit full screen' : 'Full screen'
+    return [{ id: `${app.id}${SEP}${FULLSCREEN}`, kind: 'action', role: 'button', label }]
+  }
+
+  private toggleFullscreen(app: AppModule<any>): StepResult {
+    const on = !this.full.delete(app.id)
+    if (on) this.full.add(app.id)
+    this.navigate(app.id)
+    this.onChange()
+    return { summary: on ? `${app.title} is full screen` : `${app.title} left full screen` }
+  }
+
+  private filling(appId: string | null): boolean {
+    return appId !== null && this.full.has(appId) && !!this.app(appId).fullscreen?.(this.surfaces.get(appId))
   }
 
   private async ensure(app: AppModule<any>) {

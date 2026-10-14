@@ -197,8 +197,8 @@
 
 <canvas bind:this={canvas} data-presence={shown} class="pointer-events-none fixed inset-0 z-0 size-full"></canvas>
 {#if captions}
-  <!-- Sits at the bottom of the strip App reserves there; a second line grows up into the window's margin. Two lines at most: older words scroll off the top. -->
-  <div class="pointer-events-none fixed inset-x-0 bottom-0 z-2 flex h-(--caption-height) items-end justify-center px-8 pb-2">
+  <!-- Sits at the bottom of the strip App reserves there; a second line grows up into the window's margin. Two lines at most: older words scroll off the top. Above a full screen window. -->
+  <div class="pointer-events-none fixed inset-x-0 bottom-0 z-5 flex h-(--caption-height) items-end justify-center px-8 pb-2">
     <div
       class={[
         'max-w-3xl rounded-xl bg-background/50 px-4 py-2 text-center text-foreground opacity-0 backdrop-blur-sm transition-opacity duration-500 ease-out',

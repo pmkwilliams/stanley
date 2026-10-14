@@ -31,6 +31,9 @@ export const webApp = defineApp<WebState>({
 
   url: (s) => current(s)?.url,
 
+  // A page can fill the screen; the empty window can't.
+  fullscreen: (s) => current(s) !== null,
+
   async perform(s, nodeId) {
     // Going back reopens an earlier route.
     if (nodeId === 'home') return { state: { ...s, route: 'home' }, summary: 'Opened Web' }
