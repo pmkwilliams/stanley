@@ -138,6 +138,7 @@ export class WebviewPage implements PageDriver {
   private quietUntil = 0
   /** What the page reported going wrong since it started loading. */
   private errors: string[] = []
+  private muted = false
 
   constructor(
     private events: {
@@ -157,15 +158,13 @@ export class WebviewPage implements PageDriver {
     return this.steps > 0
   }
 
-  /** A new session: what the old one showed isn't put back. */
-  reset(): void {
-    this.url = 'about:blank'
+  /** Out of sight, a page makes no sound. */
+  mute(on: boolean): void {
+    this.muted = on
+    if (this.wc && !this.wc.isDestroyed()) this.wc.setAudioMuted(on)
   }
 
-  /**
-   * The renderer put the Web app's view in the window. It is Stanley's to drive once it has loaded
-   * the blank page it starts with: a page sent to it before then would be cut off by that load.
-   */
+  /** The renderer put this tab's view in the window, and it has loaded the blank page it starts with (see `WebviewTabs`). */
   attach(wc: WebContents): void {
     // A link that opens a new window opens here instead, as one tab would.
     wc.setWindowOpenHandler(({ url }) => {
@@ -202,16 +201,11 @@ export class WebviewPage implements PageDriver {
       this.watcher?.close()
       this.watcher = null
     })
-    let started = false
-    const start = () => {
-      if (started || wc.isDestroyed()) return
-      started = true
-      this.wc = wc
-      if (this.url !== 'about:blank') void wc.loadURL(this.url).catch(() => {})
-      for (const resolve of this.waiting.splice(0)) resolve(wc)
-    }
-    wc.once('did-stop-loading', start)
-    setTimeout(start, ATTACH_MS / 10)
+    this.wc = wc
+    wc.setAudioMuted(this.muted)
+    // A view that came back (the renderer reloaded) shows what it showed.
+    if (this.url !== 'about:blank') void wc.loadURL(this.url).catch(() => {})
+    for (const resolve of this.waiting.splice(0)) resolve(wc)
   }
 
   /**
@@ -439,6 +433,63 @@ export class WebviewPage implements PageDriver {
         watcher.close()
       },
     }
+  }
+}
+
+type PageEvents = ConstructorParameters<typeof WebviewPage>[0]
+
+/**
+ * The Web app's tabs: a `<webview>` each in its window, each driven by a `WebviewPage` of its own.
+ * A view says which tab it is by the address it starts at, `about:blank#tab=<id>`. Only the tab
+ * shown is heard; the others keep running, muted.
+ */
+export class WebviewTabs {
+  private pages = new Map<number, WebviewPage>()
+  private shown: number | null = null
+
+  constructor(private events: Omit<PageEvents, 'navigated'> & { navigated(tab: number): void }) {}
+
+  /** The driver of tab `id`, made the first time it is asked for: before its view is in the window, it waits for it. */
+  page(id: number): WebviewPage {
+    let page = this.pages.get(id)
+    if (!page) {
+      page = new WebviewPage({ ...this.events, navigated: () => this.events.navigated(id) })
+      page.mute(id !== this.shown)
+      this.pages.set(id, page)
+    }
+    return page
+  }
+
+  /**
+   * The renderer put a tab's view in the window. It is driven once it has loaded the blank page it
+   * starts with, which names its tab: a page sent to it before then would be cut off by that load.
+   */
+  attach(wc: WebContents): void {
+    const deadline = Date.now() + ATTACH_MS
+    const start = () => {
+      if (wc.isDestroyed()) return
+      const id = Number(/#tab=(\d+)$/.exec(wc.getURL())?.[1])
+      if (id && !wc.isLoading()) return this.page(id).attach(wc)
+      if (Date.now() < deadline) setTimeout(start, 50)
+    }
+    start()
+  }
+
+  /** The tab now shown: the others are muted. */
+  show(id: number | null): void {
+    this.shown = id
+    for (const [tab, page] of this.pages) page.mute(tab !== id)
+  }
+
+  /** How the page in the tab shown came out. */
+  look(): Promise<PageLook> {
+    return this.shown === null ? Promise.resolve({ errors: [] }) : this.page(this.shown).look()
+  }
+
+  /** A new session: its tabs start over. */
+  reset(): void {
+    this.pages.clear()
+    this.shown = null
   }
 }
 

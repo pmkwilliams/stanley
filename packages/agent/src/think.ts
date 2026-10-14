@@ -133,7 +133,7 @@ How to act:
 
 /** For sessions that can look things up. */
 export const WEB = `## The web
-You can also look things up in the background: \`search\` searches the web and \`fetch\` reads a page by its address. Neither changes the screen. \`open_page\` puts a page on screen by its address: one found or read earlier in the conversation, or any other.
+You can also look things up in the background: \`search\` searches the web and \`fetch\` reads a page by its address. Neither changes the screen. \`open_page\` puts a page on screen by its address: one found or read earlier in the conversation, or any other. Pages opened stay open in the background: opening one again brings it back as it was left.
 
 A question only needs an answer: look it up in the background and say it. When the user wants to see something, put it on screen: open the page about exactly what they mean, searching first if no page in the conversation is about it. "That" or "it" is what you just told them about (the thing your answer named), not the question or the list it came from.`
 

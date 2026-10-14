@@ -2,24 +2,26 @@ import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import type { AppStore, LivePage } from '@stanley/app-sdk'
+import type { AppStore, LivePage, LivePages } from '@stanley/app-sdk'
 import { emailApp, linkify } from '@stanley/app-email/core'
 import { readSettings, settingsApp } from '@stanley/app-settings/core'
 import { todoApp } from '@stanley/app-todo/core'
-import { webApp } from '@stanley/app-web/core'
+import { MAX_TABS, webApp, type WebState } from '@stanley/app-web/core'
 import { Shell } from './shell'
 
 const make = () => new Shell([emailApp, todoApp], { env: {}, fetch }, () => {})
 
 type Site = Record<string, { title: string; text: string; links?: Record<string, string> }>
 
-/** A browser in memory: each page has a title, text and links, and following a link goes to its page. */
+/** A tab of a browser in memory: each page has a title, text and links, and following a link goes to its page. */
 class FakePage implements LivePage {
   url = 'about:blank'
-  /** Addresses gone to by `goto`. */
-  loads: string[] = []
 
-  constructor(private site: Site) {}
+  constructor(
+    private site: Site,
+    /** Addresses gone to by `goto`, by any tab. */
+    private loads: string[],
+  ) {}
 
   async goto(url: string) {
     if (!this.site[url]) throw new Error('ERR_NAME_NOT_RESOLVED')
@@ -41,9 +43,23 @@ class FakePage implements LivePage {
   }
 }
 
+/** The browser's tabs, made as they are asked for. */
+class FakePages implements LivePages {
+  loads: string[] = []
+  tabs = new Map<number, FakePage>()
+
+  constructor(private site: Site) {}
+
+  tab(id: number): FakePage {
+    if (!this.tabs.has(id)) this.tabs.set(id, new FakePage(this.site, this.loads))
+    return this.tabs.get(id)!
+  }
+}
+
 const SITE: Site = {
   'https://a.test/': { title: 'Page A', text: 'All about A.', links: { 'Go to B': 'https://b.test/' } },
   'https://b.test/': { title: 'Page B', text: 'All about B.', links: { 'Back to A': 'https://a.test/' } },
+  'https://c.test/': { title: 'Page C', text: 'All about C.' },
 }
 
 describe('Shell', () => {
@@ -168,8 +184,8 @@ describe('Shell', () => {
   })
 
   it("works a live page: its links are the screen's elements, and a page a link went to can be gone back from", async () => {
-    const page = new FakePage(SITE)
-    const shell = new Shell([webApp, todoApp], { env: {}, fetch, page }, () => {})
+    const pages = new FakePages(SITE)
+    const shell = new Shell([webApp, todoApp], { env: {}, fetch, pages }, () => {})
     await shell.openUrl('https://a.test/')
     let screen = await shell.screen()
     expect(screen).toMatchObject({ id: 'web:page/0', url: 'https://a.test/' })
@@ -181,32 +197,71 @@ describe('Shell', () => {
     expect(screen.elements.map((e) => e.label)).toEqual(['Full screen', 'Back to A'])
     await shell.global('back')
     expect(await shell.screen()).toMatchObject({ id: 'web:page/0', url: 'https://a.test/' })
-    expect(page.loads).toEqual(['https://a.test/', 'https://a.test/'])
+    expect(pages.loads).toEqual(['https://a.test/', 'https://a.test/'])
   })
 
   it('keeps a page opened again as the one page in the history', async () => {
-    const page = new FakePage(SITE)
-    const shell = new Shell([webApp], { env: {}, fetch, page }, () => {})
+    const pages = new FakePages(SITE)
+    const shell = new Shell([webApp], { env: {}, fetch, pages }, () => {})
     await shell.openUrl('https://a.test/')
     await shell.openUrl('https://a.test/')
     expect(shell.screenNow()).toMatchObject({ id: 'web:page/0', url: 'https://a.test/' })
-    expect(page.loads).toEqual(['https://a.test/', 'https://a.test/'])
+    expect(pages.loads).toEqual(['https://a.test/', 'https://a.test/'])
   })
 
   it('takes a page the user went to themselves into the history when it reads the page again', async () => {
-    const page = new FakePage(SITE)
-    const shell = new Shell([webApp], { env: {}, fetch, page }, () => {})
+    const pages = new FakePages(SITE)
+    const shell = new Shell([webApp], { env: {}, fetch, pages }, () => {})
     await shell.openUrl('https://a.test/')
     expect(await shell.refresh('web')).toBe(false)
-    page.url = 'https://b.test/'
+    pages.tab(1).url = 'https://b.test/'
     expect(await shell.refresh('web')).toBe(true)
     expect(shell.screenNow()).toMatchObject({ id: 'web:page/1', url: 'https://b.test/' })
     await shell.global('back')
     expect(shell.screenNow()).toMatchObject({ id: 'web:page/0', url: 'https://a.test/' })
   })
 
+  it('keeps pages open in tabs: going back to one shows it as it was left, unless it was just written', async () => {
+    const pages = new FakePages(SITE)
+    const shell = new Shell([webApp], { env: {}, fetch, pages }, () => {})
+    await shell.openUrl('https://a.test/')
+    await shell.openUrl('https://b.test/')
+    expect(shell.openPages()).toEqual([{ url: 'https://a.test/', title: 'Page A' }])
+    const back = await shell.openUrl('https://a.test/')
+    expect(back.summary).toBe('Opened "Page A" (a.test), as it was left')
+    expect(pages.loads).toEqual(['https://a.test/', 'https://b.test/'])
+    expect(shell.screenNow()).toMatchObject({ id: 'web:page/0', url: 'https://a.test/' })
+    expect(shell.openPages()).toEqual([{ url: 'https://b.test/', title: 'Page B' }])
+    expect((shell.surfaces.get('web') as WebState).tabs).toEqual([
+      { id: 2, page: 1 },
+      { id: 1, page: 0 },
+    ])
+    await shell.openUrl('https://b.test/', { fresh: true })
+    expect(pages.loads).toEqual(['https://a.test/', 'https://b.test/', 'https://b.test/'])
+    expect(pages.tabs.get(2)!.url).toBe('https://b.test/')
+    expect(shell.screenNow()).toMatchObject({ id: 'web:page/1', url: 'https://b.test/' })
+  })
+
+  it('closes the tab shown longest ago when one too many is open, and opens its page again in a new tab', async () => {
+    const site: Site = Object.fromEntries(Array.from({ length: MAX_TABS + 1 }, (_, i) => [`https://p${i}.test/`, { title: `Page ${i}`, text: `Page ${i}.` }]))
+    const pages = new FakePages(site)
+    const shell = new Shell([webApp], { env: {}, fetch, pages }, () => {})
+    for (let i = 0; i <= MAX_TABS; i++) await shell.openUrl(`https://p${i}.test/`)
+    let state = shell.surfaces.get('web') as WebState
+    expect(state.tabs.map((t) => t.id)).toEqual([2, 3, 4, 5, 6, 7])
+    expect(shell.openPages().map((p) => p.title)).toEqual(['Page 1', 'Page 2', 'Page 3', 'Page 4', 'Page 5'])
+    await shell.openUrl('https://p0.test/')
+    state = shell.surfaces.get('web') as WebState
+    expect(state.tabs.map((t) => t.id)).toEqual([3, 4, 5, 6, 7, 8])
+    expect(pages.loads.filter((u) => u === 'https://p0.test/')).toHaveLength(2)
+    expect(pages.tabs.get(8)!.url).toBe('https://p0.test/')
+    await shell.global('back')
+    expect(shell.screenNow()).toMatchObject({ url: 'https://p6.test/' })
+    expect(pages.loads).toHaveLength(MAX_TABS + 2)
+  })
+
   it("opens a page that can't load with what went wrong, and no elements", async () => {
-    const shell = new Shell([webApp], { env: {}, fetch, page: new FakePage(SITE) }, () => {})
+    const shell = new Shell([webApp], { env: {}, fetch, pages: new FakePages(SITE) }, () => {})
     const result = await shell.openUrl('https://nowhere.test/')
     expect(result.summary).toBe("Opened nowhere.test; Couldn't open the page: ERR_NAME_NOT_RESOLVED")
     const screen = await shell.screen()

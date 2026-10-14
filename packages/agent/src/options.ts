@@ -146,7 +146,7 @@ export function stepOptions(screen: Screen, apps: AppEntry[], limit: number, foc
     } else {
       const { url, title } = c.page
       const domain = domainOf(url)
-      add(`open page: ${title}${titles.get(title)! > 1 ? ` (${domain})` : ''}`, `web page on ${domain}`, { kind: 'page', url, title })
+      add(`open page: ${title}${titles.get(title)! > 1 ? ` (${domain})` : ''}`, `web page on ${domain}${c.page.open ? ', kept open' : ''}`, { kind: 'page', url, title })
     }
   }
   for (const app of apps) add(`open ${app.title}`, `app: ${app.description}`, { kind: 'app', app })

@@ -393,7 +393,9 @@ through `executeJavaScript` and sends input through the DevTools protocol. The W
 the page's elements and text; a link, a form or a redirect that lands on another page is the next
 page in its history; and a page the user goes to themselves goes into the conversation as their
 step. The view stays in the window, out of sight, while the app is hidden, so Stanley works pages in
-the background too. Chromium drops input to a view out of sight, so there each step checks whether
+the background too. Each page Stanley opens or writes gets a view of its own, a tab, up to six:
+opening a page a tab shows switches to it as it was left, and the rest keep running, muted. Tabs
+have no bar; they are known by their pages' titles, and pages kept open are offered as `open page:`. Chromium drops input to a view out of sight, so there each step checks whether
 real input arrived and otherwise does it from inside the page (`click()`, `requestSubmit()`,
 `scrollBy`). See `docs/plans/live-pages.md`.
 

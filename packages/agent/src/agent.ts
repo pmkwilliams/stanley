@@ -1,4 +1,4 @@
-import { DEFAULT_AGENT_NAME, type ActionArgs, type AgentNode } from '@stanley/app-sdk'
+import { DEFAULT_AGENT_NAME, FILES_URL, type ActionArgs, type AgentNode } from '@stanley/app-sdk'
 import type { Answer, DecisionClient, MultiChoiceResult, Question } from '@stanley/jev'
 import type { JSONValue } from 'ai'
 import { defaultConfig, type AgentConfig } from './config'
@@ -550,9 +550,16 @@ export class Agent {
     return stepOptions(screen, this.world.appList(), limit, this.focus(), pages, !!this.world.lock, files)
   }
 
-  /** Web pages Stanley can open: what it found or read, while Jev still reads about it. */
+  /**
+   * Web pages Stanley can open: what it found, read or opened, while Jev still reads about it, and
+   * the pages kept open (a page of the user's files is offered as a file).
+   */
   private pages(): KnownPage[] {
-    return this.world.openUrl ? knownPages(recentEntries(this.view(), this.config.jevTurns)) : []
+    if (!this.world.openUrl) return []
+    const known = knownPages(recentEntries(this.view(), this.config.jevTurns))
+    const open = (this.world.openPages?.() ?? []).filter((p) => !p.url.startsWith(FILES_URL))
+    const kept = (url: string) => open.some((p) => sameUrl(p.url, url))
+    return [...known.map((p) => (kept(p.url) ? { ...p, open: true } : p)), ...open.filter((p) => !known.some((k) => sameUrl(k.url, p.url))).map((p) => ({ ...p, latest: false, open: true }))]
   }
 
   /** Folders and files Jev can list or read: what it listed and read lately first, then everything else in the folder. */
@@ -1485,7 +1492,7 @@ export class Agent {
     this.events.status?.('acting')
     let shown: string
     try {
-      shown = (await this.world.openUrl(url)).summary
+      shown = (await this.world.openUrl(url, { fresh: true })).summary
       await this.world.global('show')
     } catch (err) {
       shown = `It couldn't be shown: ${errorText(err)}`

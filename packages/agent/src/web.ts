@@ -28,6 +28,8 @@ export interface KnownPage {
   title: string
   /** From the latest search or read, so the likeliest to be meant by "that". */
   latest: boolean
+  /** Kept open: going back to it is instant, and it is as it was left. */
+  open?: boolean
 }
 
 /** `en.wikipedia.org/wiki/George_Washington`: a URL as a person would read it. */

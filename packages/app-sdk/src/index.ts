@@ -92,6 +92,15 @@ export interface LivePage {
   perform(nodeId: string, args: ActionArgs): Promise<string>
 }
 
+/**
+ * The live pages of the app that shows web pages: one per tab, each its own web view, which keeps
+ * running while out of sight, so a page Stanley goes back to is as it was left.
+ */
+export interface LivePages {
+  /** The page in tab `id`. */
+  tab(id: number): LivePage
+}
+
 export interface AppContext {
   env: Record<string, string | undefined>
   fetch: typeof fetch
@@ -99,8 +108,8 @@ export interface AppContext {
   store?: AppStore
   /** What the user calls the assistant. Defaults to `DEFAULT_AGENT_NAME`. */
   agentName?: string
-  /** The live page the app that shows web pages draws into. Without one (tests, evals), pages are read through a reader service. */
-  page?: LivePage
+  /** The live pages the app that shows web pages draws into. Without them (tests, evals), pages are read through a reader service. */
+  pages?: LivePages
 }
 
 export interface AppModule<S = unknown> {
@@ -117,8 +126,14 @@ export interface AppModule<S = unknown> {
   toMarkdown(state: S, ctx?: AppContext): string
   /** Apps that show web pages: the address of the page on screen, if any. */
   url?(state: S): string | undefined
-  /** Apps that show web pages: open one by its address. The shell sends every page Stanley opens here. */
-  openUrl?(state: S, url: string, ctx: AppContext): Promise<ActionResult<S>>
+  /**
+   * Apps that show web pages: open one by its address. The shell sends every page Stanley opens
+   * here. A page kept open comes back as it was left, unless `fresh` asks for it as it is now (it
+   * was just written).
+   */
+  openUrl?(state: S, url: string, ctx: AppContext, opts?: { fresh?: boolean }): Promise<ActionResult<S>>
+  /** Apps that show web pages: the pages they keep open, live, besides the one shown. */
+  openPages?(state: S): { url: string; title: string }[]
   /**
    * Whether the current screen can fill the whole screen, over the status bar (e.g. a web page).
    * The shell then gives it a Full screen button, as a window's title bar would.

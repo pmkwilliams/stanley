@@ -62,6 +62,33 @@ works in the background is still a page, and comes back as it was left. Main dri
   Enter, go back, follow a link, press a button (its result read back), a link the user clicked
   themselves taken into the history, and a link followed while the Web app was hidden.
 
+### Tabs (added after stage 4)
+
+Pages stay live when Stanley opens another: each is a tab, its own `<webview>` in the Web window,
+stacked, the one shown in sight and the rest running out of sight, muted. There is no tab bar and
+nothing to click: a tab is known by its page's title (and its site or file path), and Stanley goes
+back to one by opening its page again.
+
+- **When a tab is made.** Stanley opening a page, writing one, or opening a file makes a new tab;
+  following a link stays in the tab. Opening a page that a tab already shows switches to that tab,
+  as it was left, with no reload. Opening the page shown again reloads it; so does opening a page
+  `fresh` (`World.openUrl(url, { fresh: true })`), which a page just written or drawn asks for.
+- **At most six** (`MAX_TABS`): opening one more closes the one shown longest ago. Its page stays
+  a known page, and going back to it opens it in a new tab.
+- **State.** `WebState.pages` each name their tab; `tabs` is the tabs kept, most recently shown last,
+  with the page each shows; `ready` is the next tab's id. Its view is put in the window before it is
+  needed, so a page can load at once, which a page being drawn needs.
+- **Views and drivers.** The renderer lays out a view per tab plus the ready one, in the order they
+  were made (moving a `<webview>` in the page reloads it). A view starts at `about:blank#tab=<id>`,
+  which `WebviewTabs` (main) reads to give it its tab's `WebviewPage`. `AppContext.pages.tab(id)` is
+  that tab's live page. Main mutes every tab but the one shown, and looks at the one shown.
+- **For the agent.** Pages kept open (`World.openPages`) are offered as `open page: <title>`,
+  described as "kept open", with the pages Stanley found or opened; files come as `open file:`.
+- Verified in the built app, driving the shell directly (the AI Gateway was out of credits, so no
+  model run): text typed into a page's field was still there after opening two other pages and
+  going back to it, with no reload; tabs out of sight were muted; `back` switched tabs; a page drawn
+  as it was written opened in a new tab and left the others live.
+
 ## 2. Local files
 
 A protocol, `stanley://files/<path>`, serves the user's folder and nothing else, with a policy
