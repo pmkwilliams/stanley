@@ -3,7 +3,7 @@ import { basename, dirname } from 'node:path'
 import { FILES_URL } from '@stanley/app-sdk'
 import type { PageLook } from '@stanley/agent'
 import { DROPDOWN, EXTRACT, type Extracted, type PageDriver } from '@stanley/browser'
-import type { WebContents } from 'electron'
+import { nativeImage, type NativeImage, type WebContents } from 'electron'
 
 /** How long a page may take to become readable before Stanley works with what is there. */
 const LOAD_MS = 15_000
@@ -17,6 +17,24 @@ const MAX_ERRORS = 10
 const LOOK_WIDTH = 1280
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/**
+ * A picture of a view laid on `color` (`#rrggbb`), as the user sees it: where the page is clear, a
+ * JPEG would otherwise be black. Its pixels are BGRA, with alpha premultiplied.
+ */
+function onto(image: NativeImage, color: string): NativeImage {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16))
+  const px = image.toBitmap()
+  for (let i = 0; i < px.length; i += 4) {
+    const clear = 255 - px[i + 3]!
+    if (!clear) continue
+    px[i] = px[i]! + Math.round((b! * clear) / 255)
+    px[i + 1] = px[i + 1]! + Math.round((g! * clear) / 255)
+    px[i + 2] = px[i + 2]! + Math.round((r! * clear) / 255)
+    px[i + 3] = 255
+  }
+  return nativeImage.createFromBitmap(px, image.getSize())
+}
 
 /** Where an element is, or why it can't be used: run in the page, after scrolling it into view. */
 const LOCATE = String.raw`(function (id) {
@@ -150,6 +168,8 @@ export class WebviewPage implements PageDriver {
       drafting(url: string): boolean
       /** Escape was pressed in the page, which has the keyboard: the window doesn't hear it. */
       escape(): void
+      /** What the user sees behind a page at an address where it has no background of its own (the view is clear there). */
+      backdrop(url: string): string
     },
   ) {}
 
@@ -258,7 +278,7 @@ export class WebviewPage implements PageDriver {
     const errors = [...this.errors]
     const image = await wc.capturePage().catch(() => null)
     if (!image || image.isEmpty()) return { errors }
-    const small = image.getSize().width > LOOK_WIDTH ? image.resize({ width: LOOK_WIDTH }) : image
+    const small = onto(image.getSize().width > LOOK_WIDTH ? image.resize({ width: LOOK_WIDTH }) : image, this.events.backdrop(wc.getURL()))
     return { errors, image: { data: small.toJPEG(80).toString('base64'), mediaType: 'image/jpeg' } }
   }
 

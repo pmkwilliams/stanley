@@ -1,13 +1,13 @@
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { SCRATCH_DIR } from '@stanley/agent'
+import { themed } from '@stanley/app-sdk'
 
 /**
  * Stanley's look for the pages it writes: the shell's design tokens as CSS variables on `:root`,
  * dark, or light as `theme.css` has them when the user's theme is (main sets it as the views'
- * `prefers-color-scheme`, so a page follows a change live), and the page's background, text
- * colour and font (Inter, as the shell's) set from them. It is all in a cascade layer, so
- * anything the page sets itself wins, wherever it is.
+ * `prefers-color-scheme`, so a page follows a change live), and the page's text colour and font
+ * (Inter, as the shell's) set from them. It has no background: the Web app's glass shows through.
+ * It is all in a cascade layer, so anything the page sets itself wins, wherever it is.
  */
 
 /** Tokens only the shell uses. */
@@ -37,14 +37,13 @@ export function pageStyle(): string {
     '<style id="stanley-theme">@import url(stanley://lib/@fontsource-variable/inter/index.css) layer(stanley);@layer stanley{',
     `:root{${tokens(theme, ':root')};${FONTS};color-scheme:dark}`,
     `@media (prefers-color-scheme:light){:root{${tokens(theme, ":root[data-theme='light']")};color-scheme:light}}`,
-    'body{margin:0;background:var(--background);color:var(--foreground);font-family:var(--font-sans)}',
+    'body{margin:0;color:var(--foreground);font-family:var(--font-sans)}',
     '}</style>',
   ].join('')
   return style
 }
 
-/** Pages Stanley writes, which take its look. The user's other pages look as they were written. */
-export const themed = (path: string): boolean => /^Pages\/.+\.html?$/i.test(path) || (path.startsWith(`${SCRATCH_DIR}/`) && /\.html?$/i.test(path))
+export { themed }
 
 const DOCTYPE = '<!doctype'
 

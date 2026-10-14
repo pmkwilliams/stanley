@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { DEFAULT_AGENT_NAME, FILES_URL, FULLSCREEN, type AppUiProps } from '@stanley/app-sdk'
+  import { DEFAULT_AGENT_NAME, FILES_URL, FULLSCREEN, themed, type AppUiProps } from '@stanley/app-sdk'
   import Icon from '@stanley/app-ui/Icon.svelte'
   import * as Alert from '@stanley/app-ui/components/alert'
   import * as App from '@stanley/app-ui/components/app'
@@ -21,6 +21,8 @@
   let title = $derived(open && open.title !== place && open.title !== place.split('/').at(-1) ? open.title : '')
   /** The page has the whole window, its chrome out of sight until wanted: in full screen, and for the user's own files (pages Stanley writes). */
   let bare = $derived(fullscreen || file !== null)
+  /** A page Stanley wrote sits on the glass; behind any other, white where it has no background of its own, as in a browser (the views are clear). */
+  let glass = $derived(file !== null && themed(file))
 </script>
 
 {#snippet notice(text: string, className: string)}
@@ -93,9 +95,11 @@
   <div
     class={[
       'relative min-h-0 w-full flex-1 overflow-hidden',
+      open && !glass && 'bg-white',
       !fullscreen && (bare ? 'rounded-[calc(var(--radius-3xl)-1px)]' : 'rounded-b-[calc(var(--radius-3xl)-1px)] border-t'),
       !open && 'invisible absolute inset-0',
     ]}
+    data-glass={glass || undefined}
   >
     {#each views as id (id)}
       <webview class={['absolute inset-0 size-full', id !== open?.tab && 'invisible']} src={`about:blank#tab=${id}`} allowpopups></webview>

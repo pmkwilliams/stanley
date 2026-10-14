@@ -5,7 +5,7 @@ import { defaultConfig, type AgentConfig, type DeciderProfile } from './config'
 import type { AgentDebugEvent, GateRule, RequestResult, TickReason } from './debug'
 import { WORKING, WORKING_INSTRUCTIONS, WORKING_PROMPT } from './barge'
 import { createEffectJudge, type EffectJudge, type EffectVerdict } from './effects'
-import { bashText, JEV_FILES, knownFiles, listCommand, readCommand, topFiles, type BashResult, type FileMeta, type FileTools, type KnownFile } from './files'
+import { bashText, JEV_FILES, knownFiles, listCommand, pageResized, PAGE_SIZE, pageSizeText, readCommand, topFiles, type BashResult, type FileMeta, type FileTools, type KnownFile, type PageSize } from './files'
 import {
   Conversation,
   filesOf,
@@ -114,6 +114,8 @@ export interface AgentDeps {
   clock?: () => Date
   /** What the user calls the assistant, read each time it is needed. Defaults to `DEFAULT_AGENT_NAME`. */
   name?: () => string
+  /** The size pages Stanley writes are shown at now, read for each thinking call. Defaults to `PAGE_SIZE`. */
+  pageSize?: () => PageSize
 }
 
 export const SYSTEM_PROMPT = `# Stanley
@@ -273,6 +275,11 @@ export class Agent {
   private taskUnsure = false
   private clock: () => Date
   private name: () => string
+  private pageSize: () => PageSize
+  /** The size pages were shown at when the session's instructions were first made, which they give. */
+  private sessionPage?: PageSize
+  /** The size pages are shown at as thinking was last told it, from its instructions on. */
+  private pageKnown?: PageSize
   /** When the session started: the day its instructions give. */
   private started: Date
   /** The skills when the session started, which its instructions list, once they are read. */
@@ -301,6 +308,7 @@ export class Agent {
     this.history = new Conversation(deps.sink)
     this.clock = deps.clock ?? (() => new Date())
     this.name = deps.name ?? (() => DEFAULT_AGENT_NAME)
+    this.pageSize = deps.pageSize ?? (() => PAGE_SIZE)
     this.started = this.clock()
     this.today = longDate(this.started)
     this.skillsReady = this.scanSkills().then((scan) => {
@@ -312,7 +320,10 @@ export class Agent {
   /** Thinking's instructions, fixed for the session unless the user renames the assistant. */
   get instructions(): string {
     const skills = this.files?.skills ? (this.sessionSkills ?? NO_SKILLS) : undefined
-    return instructions({ web: !!this.web, files: this.files?.root, skills, today: this.started, name: this.name() })
+    // The size when the session's instructions were first made; a change comes as a note (`observe`).
+    this.sessionPage ??= this.pageSize()
+    this.pageKnown ??= this.sessionPage
+    return instructions({ web: !!this.web, files: this.files?.root, skills, today: this.started, name: this.name(), page: this.sessionPage })
   }
 
   /** An utterance is open: the user is speaking, or paused without having finished. */
@@ -1338,8 +1349,11 @@ export class Agent {
     const listing = files && files !== this.lastFiles ? [files] : []
     if (files) this.lastFiles = files
     const today = longDate(this.clock())
-    const all = [...(today !== this.today ? [`It is now ${today}.`] : []), ...(this.utteranceId && !this.utteranceEnded ? ['The user paused, but may not have finished speaking.'] : []), ...notes]
+    const page = this.files && this.pageKnown ? this.pageSize() : undefined
+    const resized = page && pageResized(this.pageKnown!, page) ? page : undefined
+    const all = [...(today !== this.today ? [`It is now ${today}.`] : []), ...(resized ? [`Pages are now shown in a window ${pageSizeText(resized)}.`] : []), ...(this.utteranceId && !this.utteranceEnded ? ['The user paused, but may not have finished speaking.'] : []), ...notes]
     this.today = today
+    if (resized) this.pageKnown = resized
     return [body, ...listing, ...all.map((n) => `<note>${n}</note>`)].join('\n')
   }
 

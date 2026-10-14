@@ -80,6 +80,18 @@ export interface PageView {
 export const FILES_URL = 'stanley://files/'
 
 /**
+ * Where the pages Stanley makes go, from the top of the user's folder, until the user wants one
+ * kept (in `Pages/`): emptied each time Stanley starts, and left out of the folder's history.
+ */
+export const SCRATCH_DIR = '.stanley/scratch'
+
+/**
+ * Pages Stanley writes (in `Pages/` or scratch), by their path in the user's folder: they take its
+ * look and sit on the Web app's glass. The user's other files look as they were written.
+ */
+export const themed = (path: string): boolean => /^Pages\/.+\.html?$/i.test(path) || (path.startsWith(`${SCRATCH_DIR}/`) && /\.html?$/i.test(path))
+
+/**
  * A real web page, as a browser shows it, which Stanley reads and works like a person would: the
  * desktop's web view. The app that shows web pages draws into it.
  */

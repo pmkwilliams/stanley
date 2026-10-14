@@ -1,6 +1,6 @@
 import { jsonSchema, parsePartialJson, stepCountIs, streamText, tool, type LanguageModel, type LanguageModelUsage, type ModelMessage, type Tool, type ToolResultPart, type ToolSet } from 'ai'
 import { DEFAULT_AGENT_NAME } from '@stanley/app-sdk'
-import { filesPrompt } from './files'
+import { filesPrompt, type PageSize } from './files'
 import { named } from './narrate'
 import { skillsPrompt, type SkillScan } from './skills'
 import type { WebResult } from './web'
@@ -151,10 +151,11 @@ export function longDate(d: Date): string {
 /**
  * Thinking's instructions for a session. Fixed from its start (a new day, and a change to the
  * skills, arrive as notes), unless the user renames the assistant. `files` is where the user's
- * files are, when the session has them, and `skills` the skills in them when it started.
+ * files are, when the session has them, `skills` the skills in them when it started, and `page`
+ * the size pages are shown at then (a change arrives as a note too).
  */
-export function instructions(opts: { web: boolean; files?: string; skills?: SkillScan; today: Date; name?: string }): string {
-  const files = opts.files ? [filesPrompt(opts.files), ...(opts.skills ? [skillsPrompt(opts.skills)] : [])] : []
+export function instructions(opts: { web: boolean; files?: string; skills?: SkillScan; today: Date; name?: string; page?: PageSize }): string {
+  const files = opts.files ? [filesPrompt(opts.files, opts.page), ...(opts.skills ? [skillsPrompt(opts.skills)] : [])] : []
   const text = [THINKING_PROMPT, MISHEARD, ...(opts.web ? [WEB] : []), ...files, `Today is ${longDate(opts.today)}.`].join('\n\n')
   return named(text, opts.name ?? DEFAULT_AGENT_NAME)
 }

@@ -1,17 +1,17 @@
 import { appendFileSync, existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { FULLSCREEN, type LivePage } from '@stanley/app-sdk'
+import { FULLSCREEN, themed, type LivePage } from '@stanley/app-sdk'
 import { readSettings } from '@stanley/app-settings/core'
 import { shownTab, type WebState } from '@stanley/app-web/core'
 import { parallelWeb } from '@stanley/app-web/parallel'
 import { livePage } from '@stanley/browser'
 import { localFiles } from '@stanley/files'
-import { Agent, BargeIn, createThinker, deciderProfile, defaultConfig, findElement, named, screenVocabulary, scriptedTurn, SYSTEM_PROMPT, type AgentStatus, type FileTools, type Overheard, type Thinker } from '@stanley/agent'
+import { Agent, BargeIn, createThinker, deciderProfile, defaultConfig, findElement, named, PAGE_SIZE, screenVocabulary, scriptedTurn, SYSTEM_PROMPT, type AgentStatus, type FileTools, type Overheard, type PageSize, type Thinker } from '@stanley/agent'
 import { createDecisionClient, createMockJevClient, type DecisionClient } from '@stanley/jev'
 import { SAMPLE_RATE, Transcriber, writeWav, type HeardWord } from '@stanley/stt'
 import { KOKORO, loadKokoro, Speaker } from '@stanley/tts'
-import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, Menu, nativeTheme, protocol, session } from 'electron'
+import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, Menu, nativeTheme, protocol, screen, session } from 'electron'
 import type { AppDebugEvent, CaptionWord, ReplayRequest, Snapshot } from '../shared/ipc'
 import { apps } from './apps'
 import { DebugRecorder } from './debug'
@@ -109,6 +109,10 @@ const tabs = new WebviewTabs({
   drafting: (url) => {
     const path = filePath(url)
     return path !== null && drafts.has(path)
+  },
+  backdrop: (url) => {
+    const path = filePath(url)
+    return path !== null && themed(path) ? GLASS[readSettings(store).theme] : '#ffffff'
   },
   // Escape leaves full screen, as in a browser, also when the page has the keyboard.
   escape: () => {
@@ -266,6 +270,7 @@ function startSession() {
     config: profile.config,
     jevNotes: profile.notes,
     name: agentName,
+    pageSize,
     sink: (record) => {
       if (self !== agent) return
       appendFileSync(sessionFile, JSON.stringify(record) + '\n')
@@ -554,6 +559,20 @@ async function loadTts() {
 
 /** The renderer's `--background` per theme, shown before it paints. */
 const WINDOW_BG = { light: '#ffffff', dark: '#0c0a09' }
+/**
+ * The size a page Stanley writes is shown at now: the window's (the screen's, before there is one),
+ * less what the shell takes around the Web app's window (`--window-max-*` in the renderer's
+ * App.svelte: the status bar, the caption and margins) and that window's border. Pages of the
+ * user's have no address bar. Before the app is ready there is no screen to ask: the agent's guess.
+ */
+function pageSize(): PageSize {
+  if (!app.isReady()) return PAGE_SIZE
+  const [width, height] = win?.getContentSize() ?? [screen.getPrimaryDisplay().size.width, screen.getPrimaryDisplay().size.height]
+  return { width: width! - 64 - 2, height: height! - 80 - 48 - 64 - 2 }
+}
+
+/** About what the Web app's glass looks like under a page Stanley wrote, per theme: the background, half over itself. */
+const GLASS = { light: '#ffffff', dark: '#0c0a09' }
 
 /**
  * Matches the window and web pages (through prefers-color-scheme) to the theme, and the window
@@ -593,8 +612,9 @@ function createWindow() {
     prefs.nodeIntegration = false
     prefs.contextIsolation = true
     prefs.sandbox = true
-    // A page with no background of its own is white (or dark, by its color scheme), as in a browser.
-    prefs.transparent = false
+    // Clear where a page has no background of its own: pages Stanley writes sit on the Web app's
+    // glass, and the Web app puts white behind any other page, as a browser would.
+    prefs.transparent = true
     // For PDFs.
     prefs.plugins = true
   })

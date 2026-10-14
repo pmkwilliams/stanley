@@ -1572,6 +1572,29 @@ describe('Agent files', () => {
     expect(thinker.runs[0]?.bash).toBeUndefined()
     expect(agent.instructions).not.toContain('## Files')
   })
+
+  it('gives the size pages are shown at in the instructions, and tells thinking when it changes', async () => {
+    let size = { width: 1854, height: 886 }
+    const { agent, thinker } = setup(() => ({ next: 'think' }), { deps: { files: files(), pageSize: () => size } })
+    const ask = async (words: string) => {
+      agent.utteranceStart()
+      agent.segment(words)
+      agent.utteranceEnd()
+      await settle()
+    }
+    await ask('make me a chart')
+    expect(thinker.runs[0]!.instructions).toContain('shown in a window about 1850 by 890 pixels')
+    expect(observation(thinker.runs[0]!)).not.toContain('Pages are now')
+    size = { width: 1856, height: 884 }
+    await ask('and another')
+    expect(observation(thinker.runs[1]!)).not.toContain('Pages are now')
+    size = { width: 1214, height: 626 }
+    await ask('one more')
+    expect(thinker.runs[2]!.instructions).toBe(thinker.runs[0]!.instructions)
+    expect(observation(thinker.runs[2]!)).toContain('<note>Pages are now shown in a window about 1210 by 630 pixels.</note>')
+    await ask('and again')
+    expect(observation(thinker.runs[3]!)).not.toContain('Pages are now')
+  })
 })
 
 describe('Agent history', () => {

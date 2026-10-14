@@ -22,11 +22,12 @@
 	 * each pane, since a pane can't blur through the window as it fades in. It's on a layer behind the
 	 * content rather than the window itself: Chromium won't run a backdrop blur inside an element that
 	 * has one, so this way the app's own frosted surfaces (a sticky title) still blur what's under them.
+	 * `data-glass` inside: a page that sits on the glass itself (one Stanley wrote), which is clearer.
 	 * `data-fullscreen`: the window fills the screen edge to edge, and so does an app sized to `fill` it.
 	 * It covers the status bar, which drags the OS window; `no-drag` lets clicks there reach the app.
 	 */
 	export const appWindow =
-		"relative isolate flex max-h-(--window-max-height) max-w-(--window-max-width) flex-col overflow-hidden rounded-3xl border bg-card/70 shadow-window before:absolute before:inset-0 before:-z-10 before:backdrop-blur-sm before:backdrop-saturate-150 has-data-[slot=app-sidebar]:bg-transparent data-fullscreen:fixed data-fullscreen:inset-0 data-fullscreen:rounded-none data-fullscreen:border-0 data-fullscreen:shadow-none data-fullscreen:[--window-max-height:100vh] data-fullscreen:[--window-max-width:100vw] data-fullscreen:[-webkit-app-region:no-drag]";
+		"relative isolate flex max-h-(--window-max-height) max-w-(--window-max-width) flex-col overflow-hidden rounded-3xl border bg-card/70 shadow-window before:absolute before:inset-0 before:-z-10 before:backdrop-blur-sm before:backdrop-saturate-150 has-data-[slot=app-sidebar]:bg-transparent has-data-glass:bg-background/50 data-fullscreen:fixed data-fullscreen:inset-0 data-fullscreen:rounded-none data-fullscreen:border-0 data-fullscreen:shadow-none data-fullscreen:[--window-max-height:100vh] data-fullscreen:[--window-max-width:100vw] data-fullscreen:[-webkit-app-region:no-drag]";
 
 	export type AppSize = VariantProps<typeof appVariants>["size"];
 </script>

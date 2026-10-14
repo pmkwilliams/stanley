@@ -31,20 +31,20 @@
   --muted-foreground: oklch(0.714 0.014 41.2);
   --accent: oklch(0.268 0.011 36.5);
   --accent-foreground: oklch(0.986 0.002 67.8);
-  --destructive: oklch(0.704 0.191 22.216);
-  --warning: #f59e0b;
-  --success: #22c55e;
+  --destructive: #ff8080;
+  --warning: #f9b770;
+  --success: #99ffe4;
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.547 0.021 43.1);
-  /* Categorical: things that differ by kind (series, categories), in this order. The presence wave's hues
-     (indigo, green, magenta, violet, rose, cyan), validated for colour-blind separation on --background and --card. */
-  --chart-1: #6458e0;
-  --chart-2: #009c5d;
-  --chart-3: #bb2d8d;
-  --chart-4: #af66ec;
-  --chart-5: #f55177;
-  --chart-6: #009eda;
+  /* Categorical: things that differ by kind (series, categories), in this order. Soft pastels
+     (amber, mint, lilac, salmon, pink, steel), the same in light and dark; warning is chart-1, success chart-2. */
+  --chart-1: #f9b770;
+  --chart-2: #99ffe4;
+  --chart-3: #aca1cf;
+  --chart-4: #f5a191;
+  --chart-5: #ecaad6;
+  --chart-6: #7ca9ca;
 
   /* Shell-only surfaces. */
   --pill: rgba(255, 255, 255, 0.1);
@@ -73,18 +73,18 @@
   --muted-foreground: oklch(0.547 0.021 43.1);
   --accent: oklch(0.96 0.002 17.2);
   --accent-foreground: oklch(0.214 0.009 43.1);
-  --destructive: oklch(0.577 0.245 27.325);
-  --warning: #d97706;
-  --success: #16a34a;
+  --destructive: #ff8080;
+  --warning: #f9b770;
+  --success: #99ffe4;
   --border: oklch(0.922 0.005 34.3);
   --input: oklch(0.922 0.005 34.3);
   --ring: oklch(0.714 0.014 41.2);
-  --chart-1: #5d4ed6;
-  --chart-2: #009c5d;
-  --chart-3: #a30978;
-  --chart-4: #af66ec;
-  --chart-5: #f24e74;
-  --chart-6: #0091c9;
+  --chart-1: #f9b770;
+  --chart-2: #99ffe4;
+  --chart-3: #aca1cf;
+  --chart-4: #f5a191;
+  --chart-5: #ecaad6;
+  --chart-6: #7ca9ca;
 
   --pill: rgba(255, 255, 255, 0.6);
   --player: #ffffff;

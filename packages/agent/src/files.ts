@@ -1,3 +1,4 @@
+import { SCRATCH_DIR } from '@stanley/app-sdk'
 import { filesOf, type Entry } from './conversation'
 import type { SkillScan } from './skills'
 
@@ -49,22 +50,30 @@ export interface KnownFile {
   url?: string
 }
 
-/**
- * Where the pages Stanley makes go, from the top of the user's folder, until the user wants one
- * kept (in `Pages/`): emptied each time Stanley starts, and left out of the folder's history.
- */
-export const SCRATCH_DIR = '.stanley/scratch'
+export { SCRATCH_DIR }
 
-/**
- * The size a page is shown at, in CSS pixels: the Web app's page view in Stanley's window, which
- * opens full screen (`createWindow` in the desktop app), on a 1920 by 1080 display, less the status
- * bar, the caption and the margins around an app window (a page of the user's has no address bar).
- * The Web app's own full screen gives it more.
- */
-const PAGE_SIZE = { width: 1850, height: 885 }
+/** The size a page Stanley writes is shown at, in CSS pixels. The Web app's own full screen gives it more. */
+export interface PageSize {
+  width: number
+  height: number
+}
 
-/** For thinking, when the session has the user's files. */
-export function filesPrompt(root: string): string {
+/** A page's size when the host doesn't say: Stanley's window full screen on a 1920 by 1080 display. */
+export const PAGE_SIZE: PageSize = { width: 1850, height: 885 }
+
+/** A page's size as thinking is told it, to the nearest 10 pixels. */
+export function pageSizeText(size: PageSize): string {
+  const round = (n: number) => Math.round(n / 10) * 10
+  return `about ${round(size.width)} by ${round(size.height)} pixels`
+}
+
+/** Whether a page's size has changed enough from what thinking was told to tell it again: a small change to the window isn't news. */
+export function pageResized(told: PageSize, now: PageSize): boolean {
+  return Math.abs(now.width - told.width) >= 50 || Math.abs(now.height - told.height) >= 50
+}
+
+/** For thinking, when the session has the user's files: pages are shown at `page`. */
+export function filesPrompt(root: string, page: PageSize = PAGE_SIZE): string {
   return `## Files
 The user's files are in a folder on their computer, ${root}. \`bash\` runs a command there, in the background: the folder is your working directory and your home, and the screen doesn't change. The user can't see what you do there, so say what you found or did, in spoken sentences, not the file's formatting.
 - Look before you change anything. Only overwrite, move or delete the user's files when they asked for that; making new files is fine.
@@ -79,8 +88,8 @@ When the user asks you to make something to look at (a diagram, a chart, a timel
 - ${SCRATCH_DIR}/ is scratch: it is emptied when Stanley restarts and isn't kept in the folder's history. A page the user wants to keep goes in Pages/: write it there if they asked for one to keep, or move it there with \`mv\` when they say so.
 - It comes on screen as you write it, and is drawn as it comes. Then you get the errors it reported and a picture of it. If something is broken (an error, something missing, overlapping or cut off), fix that part with \`edit_file\`; otherwise leave it as it is: the user is waiting.
 - To change a page the user is looking at, use \`edit_file\` on just the part that changes: the page reloads where they were looking. Write the whole page again only when most of it changes.
-- It is shown in a window about ${PAGE_SIZE.width} by ${PAGE_SIZE.height} pixels, larger when the user makes it full screen: lay it out to fit without scrolling (an SVG with a viewBox that scales to the window does).
-- A page in either folder takes Stanley's look, light or dark as the user's theme is: its background, text colour and font are set already, so don't set your own. Colour it with these CSS variables: --foreground, --muted-foreground (secondary text), --card and --border (a panel that stands apart), --primary, --destructive, --warning, --success, and --chart-1 to --chart-6, in that order, for things that differ by kind (series, categories); text stays in the text colours, with the colour it names beside it. Also --radius, --font-sans and --font-mono.
+- It is shown in a window ${pageSizeText(page)} (a note says when that changes), larger when the user makes it full screen: lay it out to fit without scrolling (an SVG with a viewBox that scales to the window does).
+- A page in either folder takes Stanley's look, light or dark as the user's theme is: it sits on Stanley's frosted glass, and its text colour and font are set already. Give html and body no background, and don't set your own text colour or font; a picture, map, video or 3D scene that fills the window can have a background of its own. Colour it with these CSS variables: --foreground, --muted-foreground (secondary text), --card and --border (a panel that stands apart), --primary, --destructive, --warning, --success, and --chart-1 to --chart-6, in that order, for things that differ by kind (series, categories); text stays in the text colours, with the colour it names beside it. Also --radius, --font-sans and --font-mono.
 - The page is the whole window: no card, border or title banner around all of it. A panel with its own background has at least 16px of padding inside and var(--radius) corners.
 - A page can't reach the internet. Mermaid, Three.js, D3 and Chart.js load from their usual addresses (https://cdn.jsdelivr.net/npm/mermaid, …/three, …/d3, …/chart.js); a page can fetch the user's files by their path from the folder's top, starting with / (/budget.csv). Write everything else into the page itself.
 - Pages are seen, not heard. Making one takes a while, so it starts with a few words about what you'll make; once it is on screen, never describe it out loud, and say nothing more about it.`
