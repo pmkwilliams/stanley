@@ -16,12 +16,12 @@ debug window shows it, and no model ever sees it.
 
 ```
 user       tick the blue one                              words · utterance 1
-assistant  act {option: "open To-do"}                     Jev · heard 2 of 4 words
-tool       Opened To-do.
+assistant  act {option: "open Tasks"}                     Jev · heard 2 of 4 words
+tool       Opened Tasks.
 assistant  act {option: "Blue › checkbox"}                Jev · heard 4
 tool       Marked "Blue" done.
 user       sorry the red one                              words · utterance 1, went on
-user       <screen title="To-do" …>…</screen><options>…</options>    observation, sent with the call
+user       <screen title="Tasks" …>…</screen><options>…</options>    observation, sent with the call
 assistant  [reasoning] act {option: "Blue › checkbox"}    thinking · reasoning kept as sent
 tool       Marked "Blue" not done. <screen…>…</screen><options>…</options>
 assistant  [reasoning] act {option: "Red › checkbox"}     thinking

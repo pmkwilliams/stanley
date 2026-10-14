@@ -32,8 +32,8 @@
           .map((e) => ({ node: `email/${e.id}`, who: e.from, address: e.address, subject: e.subject, body: e.body, unread: !e.read, selected: open?.id === e.id })),
   )
 
-  /** The body on one line, for the list's summary. */
-  const summary = (body: string) => body.replace(/\s+/g, ' ').trim()
+  /** The body's first line, for the list's summary. */
+  const firstLine = (body: string) => body.split('\n').find((line) => line.trim())?.trim() ?? ''
 
 
   function act(verb: string) {
@@ -138,13 +138,13 @@
         <ul class="flex flex-col gap-0.5">
           {#each rows as row (row.node)}
             <li>
-              <Item.Root size="row" data-selected={row.selected} class="scroll-my-3 items-start py-2.5 text-left hover:bg-accent focus-visible:ring-inset">
+              <Item.Root size="row" data-selected={row.selected} class="scroll-my-3 items-start border border-transparent py-2.5 text-left hover:bg-accent focus-visible:ring-inset data-[selected=true]:border-border data-[selected=true]:bg-accent data-[selected=true]:backdrop-blur-xl">
                 {#snippet child({ props })}
                   <button {...props} aria-current={row.selected} onclick={() => perform(row.node)}>
                     {@render avatar(row.who, row.address, 'default', row.unread)}
                     <Item.Content class="min-w-0 gap-px">
-                      <Item.Title class={['block w-full truncate', row.unread && 'font-semibold']}>{row.subject}</Item.Title>
-                      <span class="truncate text-xs text-muted-foreground">{summary(row.body)}</span>
+                      <Item.Title class={['block w-full truncate', row.unread && 'font-semibold']}>{row.who}</Item.Title>
+                      <span class="truncate text-xs text-muted-foreground"><span class="text-foreground">{row.subject}</span> · {firstLine(row.body)}</span>
                     </Item.Content>
                   </button>
                 {/snippet}

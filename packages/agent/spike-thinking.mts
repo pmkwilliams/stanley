@@ -9,13 +9,13 @@ const model = 'anthropic/claude-haiku-5.5'
 const ttl = { anthropic: { cacheControl: { type: 'ephemeral', ttl: '1h' } } } as const
 const instructions = { role: 'system' as const, content: `${THINKING_PROMPT}\n\n${MISHEARD}\n\n${WEB}\n\nToday is Monday, 12 October 2026.`, providerOptions: ttl }
 
-let todo: string[] = ['Call the dentist']
+let tasks: string[] = ['Call the dentist']
 let field = ''
-let app = 'To-do'
+let app = 'Tasks'
 const screen = () =>
-  app === 'To-do'
-    ? `<screen title="To-do" where="in front of the user">\n# To-do\n${todo.map((t) => `- [ ] ${t}`).join('\n')}\n[Add a task: ${field || 'empty'}]\n</screen>\n<options>\n- [Add a task] field, ${field ? `containing "${field}"` : 'empty'}\n- [Add a task › press Enter] key\n- [Call the dentist › checkbox] checkbox\n- [open Email] app: mail\n- [open To-do] app: tasks\n- [back] Go back.\n- [home] Go home.\n</options>`
-    : `<screen title="Email" where="in front of the user">\n# Inbox\n- Sam Lee: Lunch Friday?\n</screen>\n<options>\n- [Sam Lee: Lunch Friday?] link\n- [open To-do] app: tasks\n- [back] Go back.\n- [home] Go home.\n</options>`
+  app === 'Tasks'
+    ? `<screen title="Tasks" where="in front of the user">\n# Tasks\n${tasks.map((t) => `- [ ] ${t}`).join('\n')}\n[Add a task: ${field || 'empty'}]\n</screen>\n<options>\n- [Add a task] field, ${field ? `containing "${field}"` : 'empty'}\n- [Add a task › press Enter] key\n- [Call the dentist › checkbox] checkbox\n- [open Email] app: mail\n- [open Tasks] app: tasks\n- [back] Go back.\n- [home] Go home.\n</options>`
+    : `<screen title="Email" where="in front of the user">\n# Inbox\n- Sam Lee: Lunch Friday?\n</screen>\n<options>\n- [Sam Lee: Lunch Friday?] link\n- [open Tasks] app: tasks\n- [back] Go back.\n- [home] Go home.\n</options>`
 
 const act = tool({
   description: 'Run one of the listed options. Pass `text` for options that type into a field.',
@@ -27,9 +27,9 @@ const act = tool({
   }),
   execute: async ({ option, text }) => {
     if (option === 'Add a task') field = text ?? ''
-    else if (option.startsWith('Add a task › press Enter') && field) (todo = [...todo, field]), (field = '')
+    else if (option.startsWith('Add a task › press Enter') && field) (tasks = [...tasks, field]), (field = '')
     else if (option === 'open Email') app = 'Email'
-    else if (option === 'open To-do') app = 'To-do'
+    else if (option === 'open Tasks') app = 'Tasks'
     return `Done: ${option}\n\n${screen()}`
   },
 })
@@ -82,14 +82,14 @@ const which = process.argv[2] ?? 'all'
 
 if (which === 'all' || which === 'fresh') {
   // T1: a Jev step is the last assistant turn, with no thinking anywhere before it.
-  app = 'To-do'
+  app = 'Tasks'
   await call('T1 fresh history ending in a synthetic step (thinking on)', [words('open my email and tell me who wrote'), ...jevStep('jev_1', 'open Email', 'Opened Email'), (app = 'Email', observation())])
 }
 
 if (which === 'all' || which === 'long') {
   // T2: a real thinking turn (reasoning + tool calls), then Jev steps, then thinking again.
-  app = 'To-do'
-  todo = ['Call the dentist']
+  app = 'Tasks'
+  tasks = ['Call the dentist']
   field = ''
   let h: ModelMessage[] = [words('add buy oat milk to my list, and check off the dentist one if it is something I can do online'), observation()]
   const t2 = await call('T2 real thinking turn with tools', h)
@@ -120,12 +120,12 @@ if (which === 'all' || which === 'long') {
 
 if (which === 'all' || which === 'reasoning') {
   // T7: a turn that has to think before acting, so its assistant messages carry reasoning.
-  app = 'To-do'
-  todo = ['Call the dentist']
+  app = 'Tasks'
+  tasks = ['Call the dentist']
   field = ''
   let r = { ok: false, messages: [] as ModelMessage[], lastInput: 0, reasoning: 0, text: '' }
   for (let i = 0; i < 3 && r.reasoning === 0; i++) {
-    todo = ['Call the dentist']
+    tasks = ['Call the dentist']
     field = ''
     r = await call(`T7 thinking turn that must reason (try ${i + 1})`, [words('add one task whose title is the answer, not the question: the number of prime numbers between 50 and 100, written as a word'), observation()])
   }

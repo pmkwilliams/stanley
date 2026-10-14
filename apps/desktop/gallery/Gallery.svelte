@@ -4,7 +4,7 @@
   import { lightsApp } from '@stanley/app-lights/core'
   import { musicApp } from '@stanley/app-music/core'
   import { settingsApp } from '@stanley/app-settings/core'
-  import { todoApp } from '@stanley/app-todo/core'
+  import { tasksApp } from '@stanley/app-tasks/core'
   import { weatherApp } from '@stanley/app-weather/core'
   import { webApp } from '@stanley/app-web/core'
   import StatusBar from '../src/renderer/src/StatusBar.svelte'
@@ -12,7 +12,7 @@
   import { fixtures } from './fixtures'
   import { appWindow } from '@stanley/app-ui/components/app'
 
-  const apps: Record<string, AppModule<any>> = { email: emailApp, lights: lightsApp, music: musicApp, settings: settingsApp, todo: todoApp, weather: weatherApp, web: webApp }
+  const apps: Record<string, AppModule<any>> = { email: emailApp, lights: lightsApp, music: musicApp, settings: settingsApp, tasks: tasksApp, weather: weatherApp, web: webApp }
 
   const params = new URLSearchParams(location.search)
   const id = params.get('app') ?? ''

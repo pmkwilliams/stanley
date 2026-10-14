@@ -191,7 +191,7 @@ replacement), on the user's folder through `FileTools`, so every change is kept 
   file on screen isn't offered to read or open (Jev kept reading the page's file instead of handing
   "make it blue" to thinking).
 - Adding `write_file` and `edit_file` changed what thinking does when Jev picks the wrong field:
-  in `files-add-a-line` ("put sunscreen on the Lisbon list", Jev opens To-do and picks New to-do)
+  in `files-add-a-line` ("put sunscreen on the Lisbon list", Jev opens Tasks and picks New task)
   thinking stopped looking in the files and asked instead (about 20%, against about 60% on main).
   The write note now says that what the user named may be one of their files (10/12). The tool
   descriptions are short; what a page write does is in the instructions' Pages section, which

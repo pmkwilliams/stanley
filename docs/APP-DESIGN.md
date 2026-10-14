@@ -1,6 +1,6 @@
 # Built-in apps: design language
 
-Stanley's built-in apps (Email, Lights, Music, Settings, To-do, Weather, Web) are one family. They should feel
+Stanley's built-in apps (Email, Lights, Music, Settings, Tasks, Weather, Web) are one family. They should feel
 like the first-party apps of a modern OS, with macOS Tahoe and iOS as the references: quiet and
 content-first, with glass on the outside and calm surfaces inside. Familiar controls, few of them.
 
@@ -111,7 +111,7 @@ tracking-tighter`).
   `Tabs.Trigger`, driven by app state.
 - **Fields**: `Input`, or `InputGroup` with an `InputGroupAddon` for a leading icon (search). Multi-line:
   `Textarea`. The placeholder says what to type ("Search for a city"). It doesn't explain the app.
-- **Checks** are `Checkbox` (`rounded-full` for to-dos, like Reminders). **Switches** are for settings
+- **Checks** are `Checkbox` (`rounded-full` for tasks, like Reminders). **Switches** are for settings
   that take effect immediately. **Sliders** for levels. **Progress** for playback and loading.
 
 ## Icons

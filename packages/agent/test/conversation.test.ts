@@ -23,7 +23,7 @@ const ran = (toolCallId: string): Map<string, Ran> =>
 describe('Conversation', () => {
   it('commits at a thinking call in the order narrate reads, and sends the observation last', () => {
     const r = recorder()
-    r.step({ target: { kind: 'app', appId: 'todo', title: 'To-do' }, utteranceId: 1, heardWords: 2 })
+    r.step({ target: { kind: 'app', appId: 'tasks', title: 'Tasks' }, utteranceId: 1, heardWords: 2 })
     r.words(1, 'tick the blue one')
     r.step(button('Blue', 4))
     r.words(1, 'sorry the red one')

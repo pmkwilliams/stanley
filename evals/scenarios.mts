@@ -145,15 +145,15 @@ const sentBody = (test: RegExp | ((body: string) => boolean), what: string): Che
   return ok ? undefined : `expected the sent reply to have ${what}, got ${JSON.stringify(bodies)}`
 }
 
-const todoDone = (title: RegExp, done: boolean): Check => (shell) => {
-  const todo = todos(shell.surfaces.get('todo')).find((t) => title.test(t.title))
-  return todo?.done === done ? undefined : `expected ${title} ${done ? 'done' : 'not done'}, got ${todo ? (todo.done ? 'done' : 'not done') : 'missing'}`
+const taskDone = (title: RegExp, done: boolean): Check => (shell) => {
+  const task = tasks(shell.surfaces.get('tasks')).find((t) => title.test(t.title))
+  return task?.done === done ? undefined : `expected ${title} ${done ? 'done' : 'not done'}, got ${task ? (task.done ? 'done' : 'not done') : 'missing'}`
 }
 
-/** The seed list has 4 to-dos. */
-const newTodos = (n: number): Check => (shell) => {
-  const added = todos(shell.surfaces.get('todo')).length - 4
-  return added === n ? undefined : `expected ${n} new to-do, got ${added}: ${JSON.stringify(todos(shell.surfaces.get('todo')).slice(4).map((t) => t.title))}`
+/** The seed list has 4 tasks. */
+const newTasks = (n: number): Check => (shell) => {
+  const added = tasks(shell.surfaces.get('tasks')).length - 4
+  return added === n ? undefined : `expected ${n} new task, got ${added}: ${JSON.stringify(tasks(shell.surfaces.get('tasks')).slice(4).map((t) => t.title))}`
 }
 
 const actions = (max: number): Check => (_, agent) => {
@@ -161,7 +161,7 @@ const actions = (max: number): Check => (_, agent) => {
   return n <= max ? undefined : `expected ≤ ${max} steps, got ${n}`
 }
 
-const todos = (s: any) => (s?.todos ?? []) as { title: string; done: boolean }[]
+const tasks = (s: any) => (s?.tasks ?? []) as { title: string; done: boolean }[]
 const emails = (s: any) => (s?.emails ?? []) as { id: string; from: string; archived?: boolean }[]
 const inboxCount = (shell: Shell) => emails(shell.surfaces.get('email')).filter((e) => !e.archived).length
 
@@ -187,14 +187,14 @@ export const scenarios: Scenario[] = [
     checks: [visible('email'), route('email', /^email\//)],
   },
   {
-    name: 'todo-add',
-    utterances: ['add buy eggs to my to-do list'],
-    checks: [visible('todo'), state('todo', (s) => s?.todos.some((t: any) => /eggs/i.test(t.title)), 'an eggs to-do')],
+    name: 'tasks-add',
+    utterances: ['add buy eggs to my task list'],
+    checks: [visible('tasks'), state('tasks', (s) => s?.tasks.some((t: any) => /eggs/i.test(t.title)), 'an eggs task')],
   },
   {
-    name: 'todo-complete',
+    name: 'tasks-complete',
     utterances: ['mark buy oat milk as done'],
-    checks: [state('todo', (s) => s?.todos.find((t: any) => /oat milk/i.test(t.title))?.done === true, 'oat milk done')],
+    checks: [state('tasks', (s) => s?.tasks.find((t: any) => /oat milk/i.test(t.title))?.done === true, 'oat milk done')],
   },
   {
     name: 'music-play',
@@ -257,20 +257,20 @@ export const scenarios: Scenario[] = [
 
   // ── Held-out phrasings: written after the prompts, never tuned against ──
   {
-    name: 'todo-add-with-filler',
-    utterances: ['add a new to do called um avocado'],
-    checks: [state('todo', (s) => todos(s).some((t) => /avocado/i.test(t.title)), 'an avocado to-do'), state('todo', (s) => !todos(s).some((t) => /\bum\b|called/i.test(t.title)), 'no filler in the title')],
+    name: 'tasks-add-with-filler',
+    utterances: ['add a new task called um avocado'],
+    checks: [state('tasks', (s) => tasks(s).some((t) => /avocado/i.test(t.title)), 'an avocado task'), state('tasks', (s) => !tasks(s).some((t) => /\bum\b|called/i.test(t.title)), 'no filler in the title')],
   },
   {
-    name: 'todo-add-phrasing',
+    name: 'tasks-add-phrasing',
     utterances: ['put call the plumber on my list'],
     // Hands-free, the words that went in are said back.
-    checks: [state('todo', (s) => todos(s).some((t) => /plumber/i.test(t.title)), 'a plumber to-do'), said(/plumber/i)],
+    checks: [state('tasks', (s) => tasks(s).some((t) => /plumber/i.test(t.title)), 'a plumber task'), said(/plumber/i)],
   },
   {
-    name: 'todo-delete-asked',
+    name: 'tasks-delete-asked',
     utterances: ['get rid of the dentist task'],
-    checks: [state('todo', (s) => !!s && !todos(s).some((t) => /dentist/i.test(t.title)), 'the dentist to-do deleted')],
+    checks: [state('tasks', (s) => !!s && !tasks(s).some((t) => /dentist/i.test(t.title)), 'the dentist task deleted')],
   },
   {
     name: 'email-archive-asked',
@@ -307,9 +307,9 @@ export const scenarios: Scenario[] = [
   //    never on half a thought. Every scenario also fails if Stanley speaks before the last word.
   {
     // A pause after "called": nothing is added until the title is said, and only the title is.
-    name: 'todo-title-after-pause',
-    utterances: ['make me a new to-do named | pick up the dry cleaning'],
-    checks: [newTodos(1), state('todo', (s) => todos(s).some((t) => /dry cleaning/i.test(t.title) && !/named/i.test(t.title)), 'a "dry cleaning" to-do')],
+    name: 'tasks-title-after-pause',
+    utterances: ['make me a new task named | pick up the dry cleaning'],
+    checks: [newTasks(1), state('tasks', (s) => tasks(s).some((t) => /dry cleaning/i.test(t.title) && !/named/i.test(t.title)), 'a "dry cleaning" task')],
   },
   {
     // The words to send come after a pause: sending before them would send half a message.
@@ -335,14 +335,14 @@ export const scenarios: Scenario[] = [
     checks: [route('email', /^email\/m2$/), sentCount(0)],
   },
   {
-    name: 'todo-correction-in-sentence',
+    name: 'tasks-correction-in-sentence',
     utterances: ['tick off the passport one | no wait | the dentist one'],
-    checks: [todoDone(/dentist/i, true), todoDone(/passport/i, false)],
+    checks: [taskDone(/dentist/i, true), taskDone(/passport/i, false)],
   },
   {
-    name: 'todo-undo',
+    name: 'tasks-undo',
     utterances: ['mark buy oat milk as done', 'oops, undo that'],
-    checks: [todoDone(/oat milk/i, false)],
+    checks: [taskDone(/oat milk/i, false)],
   },
   {
     name: 'email-unarchive',
@@ -352,27 +352,27 @@ export const scenarios: Scenario[] = [
   {
     // An undoable change said first, then more: the tick can go in while they're still talking,
     // and the rest still gets done.
-    name: 'todo-done-then-add',
-    utterances: ['show me my to-dos', "okay I finished the dentist one | and we're out of bananas so add those"],
-    checks: [todoDone(/dentist/i, true), todoDone(/passport/i, false), newTodos(1), state('todo', (s) => todos(s).some((t) => /banana/i.test(t.title)), 'a bananas to-do')],
+    name: 'tasks-done-then-add',
+    utterances: ['show me my tasks', "okay I finished the dentist one | and we're out of bananas so add those"],
+    checks: [taskDone(/dentist/i, true), taskDone(/passport/i, false), newTasks(1), state('tasks', (s) => tasks(s).some((t) => /banana/i.test(t.title)), 'a bananas task')],
   },
   {
     // The same without a pause: the tick goes in while they're still talking.
-    name: 'todo-done-then-add-run-on',
-    utterances: ['show me my to-dos', 'right so the dentist one is done now and we also need some bananas'],
-    checks: [todoDone(/dentist/i, true), todoDone(/passport/i, false), newTodos(1), state('todo', (s) => todos(s).some((t) => /banana/i.test(t.title)), 'a bananas to-do')],
+    name: 'tasks-done-then-add-run-on',
+    utterances: ['show me my tasks', 'right so the dentist one is done now and we also need some bananas'],
+    checks: [taskDone(/dentist/i, true), taskDone(/passport/i, false), newTasks(1), state('tasks', (s) => tasks(s).some((t) => /banana/i.test(t.title)), 'a bananas task')],
   },
   {
     // Ticked mid-sentence, then the user keeps talking: re-deciding over the same words must not
     // tick it again (that would untick it).
-    name: 'todo-tick-then-ask',
+    name: 'tasks-tick-then-ask',
     utterances: ['cross off the oat milk | and then how many are left'],
-    checks: [todoDone(/oat milk/i, true), newTodos(0), said(/\d|one|two|three/i)],
+    checks: [taskDone(/oat milk/i, true), newTasks(0), said(/\d|one|two|three/i)],
   },
   {
-    name: 'todo-two-ticks',
+    name: 'tasks-two-ticks',
     utterances: ['tick off the oat milk and the passport ones'],
-    checks: [todoDone(/oat milk/i, true), todoDone(/passport/i, true), todoDone(/dentist/i, false)],
+    checks: [taskDone(/oat milk/i, true), taskDone(/passport/i, true), taskDone(/dentist/i, false)],
   },
   {
     // Archiving can't wait on a guess: taken back before the end, nothing is archived.
@@ -389,8 +389,8 @@ export const scenarios: Scenario[] = [
   {
     // Only going somewhere: nothing to say once it's there.
     name: 'navigate-quietly',
-    utterances: ['take me to my to-dos'],
-    checks: [visible('todo'), saidNothing],
+    utterances: ['take me to my tasks'],
+    checks: [visible('tasks'), saidNothing],
   },
   {
     // Thinking opens a page from a link on screen: the page is the answer, so nothing is said.
@@ -407,15 +407,15 @@ export const scenarios: Scenario[] = [
   // ── Misheard words: speech recognition marks words it was unsure of with (?). Fix them from
   //    context, ask when they make no sense, and never send them unheard.
   {
-    // As in a real session: asked what the to-do should say, the answer came out garbled.
-    name: 'todo-misheard-asks',
+    // As in a real session: asked what the task should say, the answer came out garbled.
+    name: 'tasks-misheard-asks',
     utterances: ['add a new to do', 'how do(?) you do(?) to do(?)'],
-    checks: [newTodos(0), said(/\?/)],
+    checks: [newTasks(0), said(/\?/)],
   },
   {
-    name: 'todo-homophone-fixed',
+    name: 'tasks-homophone-fixed',
     utterances: ['put by(?) a phone charger on my list'],
-    checks: [newTodos(1), state('todo', (s) => todos(s).some((t) => /^buy a phone charger/i.test(t.title)), 'a "Buy a phone charger" to-do'), said(/charger/i)],
+    checks: [newTasks(1), state('tasks', (s) => tasks(s).some((t) => /^buy a phone charger/i.test(t.title)), 'a "Buy a phone charger" task'), said(/charger/i)],
   },
   {
     name: 'email-name-from-screen',
@@ -470,7 +470,7 @@ export const scenarios: Scenario[] = [
     // Skills that don't apply stay out of the way.
     name: 'skill-not-needed',
     utterances: ['add call the bank to my list'],
-    checks: [newTodos(1), skippedSkill('break-time'), skippedSkill('email-style')],
+    checks: [newTasks(1), skippedSkill('break-time'), skippedSkill('email-style')],
   },
   {
     // Taught, then used in the same session.
@@ -542,7 +542,7 @@ export const scenarios: Scenario[] = [
     // size where input gets dearer.
     name: 'long-session',
     utterances: [
-      'open my to-do list',
+      'open my task list',
       'add water the plants',
       'add renew my library card',
       'what is on my list now',
@@ -571,9 +571,9 @@ export const scenarios: Scenario[] = [
       'go back',
       'what is the boiling point of water in Fahrenheit',
       'thanks',
-      'open my to-do list',
+      'open my task list',
     ],
-    checks: [newTodos(4)],
+    checks: [newTasks(4)],
     cache: { minReadRatio: 0.7, maxInputTokens: 100_000 },
   },
 ]

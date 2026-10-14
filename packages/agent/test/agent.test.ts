@@ -13,18 +13,18 @@ import type { WebTools } from '../src/web'
 import type { World } from '../src/world'
 
 const elements: AgentNode[] = [
-  { id: 'todo:title', kind: 'input', label: 'Add a task', value: '', children: [{ id: 'todo:add', kind: 'action', role: 'key', label: 'press Enter' }] },
-  { id: 'todo:sort', kind: 'action', label: 'Sort' },
-  { id: 'todo:item', kind: 'location', label: 'Buy milk' },
-  { id: 'todo:delete', kind: 'action', label: 'Delete' },
+  { id: 'tasks:title', kind: 'input', label: 'Add a task', value: '', children: [{ id: 'tasks:add', kind: 'action', role: 'key', label: 'press Enter' }] },
+  { id: 'tasks:sort', kind: 'action', label: 'Sort' },
+  { id: 'tasks:item', kind: 'location', label: 'Buy milk' },
+  { id: 'tasks:delete', kind: 'action', label: 'Delete' },
 ]
 
 function fakeWorld(opts: { screenChanges?: boolean; failOn?: string; titles?: Record<string, string> } = {}) {
   const performed: string[] = []
   const world: World = {
-    screen: async () => ({ id: 'todo:list', title: 'To-do', visible: true, markdown: opts.screenChanges ? `${performed.length} done` : '# To-do', elements }),
+    screen: async () => ({ id: 'tasks:list', title: 'Tasks', visible: true, markdown: opts.screenChanges ? `${performed.length} done` : '# Tasks', elements }),
     appList: () => [
-      { id: 'todo', title: 'To-do', description: 'tasks' },
+      { id: 'tasks', title: 'Tasks', description: 'tasks' },
       { id: 'email', title: 'Email', description: 'mail' },
     ],
     open: async (appId) => {
@@ -178,7 +178,7 @@ const plan = (...picks: Pick[]): Script => (_, i) => picks[i] ?? { next: 'done' 
 
 describe('Agent status', () => {
   it('guesses until it acts, then thinks, writes and acts until done', async () => {
-    const { agent, statuses } = setup(plan({ next: 'act', step: 'open To-do' }, { next: 'act', step: 'Add a task' }, { next: 'act', step: 'Add a task › press Enter' }, { next: 'done' }))
+    const { agent, statuses } = setup(plan({ next: 'act', step: 'open Tasks' }, { next: 'act', step: 'Add a task' }, { next: 'act', step: 'Add a task › press Enter' }, { next: 'done' }))
     agent.utteranceStart()
     spoke(agent, 'add buy eggs to my list')
     await settle()
@@ -211,20 +211,20 @@ describe('Agent status', () => {
 
 describe('Agent loop', () => {
   it('keeps taking steps mid-utterance until done', async () => {
-    const { agent, performed } = setup(plan({ next: 'act', step: 'open To-do' }, { next: 'act', step: 'Buy milk' }, { next: 'done' }))
+    const { agent, performed } = setup(plan({ next: 'act', step: 'open Tasks' }, { next: 'act', step: 'Buy milk' }, { next: 'done' }))
     agent.utteranceStart()
     agent.segment('open buy milk')
     await settle()
-    expect(performed).toEqual(['open todo', 'todo:item', 'show'])
+    expect(performed).toEqual(['open tasks', 'tasks:item', 'show'])
   })
 
   it('navigates and makes an undoable change mid-word once Jev is sure it heard enough', async () => {
-    const { agent, performed, debug } = setup((_, i) => (i === 0 ? { next: 'act', step: 'open To-do' } : i === 1 ? { next: 'act', step: 'Sort' } : { next: 'done' }))
+    const { agent, performed, debug } = setup((_, i) => (i === 0 ? { next: 'act', step: 'open Tasks' } : i === 1 ? { next: 'act', step: 'Sort' } : { next: 'done' }))
     agent.utteranceStart()
     agent.voice(true)
     say(agent, 'open my to do and sort')
     await settle()
-    expect(performed.slice(0, 2)).toEqual(['open todo', 'todo:sort'])
+    expect(performed.slice(0, 2)).toEqual(['open tasks', 'tasks:sort'])
     expect(debug.some((e) => e.type === 'gate' && e.rule === 'mid-speech')).toBe(false)
   })
 
@@ -238,7 +238,7 @@ describe('Agent loop', () => {
     expect(debug.some((e) => e.type === 'gate' && e.rule === 'mid-speech')).toBe(true)
     say(agent, 'sort my list by date')
     await settle()
-    expect(performed).toContain('todo:sort')
+    expect(performed).toContain('tasks:sort')
   })
 
   it('closes a task with an early press when Jev is sure it is done, and has thinking check it when not', async () => {
@@ -256,7 +256,7 @@ describe('Agent loop', () => {
       ended = true
       agent.utteranceEnd()
       await settle()
-      expect(performed).toContain('todo:sort')
+      expect(performed).toContain('tasks:sort')
       expect(thinker.runs).toHaveLength(runs)
     }
   })
@@ -301,7 +301,7 @@ describe('Agent loop', () => {
     agent.segment('actually delete it')
     release()
     await settle()
-    expect(performed).not.toContain('todo:sort')
+    expect(performed).not.toContain('tasks:sort')
     expect(ticks[0]!.outcome).toBe('stale-discarded')
   })
 
@@ -323,7 +323,7 @@ describe('Agent loop', () => {
       say(agent, later)
       release()
       await settle()
-      expect(performed.includes('todo:sort')).toBe(runs)
+      expect(performed.includes('tasks:sort')).toBe(runs)
     }
   })
 
@@ -474,7 +474,7 @@ describe('Agent loop', () => {
     agent.segment('get rid of it')
     agent.utteranceEnd()
     await settle()
-    expect(performed).not.toContain('todo:delete')
+    expect(performed).not.toContain('tasks:delete')
     expect(debug.some((e) => e.type === 'gate' && e.rule === 'step-confidence')).toBe(true)
     expect(thinker.runs).toHaveLength(1)
     expect(handover(debug)).toEqual(['no step stood out clearly'])
@@ -487,7 +487,7 @@ describe('Agent loop', () => {
     agent.segment('sort my list')
     agent.utteranceEnd()
     await settle()
-    expect(performed).toContain('todo:sort')
+    expect(performed).toContain('tasks:sort')
     expect(thinker.runs).toHaveLength(1)
     expect(observation(thinker.runs[0]!)).toContain(`<note>${DONE_CHECK}</note>`)
   })
@@ -497,7 +497,7 @@ describe('Agent loop', () => {
     agent.utteranceStart()
     agent.segment('go')
     await settle()
-    expect(performed.filter((p) => p === 'todo:item')).toHaveLength(2)
+    expect(performed.filter((p) => p === 'tasks:item')).toHaveLength(2)
     expect(statuses.at(-1)).toBe('stuck')
     expect(await agent.context()).toContain('Stanley stopped: it kept repeating the same step.')
   })
@@ -507,7 +507,7 @@ describe('Agent loop', () => {
     agent.utteranceStart()
     spoke(agent, 'sort four times')
     await settle()
-    expect(performed.filter((p) => p === 'todo:sort')).toHaveLength(4)
+    expect(performed.filter((p) => p === 'tasks:sort')).toHaveLength(4)
   })
 
   it('discards a decision when the user barges in with a new utterance', async () => {
@@ -527,7 +527,7 @@ describe('Agent loop', () => {
     say(agent, 'no wait')
     release()
     await settle()
-    expect(performed).not.toContain('todo:sort')
+    expect(performed).not.toContain('tasks:sort')
   })
 
   it('logs a step that fails and keeps going, so the next decision can work around it', async () => {
@@ -537,18 +537,18 @@ describe('Agent loop', () => {
         seen.push(req.state)
         return i === 0 ? { next: 'act', step: 'Sort' } : i === 1 ? { next: 'act', step: 'Buy milk' } : { next: 'done' }
       },
-      { world: { failOn: 'todo:sort' } },
+      { world: { failOn: 'tasks:sort' } },
     )
     agent.utteranceStart()
     spoke(agent, 'sort')
     await settle()
-    expect(seen[1]).toContain('Stanley pressed [Sort]: failed (todo:sort broke).')
-    expect(performed).toEqual(['todo:item', 'show'])
+    expect(seen[1]).toContain('Stanley pressed [Sort]: failed (tasks:sort broke).')
+    expect(performed).toEqual(['tasks:item', 'show'])
     expect(statuses.at(-1)).toBe('done')
   })
 
   it('stops a step that keeps failing', async () => {
-    const { agent, statuses } = setup(() => ({ next: 'act', step: 'Sort' }), { world: { failOn: 'todo:sort' } })
+    const { agent, statuses } = setup(() => ({ next: 'act', step: 'Sort' }), { world: { failOn: 'tasks:sort' } })
     agent.utteranceStart()
     spoke(agent, 'sort')
     await settle()
@@ -577,7 +577,7 @@ describe('Agent loop', () => {
     expect(performed).toEqual([])
     agent.utteranceEnd()
     await settle()
-    expect(performed).toContain('todo:sort')
+    expect(performed).toContain('tasks:sort')
   })
 })
 
@@ -587,7 +587,7 @@ describe('Agent writing', () => {
     agent.utteranceStart()
     spoke(agent, 'add buy eggs')
     await settle()
-    expect(performed).toEqual(['todo:title=Buy eggs', 'todo:add', 'show'])
+    expect(performed).toEqual(['tasks:title=Buy eggs', 'tasks:add', 'show'])
     expect(await agent.context()).toContain('Stanley typed "Buy eggs" into [Add a task].')
   })
 
@@ -599,7 +599,7 @@ describe('Agent writing', () => {
     agent.segment('reply with something funny')
     agent.utteranceEnd()
     await settle()
-    expect(performed).toEqual(['todo:title=Ramen? I was born ready.', 'show'])
+    expect(performed).toEqual(['tasks:title=Ramen? I was born ready.', 'show'])
     expect(said).toEqual(['I wrote "Ramen? I was born ready." Send it?'])
     expect(await agent.context()).toContain('Stanley wrote its own words into [Add a task]: "Ramen? I was born ready."')
   })
@@ -610,7 +610,7 @@ describe('Agent writing', () => {
     agent.segment('add buy eggs')
     agent.utteranceEnd()
     await settle()
-    expect(performed[0]).toBe('todo:title=Buy eggs')
+    expect(performed[0]).toBe('tasks:title=Buy eggs')
     expect(thinker.runs).toHaveLength(0)
   })
 
@@ -634,7 +634,7 @@ describe('Agent writing', () => {
     agent.segment('a table for four')
     agent.utteranceEnd()
     await settle()
-    expect(performed).toEqual(['todo:title=4 people', 'show'])
+    expect(performed).toEqual(['tasks:title=4 people', 'show'])
     expect(said).toEqual([])
   })
 
@@ -661,7 +661,7 @@ describe('Agent writing', () => {
     typed = true
     agent.segment('avocado')
     await settle()
-    expect(performed[0]).toBe('todo:title=Avocado')
+    expect(performed[0]).toBe('tasks:title=Avocado')
   })
 
   it('asks through thinking when the user finished without saying what to type', async () => {
@@ -718,14 +718,14 @@ describe('Agent and misheard words', () => {
 
   it('asks instead of typing when the words for a field look misheard', async () => {
     const { agent, performed, said } = setup(plan({ next: 'act', step: 'Add a task' }), {
-      thinker: { write: async () => ({ source: 'unclear', text: '', say: 'I heard "how do you do to do". What should the to-do say?' }) },
+      thinker: { write: async () => ({ source: 'unclear', text: '', say: 'I heard "how do you do to do". What should the task say?' }) },
     })
     agent.utteranceStart()
     agent.segment('add how do you do to do')
     agent.utteranceEnd()
     await settle()
-    expect(performed.filter((p) => p.startsWith('todo:title'))).toEqual([])
-    expect(said).toEqual(['I heard "how do you do to do". What should the to-do say?'])
+    expect(performed.filter((p) => p.startsWith('tasks:title'))).toEqual([])
+    expect(said).toEqual(['I heard "how do you do to do". What should the task say?'])
   })
 
   it("says back the user's words once they are committed, never their marks", async () => {
@@ -736,7 +736,7 @@ describe('Agent and misheard words', () => {
     agent.segment('add pay the Okonkwo invoice')
     agent.utteranceEnd()
     await settle()
-    expect(performed.slice(0, 2)).toEqual(['todo:title=Pay the Okonkwo invoice', 'todo:add'])
+    expect(performed.slice(0, 2)).toEqual(['tasks:title=Pay the Okonkwo invoice', 'tasks:add'])
     expect(said).toEqual(['Done: "Pay the Okonkwo invoice"'])
   })
 
@@ -753,7 +753,7 @@ describe('Agent and misheard words', () => {
     ])
     agent.utteranceEnd()
     await settle()
-    expect(performed).not.toContain('todo:delete')
+    expect(performed).not.toContain('tasks:delete')
     expect(thinker.confirms).toHaveLength(0)
     expect(said).toEqual(['I heard: "I\'m in, see you Friday". Should I go ahead?'])
   })
@@ -776,7 +776,7 @@ describe('Agent buttons that commit', () => {
     agent.utteranceStart()
     spoke(agent, 'sort')
     await settle()
-    expect(performed).toContain('todo:sort')
+    expect(performed).toContain('tasks:sort')
     // Each kind of button on the screen (Sort, Delete, press Enter), judged in the background.
     expect(jev.effectCalls).toBe(3)
   })
@@ -797,7 +797,7 @@ describe('Agent buttons that commit', () => {
     agent.utteranceEnd()
     await settle()
     expect(asked).toBe('Delete | delete it')
-    expect(performed).toEqual(['todo:delete', 'show'])
+    expect(performed).toEqual(['tasks:delete', 'show'])
   })
 
   it('says what is ready instead when the user has not asked for it', async () => {
@@ -830,7 +830,7 @@ describe('Agent thinking', () => {
         run: async (req) => {
           thinker.runs.push(req)
           const seen = await req.act({ option: 'add a task', text: 'Call mom' }, 'call_1')
-          expect(seen).toContain('<screen title="To-do"')
+          expect(seen).toContain('<screen title="Tasks"')
           return { text: 'Added it.' }
         },
       },
@@ -839,7 +839,7 @@ describe('Agent thinking', () => {
     agent.segment('remind me to call mom')
     agent.utteranceEnd()
     await settle()
-    expect(performed).toEqual(['todo:title=Call mom', 'show'])
+    expect(performed).toEqual(['tasks:title=Call mom', 'show'])
     expect(said).toEqual(['Added it.'])
     expect(observation(thinker.runs[0]!)).toContain('- [Add a task] field, empty')
   })
@@ -968,21 +968,21 @@ describe('Agent turn-taking', () => {
       (req, i) => {
         const words = req.state.includes('oat milk')
         if (!words) return i === 0 ? { next: 'act', step: 'Add a task', heard: 0.1 } : { next: 'act', step: 'Add a task › press Enter', heard: 0.1 }
-        return performed.at(-1) === 'todo:title=Buy oat milk' ? { next: 'act', step: 'Add a task › press Enter' } : { next: 'act', step: 'Add a task' }
+        return performed.at(-1) === 'tasks:title=Buy oat milk' ? { next: 'act', step: 'Add a task › press Enter' } : { next: 'act', step: 'Add a task' }
       },
       { thinker: { write: async () => ({ source: 'user', text: titles[writes++] ?? 'Buy oat milk', say: '' }) } },
     )
     agent.utteranceStart()
     spoke(agent, 'add a task buy', 0.2)
     await settle()
-    expect(performed).toEqual(['todo:title=Buy'])
+    expect(performed).toEqual(['tasks:title=Buy'])
     const calls = jev.calls
     agent.voice(true)
     say(agent, 'oat milk')
     spoke(agent, 'oat milk')
     await settle()
     expect(jev.calls).toBeGreaterThan(calls)
-    expect(performed.slice(0, 3)).toEqual(['todo:title=Buy', 'todo:title=Buy oat milk', 'todo:add'])
+    expect(performed.slice(0, 3)).toEqual(['tasks:title=Buy', 'tasks:title=Buy oat milk', 'tasks:add'])
   })
 
   it('runs held thinking without asking again once the voice says the thought is finished', async () => {
@@ -1006,7 +1006,7 @@ describe('Agent turn-taking', () => {
     await settle()
     agent.utteranceEnd()
     await settle()
-    expect(performed).not.toContain('todo:sort')
+    expect(performed).not.toContain('tasks:sort')
     expect(jev.calls).toBe(2)
   })
 
@@ -1018,7 +1018,7 @@ describe('Agent turn-taking', () => {
     expect(performed).toEqual([])
     agent.utteranceEnd()
     await settle()
-    expect(performed).toEqual(['todo:delete', 'show'])
+    expect(performed).toEqual(['tasks:delete', 'show'])
   })
 
   it('says nothing until the user finishes, and drops it if they keep going', async () => {
@@ -1076,7 +1076,7 @@ describe('Agent turn-taking', () => {
 
   it('reads back unsure words said after a task ended, even when they rejoin its utterance', async () => {
     const { agent, performed, said } = setup(
-      (req, i) => (i === 0 ? { next: 'act', step: 'open Email' } : i === 1 ? { next: 'done' } : req.state.includes('fry') ? (performed.some((p) => p.startsWith('todo:title')) ? { next: 'act', step: 'Delete' } : { next: 'act', step: 'Add a task' }) : { next: 'listen' }),
+      (req, i) => (i === 0 ? { next: 'act', step: 'open Email' } : i === 1 ? { next: 'done' } : req.state.includes('fry') ? (performed.some((p) => p.startsWith('tasks:title')) ? { next: 'act', step: 'Delete' } : { next: 'act', step: 'Add a task' }) : { next: 'listen' }),
       { effect: 'commits', thinker: { write: async () => ({ source: 'user', text: "I'm in, see you Friday", say: '' }) }, deps: { config: quick } },
     )
     agent.utteranceStart()
@@ -1092,7 +1092,7 @@ describe('Agent turn-taking', () => {
       { word: 'day', confidence: 0.4 },
     ])
     await new Promise((r) => setTimeout(r, 300))
-    expect(performed).not.toContain('todo:delete')
+    expect(performed).not.toContain('tasks:delete')
     expect(said).toContain('I heard: "I\'m in, see you Friday". Should I go ahead?')
   })
 
@@ -1114,7 +1114,7 @@ describe('Agent debug trace', () => {
     agent.segment('open email')
     await settle()
     const start = debug.find((e) => e.type === 'tick-start')
-    expect(start).toMatchObject({ screenId: 'todo:list', questions: { next: { options: { listen: expect.any(String) } }, step: { options: { 'open Email': 'app: mail' } } } })
+    expect(start).toMatchObject({ screenId: 'tasks:list', questions: { next: { options: { listen: expect.any(String) } }, step: { options: { 'open Email': 'app: mail' } } } })
     if (start?.type !== 'tick-start') throw new Error('no tick-start')
     expect(start.state).toContain('## Conversation\nUser (still speaking): open email')
   })
@@ -1628,7 +1628,7 @@ describe('Agent history', () => {
     agent.segment('add eggs')
     agent.utteranceEnd()
     await settle()
-    expect(performed[0]).toBe('todo:title=Eggs')
+    expect(performed[0]).toBe('tasks:title=Eggs')
     const history = agent.history.messages()
     const call = history.findIndex((m) => m.role === 'assistant' && Array.isArray(m.content) && m.content.some((p) => p.type === 'tool-call' && p.toolCallId.startsWith('scripted_')))
     expect(history[call + 1]?.role).toBe('tool')
@@ -1640,7 +1640,7 @@ describe('Agent history', () => {
     agent.utteranceEnd()
     await settle()
     expect(thinker.runs).toHaveLength(0)
-    expect(performed).toContain('todo:sort')
+    expect(performed).toContain('tasks:sort')
     expect(validate(agent.history.messages())).toBeUndefined()
   })
 
@@ -1652,8 +1652,8 @@ describe('Agent history', () => {
     agent.utteranceStart()
     spoke(agent, 'open milk and add eggs then delete')
     await settle()
-    expect(performed.slice(0, 2)).toEqual(['todo:item', 'todo:title=Eggs'])
-    expect(performed).not.toContain('todo:delete')
+    expect(performed.slice(0, 2)).toEqual(['tasks:item', 'tasks:title=Eggs'])
+    expect(performed).not.toContain('tasks:delete')
     expect(thinker.runs).toHaveLength(0)
     expect(debug.some((e) => e.type === 'gate' && e.rule === 'ran-calls')).toBe(true)
     expect(validate(agent.history.messages())).toBeUndefined()
@@ -1668,7 +1668,7 @@ describe('Agent history', () => {
     agent.utteranceEnd()
     await settle()
     expect(thinker.runs).toHaveLength(1)
-    expect(performed).not.toContain('todo:sort')
+    expect(performed).not.toContain('tasks:sort')
   })
 
 
@@ -1705,7 +1705,7 @@ describe('Agent history', () => {
 })
 
 describe('Agent skills', () => {
-  const windDown = '---\nname: wind-down\ndescription: When the user is winding down for the night.\n---\nOpen To-do, then press Sort.\n'
+  const windDown = '---\nname: wind-down\ndescription: When the user is winding down for the night.\n---\nOpen Tasks, then press Sort.\n'
   /** A folder with one skill, which a command can change. */
   function skillFiles() {
     let scan: SkillScan = { skills: [{ name: 'wind-down', description: 'When the user is winding down for the night.', path: '.agents/skills/wind-down/SKILL.md' }], broken: [] }
@@ -1732,7 +1732,7 @@ describe('Agent skills', () => {
       (req, i) => {
         states.push(req.state)
         options.push(Object.keys(req.questions.step!.options))
-        return [{ next: 'act', step: 'use skill: wind-down' }, { next: 'act', step: 'open To-do' }, { next: 'act', step: 'Sort' }][i] ?? { next: 'done', nextConfidence: 0.99 }
+        return [{ next: 'act', step: 'use skill: wind-down' }, { next: 'act', step: 'open Tasks' }, { next: 'act', step: 'Sort' }][i] ?? { next: 'done', nextConfidence: 0.99 }
       },
       { deps: { files: f } },
     )
@@ -1744,10 +1744,10 @@ describe('Agent skills', () => {
     expect(states[0]).toContain('"use skill" step')
     // Read this task, it is in view: it isn't offered again.
     expect(options[1]).not.toContain('use skill: wind-down')
-    expect(states[1]).toContain('Stanley read its skill "wind-down":\n  Open To-do, then press Sort.')
+    expect(states[1]).toContain('Stanley read its skill "wind-down":\n  Open Tasks, then press Sort.')
     agent.utteranceEnd()
     await settle()
-    expect(performed).toEqual(expect.arrayContaining(['open todo', 'todo:sort']))
+    expect(performed).toEqual(expect.arrayContaining(['open tasks', 'tasks:sort']))
     expect(thinker.runs).toHaveLength(0)
   })
 

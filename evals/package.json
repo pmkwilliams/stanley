@@ -19,7 +19,7 @@
     "@stanley/app-lights": "workspace:*",
     "@stanley/app-music": "workspace:*",
     "@stanley/app-sdk": "workspace:*",
-    "@stanley/app-todo": "workspace:*",
+    "@stanley/app-tasks": "workspace:*",
     "@stanley/app-weather": "workspace:*",
     "@stanley/app-web": "workspace:*",
     "@stanley/browser": "workspace:^",

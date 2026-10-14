@@ -5,11 +5,11 @@ import { describe, expect, it } from 'vitest'
 import type { AppStore, LivePage, LivePages } from '@stanley/app-sdk'
 import { emailApp, linkify } from '@stanley/app-email/core'
 import { readSettings, settingsApp } from '@stanley/app-settings/core'
-import { todoApp } from '@stanley/app-todo/core'
+import { tasksApp } from '@stanley/app-tasks/core'
 import { MAX_TABS, webApp, type WebState } from '@stanley/app-web/core'
 import { Shell } from './shell'
 
-const make = () => new Shell([emailApp, todoApp], { env: {}, fetch }, () => {})
+const make = () => new Shell([emailApp, tasksApp], { env: {}, fetch }, () => {})
 
 type Site = Record<string, { title: string; text: string; links?: Record<string, string> }>
 
@@ -95,7 +95,7 @@ describe('Shell', () => {
 
   it('locks through the host', async () => {
     let locks = 0
-    const shell = new Shell([todoApp], { env: {}, fetch }, () => {}, () => locks++)
+    const shell = new Shell([tasksApp], { env: {}, fetch }, () => {}, () => locks++)
     await shell.lock()
     expect(locks).toBe(1)
   })
@@ -115,7 +115,7 @@ describe('Shell', () => {
     const shell = make()
     await shell.open('email')
     await shell.performIn('email', 'email/m1', {})
-    await shell.open('todo')
+    await shell.open('tasks')
     await shell.global('back')
     expect((await shell.screen()).id).toBe('email:email/m1')
     await shell.global('back')
@@ -127,7 +127,7 @@ describe('Shell', () => {
   })
 
   it('opens web pages by address in the Web app, and goes back through them without reading them again', async () => {
-    const shell = new Shell([webApp, todoApp], { env: {}, fetch: () => Promise.reject(new Error('offline')) }, () => {})
+    const shell = new Shell([webApp, tasksApp], { env: {}, fetch: () => Promise.reject(new Error('offline')) }, () => {})
     await shell.openUrl('https://en.wikipedia.org/wiki/Louvre')
     await shell.openUrl('https://www.toureiffel.paris/en')
     let screen = await shell.screen()
@@ -162,7 +162,7 @@ describe('Shell', () => {
   })
 
   it('puts a web page in full screen with its Full screen button, and keeps it there for the next page', async () => {
-    const shell = new Shell([webApp, todoApp], { env: {}, fetch: () => Promise.reject(new Error('offline')) }, () => {})
+    const shell = new Shell([webApp, tasksApp], { env: {}, fetch: () => Promise.reject(new Error('offline')) }, () => {})
     await shell.open('web')
     expect((await shell.screen()).elements).toEqual([])
     await shell.openUrl('https://en.wikipedia.org/wiki/Louvre')
@@ -173,9 +173,9 @@ describe('Shell', () => {
     await shell.perform(button, {})
     expect(shell.layout).toEqual({ visible: 'web', fullscreen: true })
     expect((await shell.screen()).elements[0]!.label).toBe('Exit full screen')
-    await shell.open('todo')
+    await shell.open('tasks')
     await shell.global('show')
-    expect(shell.layout).toEqual({ visible: 'todo', fullscreen: false })
+    expect(shell.layout).toEqual({ visible: 'tasks', fullscreen: false })
     await shell.openUrl('https://www.toureiffel.paris/en')
     await shell.global('show')
     expect(shell.layout).toEqual({ visible: 'web', fullscreen: true })
@@ -185,7 +185,7 @@ describe('Shell', () => {
 
   it("works a live page: its links are the screen's elements, and a page a link went to can be gone back from", async () => {
     const pages = new FakePages(SITE)
-    const shell = new Shell([webApp, todoApp], { env: {}, fetch, pages }, () => {})
+    const shell = new Shell([webApp, tasksApp], { env: {}, fetch, pages }, () => {})
     await shell.openUrl('https://a.test/')
     let screen = await shell.screen()
     expect(screen).toMatchObject({ id: 'web:page/0', url: 'https://a.test/' })
@@ -281,6 +281,6 @@ describe('Shell', () => {
     expect(shell.fileUrl('notes.docx')).toBeUndefined()
     expect(shell.fileUrl('gone.html')).toBeUndefined()
     expect(shell.fileUrl('../plan.html')).toBeUndefined()
-    expect(new Shell([todoApp], { env: {}, fetch }, () => {}, undefined, { folder: { root, shown: '~/Stanley' } }).fileUrl('My pages/plan.html')).toBeUndefined()
+    expect(new Shell([tasksApp], { env: {}, fetch }, () => {}, undefined, { folder: { root, shown: '~/Stanley' } }).fileUrl('My pages/plan.html')).toBeUndefined()
   })
 })

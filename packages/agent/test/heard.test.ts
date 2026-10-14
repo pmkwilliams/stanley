@@ -30,9 +30,9 @@ describe('screenVocabulary', () => {
         markdown: '# Inbox\n- invoice from Okonkwo Ltd',
         elements: [{ id: 'm1', kind: 'location', label: 'Priya Shah: roadmap review', children: [{ id: 'a', kind: 'action', label: 'Archive' }] }],
       },
-      [{ id: 'todo', title: 'To-do', description: 'tasks' }],
+      [{ id: 'tasks', title: 'Tasks', description: 'tasks' }],
     )
-    expect(words.slice(0, 6)).toEqual(['To-do', 'Priya', 'Shah', 'Archive', 'Inbox', 'Okonkwo'])
+    expect(words.slice(0, 6)).toEqual(['Tasks', 'Priya', 'Shah', 'Archive', 'Inbox', 'Okonkwo'])
     expect(words).toContain('roadmap')
   })
 })

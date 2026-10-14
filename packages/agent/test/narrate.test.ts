@@ -4,29 +4,29 @@ import { narrate } from '../src/narrate'
 import type { Screen } from '../src/world'
 import { recorder } from './history'
 
-const screen: Screen = { id: 'todo:list', title: 'To-do', visible: true, markdown: '# To-do\n- [ ] Buy eggs', elements: [] }
-const field: StepTarget = { kind: 'element', name: 'Add a task', role: 'field', nodeKind: 'input', nodeId: 'todo:title' }
+const screen: Screen = { id: 'tasks:list', title: 'Tasks', visible: true, markdown: '# Tasks\n- [ ] Buy eggs', elements: [] }
+const field: StepTarget = { kind: 'element', name: 'Add a task', role: 'field', nodeKind: 'input', nodeId: 'tasks:title' }
 
 describe('narrate', () => {
   it("puts an utterance's words before the steps taken for it, even ones decided mid-sentence", () => {
     const r = recorder()
     r.event('task-start')
-    r.step({ target: { kind: 'app', appId: 'todo', title: 'To-do' }, summary: 'Opened To-do', utteranceId: 1 })
+    r.step({ target: { kind: 'app', appId: 'tasks', title: 'Tasks' }, summary: 'Opened Tasks', utteranceId: 1 })
     r.words(1, 'add a task called')
     r.words(1, 'buy eggs')
     r.step({ target: field, text: 'Buy eggs', by: 'thinking', summary: 'typed', utteranceId: 1 })
-    r.step({ target: { kind: 'element', name: 'Add a task › press Enter', role: 'key', nodeKind: 'action', nodeId: 'todo:add' }, summary: 'Added to-do "Buy eggs".', utteranceId: 1 })
+    r.step({ target: { kind: 'element', name: 'Add a task › press Enter', role: 'key', nodeKind: 'action', nodeId: 'tasks:add' }, summary: 'Added task "Buy eggs".', utteranceId: 1 })
     r.event('task-end')
     expect(narrate(r.h.view(), screen)).toBe(
       [
         '## Conversation',
         'User: add a task called buy eggs',
-        'Stanley opened To-do.',
+        'Stanley opened Tasks.',
         'Stanley typed "Buy eggs" into [Add a task].',
-        'Stanley pressed Enter in [Add a task]: Added to-do "Buy eggs".',
+        'Stanley pressed Enter in [Add a task]: Added task "Buy eggs".',
         '',
-        '## Screen: To-do (in front of the user)',
-        '# To-do\n- [ ] Buy eggs',
+        '## Screen: Tasks (in front of the user)',
+        '# Tasks\n- [ ] Buy eggs',
       ].join('\n'),
     )
   })
@@ -56,8 +56,8 @@ describe('narrate', () => {
         'User pressed [Send reply]: Reply sent.',
         'User went home.',
         '',
-        "## Screen: To-do (in the background, the user can't see it)",
-        '# To-do\n- [ ] Buy eggs',
+        "## Screen: Tasks (in the background, the user can't see it)",
+        '# Tasks\n- [ ] Buy eggs',
       ].join('\n'),
     )
   })
@@ -70,7 +70,7 @@ describe('narrate', () => {
       heardWords,
     })
     const r = recorder()
-    r.step({ target: { kind: 'app', appId: 'todo', title: 'To-do' }, summary: 'Opened', utteranceId: 1, heardWords: 2 })
+    r.step({ target: { kind: 'app', appId: 'tasks', title: 'Tasks' }, summary: 'Opened', utteranceId: 1, heardWords: 2 })
     r.words(1, 'tick the blue one')
     r.step(tick('Blue', 4))
     const live = { utteranceId: 1, text: 'tick the blue one sorry the', ended: false }
@@ -80,7 +80,7 @@ describe('narrate', () => {
     expect(narrate(r.h.view(), screen).split('\n').slice(0, 6)).toEqual([
       '## Conversation',
       'User: tick the blue one',
-      'Stanley opened To-do.',
+      'Stanley opened Tasks.',
       'Stanley pressed [Blue › checkbox]: Marked "Blue" done.',
       'User (went on): sorry the red one',
       'Stanley pressed [Red › checkbox]: Marked "Red" done.',

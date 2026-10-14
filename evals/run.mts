@@ -6,7 +6,7 @@
  *   pnpm eval inbox pm             # scenarios whose name contains a filter
  *   pnpm eval --all                # every scenario
  *   pnpm eval --all --runs 3       # each scenario 3 times, reported as a pass rate
- *   pnpm eval todo --trace         # also print what the models read at the end of each run
+ *   pnpm eval tasks --trace        # also print what the models read at the end of each run
  *
  * Options: --runs N (default 1), --concurrency N (default 4), --trace (every run), --verbose
  * (every run's ticks; by default only failed runs print them), --jev-turns N (user turns Jev reads).

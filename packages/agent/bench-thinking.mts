@@ -10,15 +10,15 @@ const MODELS = { haiku: 'anthropic/claude-haiku-5.5', sonnet: 'anthropic/claude-
 const runs = Number(process.argv[2] ?? 5)
 const system = instructions({ web: false, today: new Date('2026-10-12') })
 
-const todoScreen = (todo: string[]) =>
-  `<screen title="To-do" where="in front of the user">\n# To-do\n${todo.map((t) => `- [ ] ${t}`).join('\n')}\n[Add a task: empty]\n</screen>\n<options>\n- [Add a task] field, empty\n- [Add a task › press Enter] key\n${todo.map((t) => `- [${t} › checkbox] checkbox`).join('\n')}\n- [open Email] app: mail\n- [back] Go back.\n- [home] Go home.\n</options>`
-const emailScreen = `<screen title="Email" where="in front of the user">\n# Inbox\n- Sam Lee: Lunch Friday? — "Are you free at 12:30 at Rosa's?"\n- Billing: Your invoice for October\n- Priya: Slides for Thursday\n</screen>\n<options>\n- [Sam Lee: Lunch Friday?] link\n- [Billing: Your invoice for October] link\n- [Priya: Slides for Thursday] link\n- [open To-do] app: tasks\n- [back] Go back.\n- [home] Go home.\n</options>`
+const tasksScreen = (tasks: string[]) =>
+  `<screen title="Tasks" where="in front of the user">\n# Tasks\n${tasks.map((t) => `- [ ] ${t}`).join('\n')}\n[Add a task: empty]\n</screen>\n<options>\n- [Add a task] field, empty\n- [Add a task › press Enter] key\n${tasks.map((t) => `- [${t} › checkbox] checkbox`).join('\n')}\n- [open Email] app: mail\n- [back] Go back.\n- [home] Go home.\n</options>`
+const emailScreen = `<screen title="Email" where="in front of the user">\n# Inbox\n- Sam Lee: Lunch Friday? — "Are you free at 12:30 at Rosa's?"\n- Billing: Your invoice for October\n- Priya: Slides for Thursday\n</screen>\n<options>\n- [Sam Lee: Lunch Friday?] link\n- [Billing: Your invoice for October] link\n- [Priya: Slides for Thursday] link\n- [open Tasks] app: tasks\n- [back] Go back.\n- [home] Go home.\n</options>`
 
 const SCENARIOS: { name: string; messages: ModelMessage[] }[] = [
   { name: 'answer from screen', messages: [{ role: 'user', content: 'who wants to have lunch with me and when?' }, { role: 'user', content: emailScreen }] },
-  { name: 'answer from knowledge', messages: [{ role: 'user', content: "what's the capital of Australia?" }, { role: 'user', content: todoScreen(['Call the dentist']) }] },
-  { name: 'add a task', messages: [{ role: 'user', content: 'add buy oat milk to my list' }, { role: 'user', content: todoScreen(['Call the dentist']) }] },
-  { name: 'reason then act', messages: [{ role: 'user', content: 'add one task whose title is the answer, not the question: the number of prime numbers between 50 and 100, written as a word' }, { role: 'user', content: todoScreen(['Call the dentist']) }] },
+  { name: 'answer from knowledge', messages: [{ role: 'user', content: "what's the capital of Australia?" }, { role: 'user', content: tasksScreen(['Call the dentist']) }] },
+  { name: 'add a task', messages: [{ role: 'user', content: 'add buy oat milk to my list' }, { role: 'user', content: tasksScreen(['Call the dentist']) }] },
+  { name: 'reason then act', messages: [{ role: 'user', content: 'add one task whose title is the answer, not the question: the number of prime numbers between 50 and 100, written as a word' }, { role: 'user', content: tasksScreen(['Call the dentist']) }] },
 ]
 
 interface Sample { firstWord?: number; firstAct?: number; total: number; out: number; reasoning: number; inTok: number; cacheRead: number; steps: number; text: string; acts: string[] }
@@ -37,7 +37,7 @@ async function once(model: string, messages: ModelMessage[]): Promise<Sample> {
     act: async (call: ActCall) => {
       firstAct ??= performance.now() - t0
       acts.push(call.text ? `${call.option}="${call.text}"` : call.option)
-      return `Done: ${call.option}\n\n${todoScreen(['Call the dentist', ...(call.text ? [call.text] : [])])}`
+      return `Done: ${call.option}\n\n${tasksScreen(['Call the dentist', ...(call.text ? [call.text] : [])])}`
     },
   })
   const u = r.usage

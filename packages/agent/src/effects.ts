@@ -33,7 +33,7 @@ export function createEffectJudge(jev: DecisionClient, commits = 0.3): EffectJud
   return {
     async judge({ option, node, screen, appId, signal }) {
       if (node.destructive) return { effect: 'commits', probabilities: { commits: 1 }, cached: true }
-      // A kind of button does the same on every item: "› Delete" deletes whichever to-do it's on.
+      // A kind of button does the same on every item: "› Delete" deletes whichever task it's on.
       const key = `${appId}\n${option.split(' › ').at(-1)}`
       const hit = cache.get(key)
       const asked =

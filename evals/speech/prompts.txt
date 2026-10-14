@@ -2,7 +2,7 @@
 # Mix in your own real requests — the hard cases are names, short replies, and corrections.
 what's the weather in Denver
 let's go through my inbox
-add buy eggs to my to-do list
+add buy eggs to my task list
 mark buy oat milk as done
 play some music
 who is the prime minister of the UK
@@ -26,16 +26,16 @@ archive that
 # Turn-taking. Say these the way you naturally would: pause where it says (pause), trail off, correct
 # yourself. Label each with the scenario name after the →, so `pnpm eval:voice` runs its checks.
 # For email ones, the scenario first types "open the email from Sam" (or Jordan), then plays your clip.
-make me a new to-do named (pause) pick up the dry cleaning → todo-title-after-pause
+make me a new task named (pause) pick up the dry cleaning → tasks-title-after-pause
 reply saying (pause) I can't do Friday (pause) but Saturday works → reply-dictated-in-pieces
 reply saying I'll be there at five (pause) actually make it six → reply-self-correction
 write back and tell him that (pause) um (stop there) → reply-trails-off
 I need to answer the one from Priya about (pause) the roadmap → navigate-before-finished
-tick off the passport one (pause) no wait (pause) the dentist one → todo-correction-in-sentence
+tick off the passport one (pause) no wait (pause) the dentist one → tasks-correction-in-sentence
 what's the weather (pause) in Chicago tomorrow → question-after-pause
-add a new to do called um avocado → todo-add-with-filler
+add a new task called um avocado → tasks-add-with-filler
 um so I was thinking (stop there) → mid-thought-wait
-add buy eggs to my to-do list (fast, no pauses) → todo-add
+add buy eggs to my task list (fast, no pauses) → tasks-add
 play some music (fast, no pauses) → music-play
 reply saying I'm in and send it → reply-and-send
 

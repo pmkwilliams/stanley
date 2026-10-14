@@ -106,7 +106,7 @@ plan: a `use skill` step at `skillStep` (0.9) or above is read whatever `next` s
 .agents/skills/email-style/SKILL.md`) used to hand over to a whole turn, which pressed Send itself:
 that skipped the read-back of unsure words (`reply-unsure-word-reads-back` went 0/2). Now `bash`
 runs within a single step, up to three steps, and only its `act` calls come back unrun. That fixed
-it, and the same handover on lists the user named (`todo-homophone-fixed`): handovers in the reply
+it, and the same handover on lists the user named (`tasks-homophone-fixed`): handovers in the reply
 and file scenarios went from 12 to 1. A write that reads a skill takes a step more (write p50 1.6 s
 → 3.5 s with the fixture's email skill, which is for every reply).
 

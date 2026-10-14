@@ -21,18 +21,18 @@ const screen: Screen = {
   markdown: '# Email',
   elements: [{ id: 'email:inbox', kind: 'location', role: 'tab', label: 'Inbox (5)', description: 'selected' }, { id: 'email:m1', kind: 'location', label: 'Sam: Lunch Friday?' }, article, { id: 'email:archive2', kind: 'action', label: 'Archive' }],
 }
-const apps = [{ id: 'todo', title: 'To-do', description: 'tasks' }]
+const apps = [{ id: 'tasks', title: 'Tasks', description: 'tasks' }]
 
 describe('stepOptions', () => {
   const options = stepOptions(screen, apps, 50)
 
   it('offers the screen in order, named by the containers that tell elements apart, then apps, back and home', () => {
-    expect(Object.keys(options.criteria)).toEqual(['Inbox (5)', 'Sam: Lunch Friday?', '"Lunch Friday?" › Archive', '"Lunch Friday?" › Reply to Sam', 'Archive', 'open To-do', 'back', 'home'])
+    expect(Object.keys(options.criteria)).toEqual(['Inbox (5)', 'Sam: Lunch Friday?', '"Lunch Friday?" › Archive', '"Lunch Friday?" › Reply to Sam', 'Archive', 'open Tasks', 'back', 'home'])
   })
 
   it("offers the user's skills before the apps, described by when they are for", () => {
     const skills = stepOptions(screen, apps, 50, '', [], false, undefined, [{ name: 'wind-down', description: 'When the user winds down.', path: '.agents/skills/wind-down/SKILL.md' }])
-    expect(Object.keys(skills.criteria).slice(-4)).toEqual(['use skill: wind-down', 'open To-do', 'back', 'home'])
+    expect(Object.keys(skills.criteria).slice(-4)).toEqual(['use skill: wind-down', 'open Tasks', 'back', 'home'])
     expect(skills.criteria['use skill: wind-down']).toBe('skill: When the user winds down.')
     expect(navigates(skills.targets.get('use skill: wind-down')!)).toBe(true)
   })
@@ -45,7 +45,7 @@ describe('stepOptions', () => {
     expect(options.criteria['Inbox (5)']).toBe('tab, selected')
     expect(options.criteria['"Lunch Friday?" › Reply to Sam']).toBe('field, containing "Sure"')
     expect(options.criteria['"Lunch Friday?" › Archive']).toBe('button')
-    expect(options.criteria['open To-do']).toBe('app: tasks')
+    expect(options.criteria['open Tasks']).toBe('app: tasks')
   })
 
   it('keeps names unique and respects the limit', () => {
@@ -56,7 +56,7 @@ describe('stepOptions', () => {
 
   it('treats links, apps, back and home as navigation, and buttons and fields as not', () => {
     expect(navigates(options.targets.get('Sam: Lunch Friday?')!)).toBe(true)
-    expect(navigates(options.targets.get('open To-do')!)).toBe(true)
+    expect(navigates(options.targets.get('open Tasks')!)).toBe(true)
     expect(navigates(options.targets.get('back')!)).toBe(true)
     expect(navigates({ kind: 'lock' })).toBe(false)
     expect(navigates(options.targets.get('Archive')!)).toBe(false)
@@ -116,7 +116,7 @@ describe('resolveOption', () => {
   const options = stepOptions(screen, apps, 50)
   it('takes exact names, and the one option a paraphrase points to', () => {
     expect(resolveOption(options, 'Inbox (5)')).toBe('Inbox (5)')
-    expect(resolveOption(options, '[open To-do]')).toBe('open To-do')
+    expect(resolveOption(options, '[open Tasks]')).toBe('open Tasks')
     expect(resolveOption(options, 'Lunch Friday? › Reply to Sam')).toBe('"Lunch Friday?" › Reply to Sam')
     expect(resolveOption(options, 'reply to sam')).toBe('"Lunch Friday?" › Reply to Sam')
   })

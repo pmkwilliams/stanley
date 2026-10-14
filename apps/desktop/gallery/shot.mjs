@@ -1,5 +1,5 @@
 // Screenshots apps in the gallery: node apps/desktop/gallery/shot.mjs <out-dir> "<query>" ["<query>" …]
-// e.g. node apps/desktop/gallery/shot.mjs /tmp/shots "app=todo&theme=dark" "app=todo&theme=light&do=item/t1"
+// e.g. node apps/desktop/gallery/shot.mjs /tmp/shots "app=tasks&theme=dark" "app=tasks&theme=light&do=item/t1"
 // Each query is the gallery's URL query (see README.md); files are named after it.
 import { createHash } from 'node:crypto'
 import { mkdirSync } from 'node:fs'

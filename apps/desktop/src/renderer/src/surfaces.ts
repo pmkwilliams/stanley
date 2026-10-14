@@ -4,7 +4,7 @@ import Lights from '@stanley/app-lights/ui'
 import Music from '@stanley/app-music/ui'
 import MusicPlayer from '@stanley/app-music/player'
 import Settings from '@stanley/app-settings/ui'
-import Todo from '@stanley/app-todo/ui'
+import Tasks from '@stanley/app-tasks/ui'
 import Weather from '@stanley/app-weather/ui'
 import Web from '@stanley/app-web/ui'
 
@@ -13,7 +13,7 @@ export const surfaces: Record<string, Component<any>> = {
   lights: Lights,
   music: Music,
   settings: Settings,
-  todo: Todo,
+  tasks: Tasks,
   weather: Weather,
   web: Web,
 }

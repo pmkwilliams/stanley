@@ -4,7 +4,7 @@
  * for multi-turn scenarios, the clip replaces the last utterance and earlier ones are typed.
  *
  *   pnpm eval:voice              # list clips with a scenario (runs nothing)
- *   pnpm eval:voice todo         # clips whose id or scenario contains a filter
+ *   pnpm eval:voice tasks        # clips whose id or scenario contains a filter
  *   pnpm eval:voice --all
  *   pnpm eval:voice --say --all  # no clips: speak each scenario with macOS \`say\` instead
  *

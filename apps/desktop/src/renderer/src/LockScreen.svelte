@@ -52,13 +52,13 @@
     {/each}
   </svg>
   <div class="flex flex-col items-center">
-    <p class="glass bg-clip-text text-3xl leading-none font-semibold text-transparent" style="filter: url(#glass-date)">{date(clock.now)}</p>
+    <p class="glass bg-clip-text text-2xl leading-none font-medium text-transparent" style="filter: url(#glass-date)">{date(clock.now)}</p>
     <p class="glass mt-1.5 bg-clip-text text-8xl leading-none font-bold tracking-tight text-transparent" style="filter: url(#glass-time)">{time(clock.now)}</p>
   </div>
   <!-- See-through text with a highlight that sweeps across it now and then: a 2.7s sweep, then a 0.6s rest. -->
   <Button
     variant="ghost"
-    class="h-auto animate-[lock-shimmer_3.3s_ease-in-out_infinite] rounded-xl bg-linear-100 from-ink/65 from-40% via-ink/95 via-50% to-ink/65 to-60% bg-size-[300%_100%] bg-clip-text px-4 py-2 text-lg font-bold text-transparent [-webkit-app-region:no-drag] hover:bg-transparent hover:text-transparent dark:hover:bg-transparent"
+    class="h-auto animate-[lock-shimmer_3.3s_ease-in-out_infinite] rounded-xl bg-linear-100 from-ink/65 from-40% via-ink/95 via-50% to-ink/65 to-60% bg-size-[300%_100%] bg-clip-text px-4 py-2 text-xl font-semibold text-transparent [-webkit-app-region:no-drag] hover:bg-transparent hover:text-transparent dark:hover:bg-transparent"
     onclick={onunlock}>Hello, {name}</Button
   >
 </div>

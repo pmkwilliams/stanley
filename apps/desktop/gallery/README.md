@@ -5,12 +5,12 @@ shell's wallpaper and window glass. For designing and checking apps without the 
 
 ```sh
 pnpm --filter @stanley/desktop gallery                      # http://localhost:5199
-node apps/desktop/gallery/shot.mjs /tmp/shots "app=todo&theme=dark" "app=todo&theme=light"
+node apps/desktop/gallery/shot.mjs /tmp/shots "app=tasks&theme=dark" "app=tasks&theme=light"
 ```
 
 Query parameters:
 
-- `app` — `email`, `lights`, `music`, `settings`, `todo`, `weather`, `web`
+- `app` — `email`, `lights`, `music`, `settings`, `tasks`, `weather`, `web`
 - `theme` — `dark` (default) or `light`
 - `do` — a node id to perform before showing, repeatable, in order: `do=item/t1`, `do=title|Buy bread`
   (`|` separates the text argument)

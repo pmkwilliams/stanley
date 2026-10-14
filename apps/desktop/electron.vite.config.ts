@@ -11,7 +11,7 @@ const bundled = [
   '@stanley/jev',
   '@stanley/stt',
   '@stanley/tts',
-  '@stanley/app-todo',
+  '@stanley/app-tasks',
   '@stanley/app-email',
   '@stanley/app-lights',
   '@stanley/app-weather',

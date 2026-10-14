@@ -18,7 +18,7 @@ function model(steps: Part[][]) {
 
 const history: ModelMessage[] = [
   { role: 'user', content: 'sort my list' },
-  { role: 'user', content: '<screen title="To-do">…</screen>' },
+  { role: 'user', content: '<screen title="Tasks">…</screen>' },
 ]
 
 const request = (over: Partial<ThinkRequest> = {}): ThinkRequest => ({

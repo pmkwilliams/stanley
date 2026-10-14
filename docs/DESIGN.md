@@ -11,7 +11,7 @@ over a few demo apps, which stand in for arbitrary apps and websites.
 - Push-to-talk (global toggle) with live transcription.
 - An agent that works from what is on screen, so it carries over to arbitrary apps and websites.
 - Background work: the agent can operate on surfaces the user can't see and reveal the result.
-- Toy apps: To-do, Email, Weather, Music, Web (a live browser page; searching happens in the background).
+- Toy apps: Tasks, Email, Weather, Music, Web (a live browser page; searching happens in the background).
 - A debug window that explains every decision.
 
 **Not in v1**: wake phrase, multi-window layouts, spoken responses (Stanley's replies are text on
@@ -105,8 +105,8 @@ decisions showed the old single question giving 50% to an option whose route hel
 ### Turn-taking: acting before the user finishes, without acting on half a thought
 
 The question is never "has the user stopped talking?" but "could their next words change what
-Stanley is about to do?" A person sitting at the computer opens the to-do list as soon as you say
-"to-do", but doesn't add "called…" as a title. So each kind of step waits for a different amount
+Stanley is about to do?" A person sitting at the computer opens the task list as soon as you say
+"task", but doesn't add "called…" as a title. So each kind of step waits for a different amount
 of certainty:
 
 | Step | Waits for |
@@ -152,7 +152,7 @@ quietly. Thinking would only say where they are, which they can see. A navigatio
 their last words was a guess, so thinking still checks it.
 
 **What a button does** (looks, changes or commits) is judged before any of the gates, once per app
-and kind of button ("› Delete" on any to-do), and in the background for each kind on a screen as
+and kind of button ("› Delete" on any task), and in the background for each kind on a screen as
 it first appears, so a press rarely waits for it.
 
 ### Misheard words
@@ -330,10 +330,10 @@ need:
 
 ```
 ## Conversation
-User: add a new to do called um avocado
-Stanley opened To-do.
+User: add a new task called um avocado
+Stanley opened Tasks.
 Stanley typed "Avocado" into [Add a task].
-Stanley pressed Enter in [Add a task]: Added to-do "Avocado".
+Stanley pressed Enter in [Add a task]: Added task "Avocado".
 User: open the email from Sam
 Stanley opened Email.
 Stanley opened [Sam Lee: Lunch Friday?].
@@ -589,7 +589,7 @@ All via **Vercel AI Gateway** with the AI SDK (`ai`, pinned exactly), one `AI_GA
 
 | App | Data | Notes |
 | --- | --- | --- |
-| To-do | seeded, in-memory | "Add a task" box (Enter adds); each task row has a checkbox and Delete |
+| Tasks | seeded, in-memory | "Add a task" box (Enter adds); each task row has a checkbox and Delete |
 | Email | seeded, in-memory | Inbox / Sent tabs, the inbox list, an open email with Mark unread / Archive / Delete, a reply box and Send reply |
 | Weather | Open-Meteo | "Search a city" box (Enter looks up), current conditions, one button per day |
 | Music | a hard-coded 12-track playlist (streamed from Jamendo) | Previous / Play / Next / Volume buttons, one button per track |
@@ -652,7 +652,7 @@ Working, verified end to end:
   fixture websites 28/30 (15 × 2; both misses passed 4/4 on rerun, as before the change), live websites 8/8 (4 × 2), synthetic voice through the real transcriber and Smart Turn
   10/10 on the turn-taking set.
 - Files: 5 scenarios (answer from a file, add a line, add up a column, new file, delete when
-  asked), 13/15 over 3 runs. The misses are `files-answer`, where Jev opens To-do on "my packing
+  asked), 13/15 over 3 runs. The misses are `files-answer`, where Jev opens Tasks on "my packing
   list…" before the file name is said; it still answers from the file.
 - Turn detection (`pnpm eval:turn`, LiveKit EoT benchmark, 100 real clips): the turn's end is called
   0.75 s after the last word (median) vs 2 s before, and 4% of mid-turn pauses cut in vs 11%.
@@ -692,7 +692,7 @@ packages/browser      any web page as a screen: generic extractor + Playwright W
 packages/files        the user's files folder: sandboxed bash, every version kept in git
 packages/stt          sherpa-onnx + Parakeet + Silero VAD → partial/final events; Smart Turn on pauses
 packages/tts          Kokoro via sherpa-onnx; segmenter; speaker (pacing, what was said)
-packages/app-todo     ./core (headless) + ./ui (Svelte)
+packages/app-tasks     ./core (headless) + ./ui (Svelte)
 packages/app-email    ″
 packages/app-weather  ″
 packages/app-lights   ″ (Hue Bridge client in src/hue.ts)

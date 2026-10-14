@@ -41,9 +41,9 @@ importers:
       '@stanley/app-settings':
         specifier: workspace:*
         version: link:../../packages/app-settings
-      '@stanley/app-todo':
+      '@stanley/app-tasks':
         specifier: workspace:*
-        version: link:../../packages/app-todo
+        version: link:../../packages/app-tasks
       '@stanley/app-ui':
         specifier: workspace:*
         version: link:../../packages/app-ui
@@ -138,9 +138,9 @@ importers:
       '@stanley/app-sdk':
         specifier: workspace:*
         version: link:../packages/app-sdk
-      '@stanley/app-todo':
+      '@stanley/app-tasks':
         specifier: workspace:*
-        version: link:../packages/app-todo
+        version: link:../packages/app-tasks
       '@stanley/app-weather':
         specifier: workspace:*
         version: link:../packages/app-weather
@@ -232,7 +232,7 @@ importers:
         specifier: ^5.0.0
         version: 5.57.2
 
-  packages/app-todo:
+  packages/app-tasks:
     dependencies:
       '@stanley/app-sdk':
         specifier: workspace:*
