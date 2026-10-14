@@ -425,6 +425,12 @@ writes there is usable outside it.
   (`stanley://lib/`: Mermaid, Three.js, D3, Chart.js, with their usual CDN addresses pointed at the
   bundle), but can't fetch, load or navigate out. A file on screen reloads when it changes, by
   Stanley, a command or the user's own editor. See `docs/plans/live-pages.md`.
+- **Pages Stanley writes.** Thinking has `write_file` and `edit_file` (exact replacement, once or
+  everywhere). For something to look at that isn't a website (a diagram, a chart), it writes one
+  .html file in `Pages/`. The page comes to the front as soon as it starts and is drawn as it is
+  written: the tool's input is read as it streams and served to the view at the file's address as
+  a streaming response. Then thinking gets the page's console errors and a picture of it, so it can
+  fix what didn't work. "Make it blue" is an `edit_file`, and the page reloads where it was.
 - **Sandboxed** (`packages/files`, macOS `sandbox-exec`, deny by default): writes only in the folder
   and a temporary directory; no reading the rest of the user's home (paths can be stat'ed, not
   read or listed); no network, no opening apps or URLs, no Apple Events, no signals outside the

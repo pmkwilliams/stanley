@@ -5,7 +5,7 @@ write an HTML page (a diagram, a small app), show it, and change it while it's o
 one mechanism: an HTML file in the user's folder, shown in the Web app, reloaded when it changes.
 Writing a page is writing that file; changing it live is editing the file while it is on screen.
 
-Status: stages 1 to 3 implemented. See **Notes** under each stage for where the code differs from the plan.
+Status: all four stages implemented. See **Notes** under each stage for where the code differs from the plan.
 
 ## Decisions
 
@@ -133,3 +133,35 @@ replacement), on the user's folder through `FileTools`, so every change is kept 
   page comes to the front when writing starts; when the call ends the file is saved and loaded.
 - **Seeing the result.** After a write or an edit, the page's console errors and a screenshot go
   back to thinking with the tool result, so it can see a diagram that didn't render and fix it.
+
+**Notes**
+- Drawing doesn't use `document.write`: the page is served at its own address as a streaming
+  response (`drafts.ts`) that the web view parses as it arrives, the way a browser draws a page
+  coming slowly over the network. Relative links and the libraries work while it draws, and the
+  policy applies. Text is sent up to where an address in it can't still be growing (a closing
+  quote, `>` or a space), so CDN addresses are rewritten whole.
+- `think.ts` reads `write_file`'s input as it streams (`tool-input-delta`, `parsePartialJson`,
+  ten times a second) and hands it to `onDraft`. The agent asks the world for a draft on the first
+  piece of an `.html` file (`World.draft`), which comes to the front at once; when the call runs,
+  the file is written through `FileTools.write` (kept in the folder's history), the draft ends, and
+  the page is opened as written.
+- Opening the page on screen again reloads it, where it was scrolled to (`WebviewPage.goto`), and
+  the file watcher stays quiet for a second so it doesn't reload it twice.
+- `World.look` waits for the page to load and its scripts to draw (600 ms more), then gives the
+  console errors since it loaded (uncaught exceptions and blocked requests come through as errors)
+  and a JPEG of the view, at most 1280 wide. The result goes to the model as text plus an image
+  part (`toModelOutput`).
+- `edit_file` replaces `old` once, or everywhere with `all`; text that isn't there, or is there
+  more than once without `all`, is an error the model can act on.
+- A write cut short (the turn stopped, or the call never ran) takes the page off the screen again,
+  unless an earlier version of the file is there.
+- Fixed on the way: Electron's `webContents.executeJavaScript` waits for a page to finish loading,
+  which a page being written never does until the end, so scripts run through the main frame; a
+  new view isn't driven until it has loaded the blank page it starts with, which would otherwise
+  cut off the first page sent to it; the extractor handles a document with nothing in it yet; the
+  file on screen isn't offered to read or open (Jev kept reading the page's file instead of handing
+  "make it blue" to thinking).
+- Verified in the built app with real models: "draw me a diagram of the water cycle" draws on screen
+  from about 4 s in; Sonnet looked at the picture, fixed oversized arrowheads and overlaps, and was
+  done in about 27 s. "And make the arrows blue", said while it drew, was held, then done with one
+  `edit_file` (`all`) in about 4 s.

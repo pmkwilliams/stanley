@@ -104,7 +104,7 @@ export function findElement(screen: Screen, nodeId: string): { node: AgentNode; 
  * What Stanley can do next: the screen's elements in screen order, the pages it found or read on
  * the web and the files it has seen (up to `limit` together, see `pick`), the apps, back / home
  * (and lock, when `lock`), and listing the user's files (when there are `files`). A file the screen
- * can show can also be opened, unless it is the one on screen. Names are unique;
+ * can show can also be opened; the one on screen isn't offered. Names are unique;
  * a clash gets a counter. `focus` is what the user is asking for, used to choose when there are too
  * many. The page already on screen isn't offered: opening it again does nothing.
  */
@@ -121,7 +121,8 @@ export function stepOptions(screen: Screen, apps: AppEntry[], limit: number, foc
   const candidates: Candidate[] = [
     ...flatten(screen.elements).map((flat) => ({ flat })),
     ...pages.filter((p) => !screen.url || !sameUrl(p.url, screen.url)).map((page) => ({ page })),
-    ...(files ?? []).map((file) => ({ file })),
+    // The file on screen is what the screen shows: reading or opening it again tells nothing new.
+    ...(files ?? []).filter((f) => !(f.url && screen.url && sameUrl(f.url, screen.url))).map((file) => ({ file })),
   ]
   const text = (c: Candidate) => ('flat' in c ? [...c.flat.path, c.flat.node.label].join(' ') : 'page' in c ? `${c.page.title} ${domainOf(c.page.url)}` : c.file.path.replace(/[/._-]+/g, ' '))
   const near = (c: Candidate) => ('flat' in c ? !c.flat.node.offscreen : 'page' in c ? c.page.latest : c.file.latest)
@@ -140,7 +141,7 @@ export function stepOptions(screen: Screen, apps: AppEntry[], limit: number, foc
       else {
         add(`read file: ${path}`, "file in the user's files", { kind: 'file', path })
         const { url } = c.file
-        if (url && !(screen.url && sameUrl(url, screen.url))) add(`open file: ${path}`, "file in the user's files, put on screen", { kind: 'page', url, title: path.split('/').at(-1)! })
+        if (url) add(`open file: ${path}`, "file in the user's files, put on screen", { kind: 'page', url, title: path.split('/').at(-1)! })
       }
     } else {
       const { url, title } = c.page

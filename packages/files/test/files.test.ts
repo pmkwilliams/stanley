@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -21,6 +21,20 @@ describe.runIf(process.platform === 'darwin')('localFiles', () => {
     expect(await files.bash('ls -p && cat packing.md')).toEqual({ output: 'packing.md\n- Passport\n- Charger\n', exitCode: 0 })
     expect(await files.bash('cat missing.md')).toEqual({ output: 'cat: missing.md: No such file or directory\n', exitCode: 1 })
     expect((await files.bash('echo $HOME')).output.trim()).toBe(realpathSync(root))
+  })
+
+  it('writes and reads files by any path that is in the folder, and keeps each write', async () => {
+    const { files, root, history, dir } = setup()
+    await files.write!('Pages/water.html', '<h1>Water</h1>')
+    expect(readFileSync(join(root, 'Pages/water.html'), 'utf8')).toBe('<h1>Water</h1>')
+    expect(await files.read!(`${root}/Pages/water.html`)).toBe('<h1>Water</h1>')
+    await files.write!('./Pages/water.html', '<h1>Rain</h1>')
+    expect(log(history)[0]).toBe('Stanley wrote Pages/water.html')
+    await expect(files.write!('../outside.html', 'x')).rejects.toThrow("isn't in the user's folder")
+    symlinkSync(dir, join(root, 'out'))
+    await expect(files.write!('out/escape.html', 'x')).rejects.toThrow("isn't in the user's folder")
+    expect(existsSync(join(dir, 'escape.html'))).toBe(false)
+    await expect(files.read!('gone.html')).rejects.toThrow()
   })
 
   it('gives every file and folder in it, without hidden ones', async () => {

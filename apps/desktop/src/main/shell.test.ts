@@ -148,6 +148,15 @@ describe('Shell', () => {
     expect(await shell.screen()).toMatchObject({ id: 'web:page/0', url: 'https://a.test/' })
   })
 
+  it('keeps a page opened again as the one page in the history', async () => {
+    const page = new FakePage(SITE)
+    const shell = new Shell([webApp], { env: {}, fetch, page }, () => {})
+    await shell.openUrl('https://a.test/')
+    await shell.openUrl('https://a.test/')
+    expect(shell.screenNow()).toMatchObject({ id: 'web:page/0', url: 'https://a.test/' })
+    expect(page.loads).toEqual(['https://a.test/', 'https://a.test/'])
+  })
+
   it('takes a page the user went to themselves into the history when it reads the page again', async () => {
     const page = new FakePage(SITE)
     const shell = new Shell([webApp], { env: {}, fetch, page }, () => {})
@@ -172,13 +181,13 @@ describe('Shell', () => {
     mkdirSync(join(root, 'My pages'))
     writeFileSync(join(root, 'My pages', 'plan.html'), '<h1>Plan</h1>')
     writeFileSync(join(root, 'notes.docx'), '')
-    const shell = new Shell([webApp], { env: {}, fetch }, () => {}, undefined, { root, shown: '~/Stanley' })
+    const shell = new Shell([webApp], { env: {}, fetch }, () => {}, undefined, { folder: { root, shown: '~/Stanley' } })
     expect(shell.fileUrl('My pages/plan.html')).toBe('stanley://files/My%20pages/plan.html')
     expect(shell.fileUrl('~/Stanley/My pages/plan.html')).toBe('stanley://files/My%20pages/plan.html')
     expect(shell.fileUrl(join(root, 'My pages/plan.html'))).toBe('stanley://files/My%20pages/plan.html')
     expect(shell.fileUrl('notes.docx')).toBeUndefined()
     expect(shell.fileUrl('gone.html')).toBeUndefined()
     expect(shell.fileUrl('../plan.html')).toBeUndefined()
-    expect(new Shell([todoApp], { env: {}, fetch }, () => {}, undefined, { root, shown: '~/Stanley' }).fileUrl('My pages/plan.html')).toBeUndefined()
+    expect(new Shell([todoApp], { env: {}, fetch }, () => {}, undefined, { folder: { root, shown: '~/Stanley' } }).fileUrl('My pages/plan.html')).toBeUndefined()
   })
 })

@@ -1,10 +1,23 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import type { AppEntry, Screen, StepResult, World } from '@stanley/agent'
+import type { AppEntry, PageDraft, PageLook, Screen, StepResult, World } from '@stanley/agent'
 import type { ActionArgs, AgentNode, AppContext, AppModule, Layout } from '@stanley/app-sdk'
 import { fileUrl, inFolder, viewable } from './folder-pages'
 
 const SEP = ':'
+
+/** What the desktop does with the Web app's page that the app itself doesn't: drawing a page as it is written, and a picture of it. */
+export interface PageHost {
+  /** Serves the page at `path` in the user's folder as it is written, from now until it ends. */
+  draft(path: string): { write(content: string): void; end(content: string): void; cancel(): void }
+  look(): Promise<PageLook>
+}
+
+export interface ShellOptions {
+  /** The user's folder, whose files the app that shows web pages can show: its real path, and its name for people (`~/Stanley`). */
+  folder?: { root: string; shown: string }
+  pages?: PageHost
+}
 
 /**
  * Owns surfaces and layout, and exposes them to the agent as one node tree.
@@ -26,8 +39,7 @@ export class Shell implements World {
     private onChange: () => void,
     /** Goes to the lock screen, which ends the session. */
     private onLock?: () => void,
-    /** The user's folder, whose files the app that shows web pages can show: its real path, and its name for people (`~/Stanley`). */
-    private folder?: { root: string; shown: string },
+    private opts: ShellOptions = {},
   ) {}
 
   /** The surface Stanley is working on (which may be hidden): what it reads and its elements. */
@@ -89,10 +101,47 @@ export class Shell implements World {
 
   /** Where the app that shows web pages shows a file from the user's folder, when it is there and can be shown. */
   fileUrl(written: string): string | undefined {
-    if (!this.folder || !this.apps.some((a) => a.openUrl)) return undefined
-    const path = inFolder(written, this.folder.root, this.folder.shown)
-    if (!path || !viewable(path) || !existsSync(join(this.folder.root, path))) return undefined
-    return fileUrl(path)
+    const path = this.pagePath(written)
+    return path && viewable(path) && existsSync(join(this.opts.folder!.root, path)) ? fileUrl(path) : undefined
+  }
+
+  /**
+   * Puts a web page from the user's folder in front while it is still being written: the app that
+   * shows web pages opens it, and it is drawn as it comes. Stopped, the page comes off again, unless
+   * an earlier version of it is there to show.
+   */
+  async draft(written: string): Promise<PageDraft | undefined> {
+    const path = this.pagePath(written)
+    const { folder, pages } = this.opts
+    if (!path || !pages || !/\.html?$/i.test(path)) return undefined
+    const host = pages.draft(path)
+    // Opened as it is written, not before: a page can't be read until some of it has come.
+    const opening = this.openUrl(fileUrl(path)).then(
+      () => this.global('show'),
+      () => host.cancel(),
+    )
+    return {
+      write: (content) => host.write(content),
+      end: (content) => host.end(content),
+      cancel: () => {
+        host.cancel()
+        void opening.then(async () => {
+          if (!existsSync(join(folder!.root, path))) await this.global('back')
+        })
+      },
+    }
+  }
+
+  /** How the web page on screen came out. */
+  async look(): Promise<PageLook> {
+    return this.opts.pages ? this.opts.pages.look() : { errors: [] }
+  }
+
+  /** A path in the user's folder as written, when there is an app to show it in. */
+  private pagePath(written: string): string | null {
+    const { folder } = this.opts
+    if (!folder || !this.apps.some((a) => a.openUrl)) return null
+    return inFolder(written, folder.root, folder.shown)
   }
 
   async perform(node: AgentNode, args: ActionArgs) {

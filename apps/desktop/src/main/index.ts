@@ -14,6 +14,7 @@ import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, Menu, nativeThe
 import type { AppDebugEvent, CaptionWord, ReplayRequest, Snapshot } from '../shared/ipc'
 import { apps } from './apps'
 import { DebugRecorder } from './debug'
+import { Drafts } from './drafts'
 import { filePath, SCHEME, serveFile, serveLib } from './folder-pages'
 import { WebviewPage } from './page'
 import { Shell } from './shell'
@@ -96,11 +97,17 @@ function refreshHotwords() {
 }
 
 /** The Web app's page, live in the main window: Stanley reads it and works it like a person in a browser. */
+/** Pages Stanley is writing, drawn in the web view as they come. */
+const drafts = new Drafts()
 const webview = new WebviewPage({
   navigated: () => pageNavigated(),
   fileOf: (url) => {
     const path = folder && filePath(url)
     return folder && path !== null && path !== undefined ? join(folder.root, path) : null
+  },
+  drafting: (url) => {
+    const path = filePath(url)
+    return path !== null && drafts.has(path)
   },
 })
 const page = livePage(webview)
@@ -200,7 +207,7 @@ function startSession() {
     },
     // The agent locks the way the lock button does.
     () => world === shell && lock(),
-    folder,
+    { folder, pages: { draft: (path) => drafts.begin(path), look: () => webview.look() } },
   )
   shell = world
   const self: Agent = new Agent({
@@ -689,6 +696,9 @@ app.whenReady().then(() => {
   protocol.handle(SCHEME, async (request) => {
     try {
       const { host } = new URL(request.url)
+      const path = host === 'files' ? filePath(request.url) : null
+      const draft = path !== null && drafts.serve(path)
+      if (draft) return draft
       if (host === 'files' && folder) return await serveFile(folder.root, request.url, request.headers)
       if (host === 'lib') return await serveLib(request.url)
     } catch (err) {

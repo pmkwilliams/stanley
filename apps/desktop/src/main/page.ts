@@ -1,6 +1,7 @@
 import { watch, type FSWatcher } from 'node:fs'
 import { basename, dirname } from 'node:path'
 import { FILES_URL } from '@stanley/app-sdk'
+import type { PageLook } from '@stanley/agent'
 import { DROPDOWN, EXTRACT, type Extracted, type PageDriver } from '@stanley/browser'
 import type { WebContents } from 'electron'
 
@@ -10,6 +11,10 @@ const LOAD_MS = 15_000
 const ATTACH_MS = 10_000
 /** A script in the page that doesn't answer in this long has hung. */
 const SCRIPT_MS = 5_000
+/** Errors a page reported since it loaded, kept for looking at it. */
+const MAX_ERRORS = 10
+/** How wide a picture of the page is, at most. */
+const LOOK_WIDTH = 1280
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -127,6 +132,12 @@ export class WebviewPage implements PageDriver {
   private navigations = 0
   /** Watches the file on screen, when it is one of the user's. */
   private watcher: { path: string; close(): void } | null = null
+  /** A reload the watcher is about to make. */
+  private reloading?: ReturnType<typeof setTimeout>
+  /** Until then, the watcher leaves the page alone: Stanley has just loaded it itself. */
+  private quietUntil = 0
+  /** What the page reported going wrong since it started loading. */
+  private errors: string[] = []
 
   constructor(
     private events: {
@@ -134,6 +145,8 @@ export class WebviewPage implements PageDriver {
       navigated(): void
       /** The file an address shows, when it is one of the user's. */
       fileOf(url: string): string | null
+      /** The page at an address is still being written: it is served as it comes, so loading it ends when it is complete. */
+      drafting(url: string): boolean
     },
   ) {}
 
@@ -147,9 +160,11 @@ export class WebviewPage implements PageDriver {
     this.url = 'about:blank'
   }
 
-  /** The renderer put the Web app's view in the window. */
+  /**
+   * The renderer put the Web app's view in the window. It is Stanley's to drive once it has loaded
+   * the blank page it starts with: a page sent to it before then would be cut off by that load.
+   */
   attach(wc: WebContents): void {
-    this.wc = wc
     // A link that opens a new window opens here instead, as one tab would.
     wc.setWindowOpenHandler(({ url }) => {
       if (!leaves(wc.getURL(), url)) void wc.loadURL(url)
@@ -162,7 +177,12 @@ export class WebviewPage implements PageDriver {
     wc.on('did-start-navigation', (e) => {
       if (!e.isMainFrame) return
       this.navigations++
-      if (!e.isSameDocument) this.domReady = false
+      if (e.isSameDocument) return
+      this.domReady = false
+      this.errors = []
+    })
+    wc.on('console-message', (e) => {
+      if (e.level === 'error' && this.errors.length < MAX_ERRORS) this.errors.push(e.message.length > 300 ? `${e.message.slice(0, 299)}…` : e.message)
     })
     wc.on('dom-ready', () => (this.domReady = true))
     wc.on('did-navigate', () => {
@@ -177,23 +197,45 @@ export class WebviewPage implements PageDriver {
       this.watcher?.close()
       this.watcher = null
     })
-    if (this.url !== 'about:blank') void wc.loadURL(this.url).catch(() => {})
-    for (const resolve of this.waiting.splice(0)) resolve(wc)
+    let started = false
+    const start = () => {
+      if (started || wc.isDestroyed()) return
+      started = true
+      this.wc = wc
+      if (this.url !== 'about:blank') void wc.loadURL(this.url).catch(() => {})
+      for (const resolve of this.waiting.splice(0)) resolve(wc)
+    }
+    wc.once('did-stop-loading', start)
+    setTimeout(start, ATTACH_MS / 10)
   }
 
+  /**
+   * Goes to `url` and waits until the page can be read. The page already there is reloaded, where
+   * it was scrolled to. A page still being written is drawn as it comes, so this returns as soon as
+   * it has started.
+   */
   async goto(url: string): Promise<void> {
     await this.step(async (wc) => {
       this.url = url
+      // Stanley loads it now: the watcher's reload for the same change would only draw it twice.
+      clearTimeout(this.reloading)
+      this.quietUntil = Date.now() + 1000
       this.domReady = false
+      const drafting = this.events.drafting(url)
+      const reload = !drafting && wc.getURL() === url
       const failed = await new Promise<Error | null>((resolve) => {
+        // A page still being written can be read once it has started: its DOM is ready only at the end.
+        const event = drafting ? ('did-navigate' as const) : ('dom-ready' as const)
         const done = (result: Error | null) => {
           clearTimeout(timer)
-          wc.off('dom-ready', ready)
+          wc.off(event as 'dom-ready', ready)
           resolve(result)
         }
-        const ready = () => done(null)
+        // Not the blank page a view that has just come into the window is still loading.
+        const ready = () => (wc.getURL() === 'about:blank' && url !== 'about:blank' ? undefined : done(null))
         const timer = setTimeout(() => done(null), LOAD_MS)
-        wc.on('dom-ready', ready)
+        wc.on(event as 'dom-ready', ready)
+        if (reload) return wc.reload()
         // Aborted means another navigation took over (a redirect): that one is the page.
         wc.loadURL(url).then(
           () => done(null),
@@ -202,6 +244,23 @@ export class WebviewPage implements PageDriver {
       })
       if (failed) throw new Error((failed as Error & { code?: string }).code ?? failed.message)
     })
+  }
+
+  /**
+   * How the page came out: once it has loaded and its scripts have had a moment to draw, what it
+   * reported going wrong and a picture of it. A view out of sight gives no picture.
+   */
+  async look(): Promise<PageLook> {
+    const wc = await this.contents()
+    await this.settle()
+    const deadline = Date.now() + LOAD_MS
+    while (wc.isLoading() && Date.now() < deadline) await sleep(50)
+    await sleep(600)
+    const errors = [...this.errors]
+    const image = await wc.capturePage().catch(() => null)
+    if (!image || image.isEmpty()) return { errors }
+    const small = image.getSize().width > LOOK_WIDTH ? image.resize({ width: LOOK_WIDTH }) : image
+    return { errors, image: { data: small.toJPEG(80).toString('base64'), mediaType: 'image/jpeg' } }
   }
 
   extract(maxText: number): Promise<Extracted> {
@@ -320,7 +379,8 @@ export class WebviewPage implements PageDriver {
     let timer: ReturnType<typeof setTimeout> | undefined
     const timeout = new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error("The page didn't answer")), SCRIPT_MS)))
     try {
-      return (await Promise.race([wc.executeJavaScript(code, true), timeout])) as T
+      // The frame's own: the web contents' waits for a page to finish loading, and a page being written loads until it is complete.
+      return (await Promise.race([wc.mainFrame.executeJavaScript(code, true), timeout])) as T
     } finally {
       clearTimeout(timer)
     }
@@ -357,13 +417,12 @@ export class WebviewPage implements PageDriver {
     this.watcher?.close()
     this.watcher = null
     if (!path) return
-    let timer: ReturnType<typeof setTimeout> | undefined
     let watcher: FSWatcher
     try {
       watcher = watch(dirname(path), (_, name) => {
-        if (name !== basename(path)) return
-        clearTimeout(timer)
-        timer = setTimeout(() => !wc.isDestroyed() && wc.reload(), 150)
+        if (name !== basename(path) || Date.now() < this.quietUntil) return
+        clearTimeout(this.reloading)
+        this.reloading = setTimeout(() => !wc.isDestroyed() && wc.reload(), 150)
       })
     } catch {
       return
@@ -371,7 +430,7 @@ export class WebviewPage implements PageDriver {
     this.watcher = {
       path,
       close: () => {
-        clearTimeout(timer)
+        clearTimeout(this.reloading)
         watcher.close()
       },
     }

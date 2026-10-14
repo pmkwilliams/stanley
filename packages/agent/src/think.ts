@@ -1,4 +1,4 @@
-import { jsonSchema, stepCountIs, streamText, tool, type LanguageModel, type LanguageModelUsage, type ModelMessage, type Tool, type ToolSet } from 'ai'
+import { jsonSchema, parsePartialJson, stepCountIs, streamText, tool, type LanguageModel, type LanguageModelUsage, type ModelMessage, type Tool, type ToolResultPart, type ToolSet } from 'ai'
 import { DEFAULT_AGENT_NAME } from '@stanley/app-sdk'
 import { filesPrompt } from './files'
 import { named } from './narrate'
@@ -22,6 +22,18 @@ export interface PageOutput {
   markdown: string
 }
 
+/** What writing or changing a file gives back: what happened, and for a page, a picture of it. */
+export interface FileOutput {
+  text: string
+  image?: { data: string; mediaType: string }
+}
+
+/** A file output as the model reads it: the picture after the words. */
+export function fileOutput(output: FileOutput): ToolResultPart['output'] {
+  if (!output.image) return { type: 'text', value: output.text }
+  return { type: 'content', value: [{ type: 'text', text: output.text }, { type: 'file', data: { type: 'data', data: output.image.data }, mediaType: output.image.mediaType }] }
+}
+
 export interface ThinkRequest {
   /** The instructions, fixed for the session so the cached prefix never changes. */
   instructions: string
@@ -41,6 +53,12 @@ export interface ThinkRequest {
   openPage?(url: string, toolCallId: string): Promise<string>
   /** Runs a command on the user's files, in the background, and returns what it printed. Absent without them. */
   bash?(command: string, toolCallId: string): Promise<string>
+  /** Writes a file in the user's folder; a web page is put on screen. Absent without them. */
+  writeFile?(path: string, content: string, toolCallId: string): Promise<FileOutput>
+  /** Replaces exact text in a file in the user's folder (every place it is, with `all`); a web page is put on screen. Absent without them. */
+  editFile?(path: string, old: string, replacement: string, all: boolean, toolCallId: string): Promise<FileOutput>
+  /** A file being written, as far as its input has come: for drawing a page as it is written. */
+  onDraft?(toolCallId: string, path: string, content: string): void
   maxSteps: number
   signal: AbortSignal
   /** Each piece of text as it is written, so it can be spoken before the turn is over. Not for single-step turns. */
@@ -154,6 +172,9 @@ export function confirmNote(option: string): string {
   return `Next: pressing [${option}]. Judging by its name it may send, delete or otherwise commit something, but that is a guess: look at the screen. Press it now (call act on it) if it only opens or prepares something, or if the user asked for what it does and has heard any words you wrote yourself: when they already asked, asking again only slows them down. Otherwise say what is ready and ask.`
 }
 
+/** How often a page being written is drawn again. */
+const DRAW_MS = 100
+
 /** Anthropic prompt caching, kept for an hour: gaps between thinking calls often pass five minutes. */
 const CACHE = { anthropic: { cacheControl: { type: 'ephemeral', ttl: '1h' } } } as const
 
@@ -240,6 +261,42 @@ function tools(req: ThinkRequest): ToolSet {
         execute: ({ command }: { command: string }, { toolCallId }: { toolCallId: string }) => req.bash!(command, toolCallId),
       }),
     }),
+    ...(req.writeFile && {
+      write_file: tool({
+        description:
+          "Write a file in the user's folder, replacing it if it is there. A web page (.html) is put on screen and drawn as you write it; then you get the errors it reported and a picture of it.",
+        inputSchema: jsonSchema<{ path: string; content: string }>({
+          type: 'object',
+          properties: {
+            path: { type: 'string', description: "The file's path in the user's folder, e.g. Pages/water-cycle.html." },
+            content: { type: 'string', description: 'All of the file.' },
+          },
+          required: ['path', 'content'],
+          additionalProperties: false,
+        }),
+        execute: ({ path, content }: { path: string; content: string }, { toolCallId }: { toolCallId: string }) => req.writeFile!(path, content, toolCallId),
+        toModelOutput: ({ output }: { output: FileOutput }) => fileOutput(output),
+      }),
+    }),
+    ...(req.editFile && {
+      edit_file: tool({
+        description:
+          "Change part of a file in the user's folder: `old` is replaced by `new`. `old` must be exactly as it is in the file, and appear in it once unless `all` is set. A web page is put on screen as it is now; then you get the errors it reported and a picture of it.",
+        inputSchema: jsonSchema<{ path: string; old: string; new: string; all?: boolean }>({
+          type: 'object',
+          properties: {
+            path: { type: 'string', description: "The file's path in the user's folder." },
+            old: { type: 'string', description: 'The text to replace, exactly as it is in the file, with enough around it to appear once.' },
+            new: { type: 'string', description: 'What replaces it.' },
+            all: { type: 'boolean', description: 'Replace every place `old` appears, such as a colour used all through the page.' },
+          },
+          required: ['path', 'old', 'new'],
+          additionalProperties: false,
+        }),
+        execute: (input: { path: string; old: string; new: string; all?: boolean }, { toolCallId }: { toolCallId: string }) => req.editFile!(input.path, input.old, input.new, !!input.all, toolCallId),
+        toModelOutput: ({ output }: { output: FileOutput }) => fileOutput(output),
+      }),
+    }),
   }
   if (!req.single) return set
   // Without `execute`, a call comes back unrun. What the model is sent stays the same.
@@ -298,10 +355,23 @@ export function createThinker(opts: { model?: LanguageModel; singleModel?: Langu
         })
         // Text from separate steps (before and after a tool call) reads as one reply.
         let text = ''
+        /** Files being written, by tool call: their input so far, and when it was last read for drawing. */
+        const writing = new Map<string, { json: string; at: number }>()
         let stepEnded = false
         for await (const part of result.stream) {
           if (part.type === 'error') throw part.error
           if (part.type === 'finish-step') stepEnded = true
+          // A file being written is drawn as it comes, a few times a second.
+          if (part.type === 'tool-input-start' && part.toolName === 'write_file' && req.onDraft && !req.single) writing.set(part.id, { json: '', at: 0 })
+          if (part.type === 'tool-input-delta' && writing.has(part.id)) {
+            const input = writing.get(part.id)!
+            input.json += part.delta
+            if (performance.now() - input.at < DRAW_MS) continue
+            input.at = performance.now()
+            const { value } = await parsePartialJson(input.json)
+            const { path, content } = (value ?? {}) as { path?: unknown; content?: unknown }
+            if (typeof path === 'string' && typeof content === 'string') req.onDraft!(part.id, path, content)
+          }
           if (part.type !== 'text-delta' || !part.text) continue
           let delta = part.text
           if (stepEnded && text.trim() && !/\s$/.test(text) && !/^\s/.test(delta)) delta = ` ${delta}`

@@ -24,10 +24,10 @@ import {
 import { anyUnsure, markUnsure, unmarked, type HeardWord } from './heard'
 import { describeStep, named, namedOptions, narrate } from './narrate'
 import { navigates, stepOptions, type OptionSet, type Target } from './options'
-import { confirmNote, DONE_CHECK, EARLY_GUESS, instructions, longDate, PartialTurn, writeNote, type ActCall, type PageOutput, type SearchOutput, type Thinker, type ThinkResult } from './think'
+import { confirmNote, DONE_CHECK, EARLY_GUESS, fileOutput, instructions, longDate, PartialTurn, writeNote, type ActCall, type FileOutput, type PageOutput, type SearchOutput, type Thinker, type ThinkResult } from './think'
 import { extendsWords, fullText, hasNewWords, letters, normalize, type TranscriptSnapshot } from './transcript'
 import { knownPages, sameUrl, shortUrl, type KnownPage, type WebTools } from './web'
-import type { Screen, StepResult, World } from './world'
+import type { PageDraft, Screen, StepResult, World } from './world'
 
 export type TickOutcome = 'executed' | 'stale-discarded' | 'gated' | 'forced-stop' | 'error'
 
@@ -232,6 +232,8 @@ export class Agent {
   private doing = ''
   /** Jev judging words said while a thinking turn works; `again` when more came while it was asked. */
   private judging: { thinking: AbortController; asking: boolean; again: boolean } | null = null
+  /** Web pages thinking is writing, by tool call: drawn on screen as they come (see `draw`). */
+  private drafts = new Map<string, { content: string; page?: PageDraft; ready: Promise<void> }>()
   /** Last report of the current tick; its outcome is the tick's outcome. */
   private outcome: { outcome: TickOutcome; detail?: string } | null = null
   /** The VAD hears the user right now. */
@@ -1225,6 +1227,12 @@ export class Agent {
         }),
         ...(this.world.openUrl && { openPage: (url: string, toolCallId: string) => (steps++, this.openPage(id, url, toolCallId, signal, ran)) }),
         ...(this.files && { bash: (command: string, toolCallId: string) => (steps++, this.bash(id, command, toolCallId, signal, ran)) }),
+        ...(this.files?.write &&
+          this.files.read && {
+            writeFile: (path: string, content: string, toolCallId: string) => (steps++, this.writeFile(id, path, content, toolCallId, signal, ran)),
+            editFile: (path: string, old: string, replacement: string, all: boolean, toolCallId: string) => (steps++, this.editFile(id, path, old, replacement, all, toolCallId, signal, ran)),
+            onDraft: (toolCallId: string, path: string, content: string) => this.draw(path, content, toolCallId),
+          }),
       })
       const { final, toolCallIds } = this.history.appendTurn(result.messages, result.sent, ran, id)
       this.saw(ran, toolCallIds)
@@ -1240,6 +1248,9 @@ export class Agent {
     } finally {
       this.thinking = undefined
       this.judging = null
+      // A page whose writing never finished (the turn stopped, or the call never ran) comes off the screen.
+      for (const draft of this.drafts.values()) void draft.ready.then(() => draft.page?.cancel())
+      this.drafts.clear()
     }
   }
 
@@ -1391,6 +1402,110 @@ export class Agent {
     ran.set(toolCallId, { tool: 'bash', input: { command }, output: { type: 'text', value: text }, result: { toolCallId, file: { kind: 'bash', command, exitCode: result.exitCode, utteranceId } } })
     this.events.debug?.({ type: 'think-step', tickId: id, option: 'bash', text: command, result: text })
     return text
+  }
+
+  /**
+   * A web page thinking is writing, as far as its input has come: on screen from its first words,
+   * drawn as the rest comes, so the user watches it being made instead of waiting for it.
+   */
+  private draw(path: string, content: string, toolCallId: string): void {
+    const draft = this.drafts.get(toolCallId)
+    if (draft) {
+      draft.content = content
+      return draft.page?.write(content)
+    }
+    if (!this.world.draft || !PAGE.test(path)) return
+    this.doing = `writing the page ${path}.`
+    this.events.status?.('writing')
+    const started: { content: string; page?: PageDraft; ready: Promise<void> } = { content, ready: Promise.resolve() }
+    started.ready = this.world.draft(path).then(
+      (page) => {
+        started.page = page
+        page?.write(started.content)
+      },
+      () => {},
+    )
+    this.drafts.set(toolCallId, started)
+  }
+
+  /** Thinking writes a file. A web page was drawn as it was written (`draw`): now it is complete, and looked at. */
+  private async writeFile(id: number, path: string, content: string, toolCallId: string, signal: AbortSignal, ran: Map<string, Ran>): Promise<FileOutput> {
+    signal.throwIfAborted()
+    this.doing = `writing the file ${path}.`
+    const draft = this.drafts.get(toolCallId)
+    this.drafts.delete(toolCallId)
+    await draft?.ready
+    const input = { path, content }
+    try {
+      await this.files!.write!(path, content)
+    } catch (err) {
+      draft?.page?.cancel()
+      return this.fileFailed(id, 'write_file', input, path, false, `Couldn't write it: ${errorText(err)}`, toolCallId, ran)
+    }
+    draft?.page?.end(content)
+    return this.wrote(id, 'write_file', input, path, false, `Wrote ${path}.`, toolCallId, ran)
+  }
+
+  /** Thinking changes part of a file: `old`, which must be in it exactly once (or `all`, anywhere), becomes `replacement`. */
+  private async editFile(id: number, path: string, old: string, replacement: string, all: boolean, toolCallId: string, signal: AbortSignal, ran: Map<string, Ran>): Promise<FileOutput> {
+    signal.throwIfAborted()
+    this.doing = `changing the file ${path}.`
+    const input = { path, old, new: replacement, ...(all && { all: 'true' }) }
+    const fail = (text: string) => this.fileFailed(id, 'edit_file', input, path, true, text, toolCallId, ran)
+    let before: string
+    try {
+      before = await this.files!.read!(path)
+    } catch (err) {
+      return fail(`Couldn't read it: ${errorText(err)}`)
+    }
+    const times = old ? before.split(old).length - 1 : 0
+    if (!times) return fail(`That text isn't in ${path}. Copy it exactly as it is in the file (read it with cat), or write the whole file again.`)
+    if (times > 1 && !all) return fail(`That text is in ${path} ${times} times: include more of what is around it so it is there once, or set all to change every one.`)
+    try {
+      await this.files!.write!(path, all ? before.split(old).join(replacement) : before.replace(old, () => replacement))
+    } catch (err) {
+      return fail(`Couldn't write it: ${errorText(err)}`)
+    }
+    return this.wrote(id, 'edit_file', input, path, true, `Changed ${path}.`, toolCallId, ran)
+  }
+
+  /**
+   * A file was written or changed. A web page comes to the front as it is now (reloaded where it
+   * was scrolled to), and thinking gets what it reported going wrong and a picture of it, so it can
+   * see a diagram that didn't draw and fix it.
+   */
+  private async wrote(id: number, tool: string, input: Record<string, string>, path: string, edit: boolean, outcome: string, toolCallId: string, ran: Map<string, Ran>): Promise<FileOutput> {
+    const file: FileMeta = { kind: 'write', path, edit, utteranceId: this.utteranceId || undefined }
+    const url = PAGE.test(path) ? this.world.fileUrl?.(path) : undefined
+    if (!url || !this.world.openUrl) {
+      ran.set(toolCallId, { tool, input, output: { type: 'text', value: outcome }, result: { toolCallId, file } })
+      this.events.debug?.({ type: 'think-step', tickId: id, option: tool, text: path, result: outcome })
+      return { text: outcome }
+    }
+    this.events.status?.('acting')
+    let shown: string
+    try {
+      shown = (await this.world.openUrl(url)).summary
+      await this.world.global('show')
+    } catch (err) {
+      shown = `It couldn't be shown: ${errorText(err)}`
+    }
+    const look = await this.world.look?.().catch(() => undefined)
+    this.events.status?.('thinking')
+    const errors = look?.errors.length ? `The page reported these errors:\n${look.errors.map((e) => `- ${e}`).join('\n')}` : 'The page reported no errors.'
+    const screen = await this.screenText()
+    const text = `${outcome} ${shown}.\n${errors}${look?.image ? '\nA picture of the screen follows.' : ''}\n\n${screen}`
+    const output: FileOutput = { text, image: look?.image }
+    ran.set(toolCallId, { tool, input, output: fileOutput(output), result: { toolCallId, file }, screen })
+    this.events.debug?.({ type: 'think-step', tickId: id, option: tool, text: path, result: text })
+    return output
+  }
+
+  private fileFailed(id: number, tool: string, input: Record<string, string>, path: string, edit: boolean, text: string, toolCallId: string, ran: Map<string, Ran>): FileOutput {
+    const file: FileMeta = { kind: 'write', path, edit, error: text, utteranceId: this.utteranceId || undefined }
+    ran.set(toolCallId, { tool, input, output: { type: 'error-text', value: text }, result: { toolCallId, file } })
+    this.events.debug?.({ type: 'think-step', tickId: id, option: tool, text: path, result: text })
+    return { text }
   }
 
   private async screenText(options?: OptionSet): Promise<string> {
@@ -1619,6 +1734,11 @@ interface Writing {
   /** What to say to the user: '' for nothing. */
   say: string
 }
+
+/** A web page: written, it is drawn on screen. */
+const PAGE = /\.html?$/i
+
+const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err))
 
 /** A tool output as the SDK sends it: plain JSON. */
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as JSONValue

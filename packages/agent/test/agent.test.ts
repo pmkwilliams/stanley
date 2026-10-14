@@ -7,7 +7,7 @@ import { validate } from '../src/conversation'
 import type { AgentDebugEvent } from '../src/debug'
 import type { Effect } from '../src/effects'
 import type { FileTools } from '../src/files'
-import { DONE_CHECK, scriptedTurn, type ThinkRequest, type Thinker, type ThinkResult } from '../src/think'
+import { DONE_CHECK, scriptedTurn, type FileOutput, type ThinkRequest, type Thinker, type ThinkResult } from '../src/think'
 import type { WebTools } from '../src/web'
 import type { World } from '../src/world'
 
@@ -1397,6 +1397,105 @@ describe('Agent files', () => {
     expect(performed).toContain('url stanley://files/plan.html')
     expect(results[1]).toBe(`There is no file "missing.html" in the user's folder that the screen can show.`)
     expect(await agent.context()).toContain('Stanley opened the page "plan.html"')
+  })
+
+  /** A folder in memory that can be written, and a world that draws pages and looks at them. */
+  function pages() {
+    const stored = new Map<string, string>([['Pages/rain.html', '<h1 style="color: red">Rain</h1>']])
+    const f = fakeFiles({})
+    f.write = async (path, content) => void stored.set(path, content)
+    f.read = async (path) => {
+      if (!stored.has(path)) throw new Error(`no ${path}`)
+      return stored.get(path)!
+    }
+    const drawn: string[] = []
+    return { f, stored, drawn }
+  }
+
+  it('draws a page thinking writes as it comes, then shows it and gives thinking its errors and a picture', async () => {
+    const { f, stored, drawn } = pages()
+    let output: FileOutput | undefined
+    const { agent, performed, debug } = setup(() => ({ next: 'think' }), {
+      thinker: {
+        run: async (req) => {
+          req.onDraft!('w1', 'Pages/sea.html', '<h1>Se')
+          req.onDraft!('w1', 'Pages/sea.html', '<h1>Sea</h1>')
+          await settle()
+          output = await req.writeFile!('Pages/sea.html', '<h1>Sea</h1><p>Waves.</p>', 'w1')
+          return { text: '' }
+        },
+      },
+      deps: { files: f },
+    })
+    const world = (agent as unknown as { world: World }).world
+    world.draft = async (path) => ({ write: (c) => drawn.push(`write ${path}: ${c}`), end: (c) => drawn.push(`end ${path}: ${c}`), cancel: () => drawn.push(`cancel ${path}`) })
+    world.look = async () => ({ errors: ['Uncaught ReferenceError: mermaid is not defined'], image: { data: 'aGk=', mediaType: 'image/jpeg' } })
+    agent.utteranceStart()
+    agent.segment('draw the sea')
+    agent.utteranceEnd()
+    await settle()
+    await settle()
+    // What came while the page was being put on screen is drawn at once, as far as it has got.
+    expect(drawn).toEqual(['write Pages/sea.html: <h1>Sea</h1>', 'end Pages/sea.html: <h1>Sea</h1><p>Waves.</p>'])
+    expect(stored.get('Pages/sea.html')).toBe('<h1>Sea</h1><p>Waves.</p>')
+    expect(performed).toContain('url stanley://files/Pages/sea.html')
+    expect(output!.text).toContain('Wrote Pages/sea.html. Opened stanley://files/Pages/sea.html.\nThe page reported these errors:\n- Uncaught ReferenceError: mermaid is not defined')
+    expect(output!.image).toEqual({ data: 'aGk=', mediaType: 'image/jpeg' })
+    expect(debug.some((e) => e.type === 'working')).toBe(false)
+    expect(await agent.context()).toContain('Stanley wrote the file "Pages/sea.html".')
+  })
+
+  it('changes part of a page, and says why when the text to change is not there exactly once', async () => {
+    const { f, stored } = pages()
+    const outputs: FileOutput[] = []
+    const { agent, performed } = setup(() => ({ next: 'think' }), {
+      thinker: {
+        run: async (req) => {
+          outputs.push(await req.editFile!('Pages/rain.html', 'color: green', 'color: blue', false, 'e1'))
+          outputs.push(await req.editFile!('Pages/rain.html', 'color: red', 'color: blue', false, 'e2'))
+          outputs.push(await req.editFile!('Pages/rain.html', 'Rain', 'Rain', false, 'e3'))
+          stored.set('Pages/rain.html', `${stored.get('Pages/rain.html')}<p style="color: blue">Drops</p>`)
+          outputs.push(await req.editFile!('Pages/rain.html', 'color: blue', 'color: navy', false, 'e4'))
+          outputs.push(await req.editFile!('Pages/rain.html', 'color: blue', 'color: navy', true, 'e5'))
+          return { text: '' }
+        },
+      },
+      deps: { files: f },
+    })
+    agent.utteranceStart()
+    agent.segment('make it blue')
+    agent.utteranceEnd()
+    await settle()
+    expect(outputs[0]!.text).toBe("That text isn't in Pages/rain.html. Copy it exactly as it is in the file (read it with cat), or write the whole file again.")
+    expect(outputs[1]!.text).toMatch(/^Changed Pages\/rain.html. Opened stanley:\/\/files\/Pages\/rain.html.\nThe page reported no errors./)
+    expect(outputs[3]!.text).toBe('That text is in Pages/rain.html 2 times: include more of what is around it so it is there once, or set all to change every one.')
+    expect(stored.get('Pages/rain.html')).toBe('<h1 style="color: navy">Rain</h1><p style="color: navy">Drops</p>')
+    expect(performed).toContain('url stanley://files/Pages/rain.html')
+    const context = await agent.context()
+    expect(context).toContain('Stanley changed the file "Pages/rain.html": failed (That text isn\'t in Pages/rain.html.')
+    expect(context).toContain('Stanley changed the file "Pages/rain.html".')
+  })
+
+  it('takes a page off the screen when its writing never finished', async () => {
+    const { f, drawn } = pages()
+    const { agent } = setup(() => ({ next: 'think' }), {
+      thinker: {
+        run: async (req) => {
+          req.onDraft!('w1', 'Pages/sea.html', '<h1>Se')
+          await settle()
+          throw new Error('the model stopped')
+        },
+      },
+      deps: { files: f },
+    })
+    const world = (agent as unknown as { world: World }).world
+    world.draft = async (path) => ({ write: (c) => drawn.push(`write ${path}: ${c}`), end: () => drawn.push('end'), cancel: () => drawn.push(`cancel ${path}`) })
+    agent.utteranceStart()
+    agent.segment('draw the sea')
+    agent.utteranceEnd()
+    await settle()
+    await settle()
+    expect(drawn).toEqual(['write Pages/sea.html: <h1>Se', 'cancel Pages/sea.html'])
   })
 
   it("reports a file that couldn't be read", async () => {

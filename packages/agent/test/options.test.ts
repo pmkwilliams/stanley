@@ -83,6 +83,21 @@ describe('stepOptions with known web pages', () => {
   })
 })
 
+describe('stepOptions with the user\'s files', () => {
+  const files = [
+    { path: 'Pages/rain.html', latest: true, url: 'stanley://files/Pages/rain.html' },
+    { path: 'notes.md', latest: false },
+  ]
+
+  it('offers to open a file the screen can show, and leaves out the one on screen', () => {
+    expect(Object.keys(stepOptions(screen, [], 50, '', [], false, files).criteria)).toEqual(expect.arrayContaining(['read file: Pages/rain.html', 'open file: Pages/rain.html', 'read file: notes.md']))
+    expect(stepOptions(screen, [], 50, '', [], false, files).targets.get('open file: Pages/rain.html')).toEqual({ kind: 'page', url: 'stanley://files/Pages/rain.html', title: 'rain.html' })
+    const names = Object.keys(stepOptions({ ...screen, url: 'stanley://files/Pages/rain.html' }, [], 50, '', [], false, files).criteria)
+    expect(names.filter((n) => n.includes('rain'))).toEqual([])
+    expect(names).toContain('read file: notes.md')
+  })
+})
+
 describe('findElement', () => {
   it('finds an element by id with its option name', () => {
     expect(findElement(screen, 'email:m1/reply')?.name).toBe('"Lunch Friday?" › Reply to Sam')

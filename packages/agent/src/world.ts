@@ -15,6 +15,22 @@ export interface Screen {
   elements: AgentNode[]
 }
 
+/** A page being written, drawn on screen as it comes. */
+export interface PageDraft {
+  /** All of the page written so far: what is new is drawn. */
+  write(content: string): void
+  /** The whole page: the rest is drawn, and the page is complete. */
+  end(content: string): void
+  /** Writing stopped: the page is taken off the screen. */
+  cancel(): void
+}
+
+/** How the page on screen came out: what it reported going wrong since it loaded, and a picture of it. */
+export interface PageLook {
+  errors: string[]
+  image?: { data: string; mediaType: string }
+}
+
 export interface AppEntry {
   id: string
   title: string
@@ -44,6 +60,13 @@ export interface World {
    * (or as a person would write it), when it is there and the screen can show it.
    */
   fileUrl?(path: string): string | undefined
+  /**
+   * Puts a web page from the user's folder on screen while it is still being written, drawn as
+   * it comes. Undefined when it can't be shown.
+   */
+  draft?(path: string): Promise<PageDraft | undefined>
+  /** How the web page on screen came out, once it has loaded and drawn. */
+  look?(): Promise<PageLook>
   global(option: 'show' | 'home' | 'back'): Promise<void>
   /** Goes to the lock screen, ending the session. Without it, the agent can't lock. */
   lock?(): Promise<void>

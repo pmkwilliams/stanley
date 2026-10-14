@@ -90,8 +90,12 @@ export const webApp = defineApp<WebState>({
       try {
         await ctx.page.goto(url)
         const view = await ctx.page.read()
-        const page = { url: view.url, title: titleOf(view.url, view.title), markdown: '' }
-        return { state: { ...open(page, null), view }, summary: `Opened "${page.title}" (${sourceOf(page.url)})`, observation: `# ${page.title}\n${page.url}\n\n${view.markdown}`, title: page.title }
+        const at = real(view.url) ? view.url : url
+        const page = { url: at, title: titleOf(at, view.title), markdown: '' }
+        // The page already open, opened again (reloaded), stays the one page in the history.
+        const here = current(s)
+        const state = here && samePage(here.url, url) ? { ...follow(s, view), error: null } : { ...open(page, null), view }
+        return { state, summary: `Opened "${page.title}" (${sourceOf(page.url)})`, observation: `# ${page.title}\n${page.url}\n\n${view.markdown}`, title: page.title }
       } catch (err) {
         const error = `Couldn't open the page: ${errorText(err)}`
         const title = titleOf(url, '')
