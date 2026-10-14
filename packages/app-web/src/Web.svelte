@@ -34,29 +34,41 @@
 -->
 <App.Root size="fill">
   {#if open}
-    <!-- Slim chrome, Safari-style: one centred, read-only address capsule on the glass, and the full screen toggle at the end. -->
-    <header class="relative flex flex-none justify-center px-4 py-2.5">
-      <div
-        class="flex h-8 w-full max-w-140 cursor-default items-center justify-center gap-1.5 rounded-full bg-accent px-3.5 leading-none whitespace-nowrap"
-        title={open.url}
+    <!--
+      Slim chrome, Safari-style: one centred, read-only address capsule on the glass, and the full screen toggle at the end.
+      In full screen the page has the whole screen: the chrome waits above it and slides down over the page while the pointer is
+      at the top edge, held by a thin strip over the page (which takes the pointer's events itself), or while it has the keyboard.
+    -->
+    <div class={fullscreen ? 'group/chrome absolute inset-x-0 top-0 z-10 h-1.5' : 'contents'}>
+      <header
+        class={[
+          'relative flex flex-none justify-center px-4 py-2.5',
+          fullscreen &&
+            '-translate-y-full border-b bg-card/80 backdrop-blur-md backdrop-saturate-150 transition-transform delay-300 group-focus-within/chrome:translate-y-0 group-focus-within/chrome:delay-0 group-hover/chrome:translate-y-0 group-hover/chrome:delay-0',
+        ]}
       >
-        <span class="flex-none text-muted-foreground"><Icon name={icon} size={14} weight={2} /></span>
-        <span class="max-w-3/5 flex-none truncate font-semibold">{place}</span>
-        {#if title}
-          <span class="min-w-0 truncate text-muted-foreground before:mr-1.5 before:text-muted-foreground/60 before:content-['·']">{title}</span>
-        {/if}
-      </div>
-      <Button
-        variant="ghost"
-        size="icon"
-        class="absolute top-2.5 right-3 size-8 rounded-full text-muted-foreground"
-        aria-label={fullscreen ? 'Exit full screen' : 'Full screen'}
-        onclick={() => perform(FULLSCREEN)}
-      >
-        <Icon name={fullscreen ? 'fullscreen-exit' : 'fullscreen-enter'} size={16} weight={2} />
-      </Button>
-    </header>
-    {#if data.error}{@render notice(data.error, 'mx-4 mb-2.5 w-auto flex-none')}{/if}
+        <div
+          class="flex h-8 w-full max-w-140 cursor-default items-center justify-center gap-1.5 rounded-full bg-accent px-3.5 leading-none whitespace-nowrap"
+          title={open.url}
+        >
+          <span class="flex-none text-muted-foreground"><Icon name={icon} size={14} weight={2} /></span>
+          <span class="max-w-3/5 flex-none truncate font-semibold">{place}</span>
+          {#if title}
+            <span class="min-w-0 truncate text-muted-foreground before:mr-1.5 before:text-muted-foreground/60 before:content-['·']">{title}</span>
+          {/if}
+        </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          class="absolute top-2.5 right-3 size-8 rounded-full text-muted-foreground"
+          aria-label={fullscreen ? 'Exit full screen' : 'Full screen'}
+          onclick={() => perform(FULLSCREEN)}
+        >
+          <Icon name={fullscreen ? 'fullscreen-exit' : 'fullscreen-enter'} size={16} weight={2} />
+        </Button>
+      </header>
+    </div>
+    {#if data.error}{@render notice(data.error, fullscreen ? 'mx-4 my-2.5 w-auto flex-none' : 'mx-4 mb-2.5 w-auto flex-none')}{/if}
   {:else}
     <App.Bar><App.Title>Web</App.Title></App.Bar>
     <App.Body>
@@ -71,11 +83,12 @@
     </App.Body>
   {/if}
   <!--
-    Edge to edge under the chrome, a hairline apart (a white page meets light glass); the bottom corners follow the window's (its radius less its 1px border), square in full screen.
+    Edge to edge under the chrome, a hairline apart (a white page meets light glass); the bottom corners follow the window's (its radius less its 1px border).
+    In full screen, square and with no hairline: the page meets the screen's edges.
     A view per tab, stacked: the tab shown is the one in sight, and the others go on running out of sight, full size, as the ready one waits.
     With no page open they are all behind the empty state, so a page loads at the size it is seen at.
   -->
-  <div class={['relative min-h-0 w-full flex-1 overflow-hidden border-t', !fullscreen && 'rounded-b-[calc(var(--radius-3xl)-1px)]', !open && 'invisible absolute inset-0']}>
+  <div class={['relative min-h-0 w-full flex-1 overflow-hidden', !fullscreen && 'rounded-b-[calc(var(--radius-3xl)-1px)] border-t', !open && 'invisible absolute inset-0']}>
     {#each views as id (id)}
       <webview class={['absolute inset-0 size-full', id !== open?.tab && 'invisible']} src={`about:blank#tab=${id}`} allowpopups></webview>
     {/each}

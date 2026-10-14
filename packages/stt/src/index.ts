@@ -55,7 +55,7 @@ export type SttDebugEvent =
    * `audioMs` is the audio the model saw, including any context before the segment.
    * `emitted` is false when a partial finished after the speaker paused or a new segment began, so it was dropped.
    */
-  | { type: 'decode'; kind: 'partial' | 'segment'; audioMs: number; decodeMs: number; text: string; emitted: boolean; unsure?: string[] }
+  | { type: 'decode'; kind: 'partial' | 'segment'; audioMs: number; decodeMs: number; text: string; emitted: boolean; unsure?: string[]; runaway?: boolean }
   | { type: 'silence'; afterMs: number }
   | { type: 'turn'; complete: number; audioMs: number; latencyMs: number; emitted: boolean }
 
@@ -85,6 +85,8 @@ const PARAKEET = 'sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8'
  */
 const HOTWORD_SCORE = 1.5
 const MAX_HOTWORDS = 30
+/** Faster than anyone speaks: a decode with more words than this a second, plus two, ran away. */
+const MAX_WORDS_PER_S = 6
 /** A word below this confidence is reported as unsure in the decode trace. */
 const UNSURE = 0.5
 const WINDOW = 512
@@ -170,15 +172,17 @@ export class Transcriber {
    * model's pieces and not a common English word. Common ones need no help, and favouring them
    * distorts: with "Music" on screen, a little background noise before "play music" was heard as
    * "Music Music Music Music Music Previous Play Music", and with "Archived" on screen "Alex" was
-   * heard as "Archived".
+   * heard as "Archived". A contraction or possessive is judged, and favoured, without its ending:
+   * with "I'm feeling lucky" on screen, favouring "I'm" turned "full screen" into "I'm not sure I'm
+   * sure I'm sure…".
    */
   setHotwords(candidates: Iterable<string>): void {
     const vocab = this.vocab()
     const common = commonWords()
     const kept = new Set<string>()
     for (const raw of candidates) {
-      const word = raw.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '')
-      const lower = word.toLowerCase().replace(/’/g, "'")
+      const word = raw.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '').replace(/(n['’]t|['’](s|m|re|ve|ll|d))$/i, '')
+      const lower = word.toLowerCase()
       if (word.length < 3 || vocab.has(`▁${word}`) || vocab.has(`▁${lower}`) || common.has(lower)) continue
       kept.add(word)
       if (kept.size >= MAX_HOTWORDS) break
@@ -354,9 +358,11 @@ export class Transcriber {
     const contextStart = Math.max(from - this.context, this.contextFrom, oldest)
     const decodeFrom = Math.min(contextStart, from)
     const audio = this.slice(decodeFrom, to)
-    const stream = this.hotwords ? this.recognizer.createStream(this.hotwords) : this.recognizer.createStream()
-    stream.acceptWaveform({ samples: audio, sampleRate: SAMPLE_RATE })
-    const result = await this.recognizer.decodeAsync(stream)
+    let result = await this.decodeWith(audio, this.hotwords)
+    // Favouring words can send beam search into a loop: more words than anyone says in the time
+    // ("I'm sure I'm sure I'm sure…", 20 words in 1.3 s). Then it decodes again, favouring none.
+    const runaway = !!this.hotwords && heardAfter(result, 0).words.length > MAX_WORDS_PER_S * (audio.length / SAMPLE_RATE) + 2
+    if (runaway) result = await this.decodeWith(audio, '')
     const heard = heardAfter(result, (from - decodeFrom) / SAMPLE_RATE)
     const unsure = heard.words.filter((w) => w.confidence < UNSURE).map((w) => w.word)
     this.events.debug?.({
@@ -367,8 +373,15 @@ export class Transcriber {
       text: heard.text,
       emitted: emits(heard.text),
       ...(unsure.length && { unsure }),
+      ...(runaway && { runaway }),
     })
     return heard
+  }
+
+  private decodeWith(audio: Float32Array, hotwords: string): Promise<DecodeResult> {
+    const stream = hotwords ? this.recognizer.createStream(hotwords) : this.recognizer.createStream()
+    stream.acceptWaveform({ samples: audio, sampleRate: SAMPLE_RATE })
+    return this.recognizer.decodeAsync(stream)
   }
 
   private slice(from: number, to: number): Float32Array {

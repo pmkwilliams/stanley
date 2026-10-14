@@ -175,7 +175,10 @@ Speech recognition is not exact, so Stanley treats the user's words as heard, no
   words on the screen and the app names (`screenVocabulary`, at most 30, only words the model
   splits into several pieces that aren't common English, any form, per SCOWL size 50). At strength
   1.5 "Okonkwo" on screen is heard instead of "Aconquo"; at 2.5 it started replacing other words.
-  Favouring a common word does harm: with "Archived" on screen, "Alex" was heard as "Archived".
+  Favouring a common word does harm: with "Archived" on screen, "Alex" was heard as "Archived";
+  with "I'm feeling lucky" on screen, favouring "I'm" turned noise before "full screen" into "I'm
+  not sure I'm sure…". So contractions and possessives are judged without their ending, and a
+  decode with more than 6 words a second (plus two) is redone favouring nothing.
 
 ### Thinking
 

@@ -630,7 +630,28 @@ function setMenu() {
       { role: 'appMenu' },
       { role: 'fileMenu' },
       { role: 'editMenu' },
-      { role: 'viewMenu' },
+      {
+        label: 'View',
+        submenu: [
+          { role: 'reload' },
+          { role: 'forceReload' },
+          { role: 'toggleDevTools' },
+          { type: 'separator' },
+          { role: 'resetZoom' },
+          { role: 'zoomIn' },
+          { role: 'zoomOut' },
+          { type: 'separator' },
+          { role: 'togglefullscreen' },
+          // Full screen with the Dock, menu bar and app switching off. The menu bar is hidden but
+          // its shortcuts still work, so the same keys leave; ⌃⌘K sits beside full screen's ⌃⌘F.
+          {
+            label: 'Kiosk Mode',
+            type: 'checkbox',
+            accelerator: 'Control+Command+K',
+            click: (item) => win?.setKiosk(item.checked),
+          },
+        ],
+      },
       {
         label: 'Debug',
         submenu: [
