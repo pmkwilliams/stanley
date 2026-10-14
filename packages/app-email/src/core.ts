@@ -32,16 +32,6 @@ export interface EmailState {
 
 const seed: Email[] = [
   {
-    id: 'm5',
-    from: 'GitHub',
-    address: 'notifications@github.com',
-    subject: '[pmkwilliams/stanley] Email: sidebar layout, avatars, fixed header and reply box (PR #1)',
-    date: '2026-10-13T13:05',
-    body: "You can view, comment on, or merge this pull request online at:\n\n  https://github.com/pmkwilliams/stanley/pull/1\n\nOverhauls the Email app's layout, from a hand sketch: a sidebar with Inbox / Sent / Archived over a scrolling list, a main pane with a fixed header and reply box, and avatars for every sender.\n\nCommit Summary\n\n  * Email: sidebar layout, avatars, fixed header and reply box\n  * Email: the GitHub email is PR #1\n  * Email: drop the sample email from Mom\n\nFile Changes (24 files, +434 −225)\n\nPatch Links:\n\n  https://github.com/pmkwilliams/stanley/pull/1.patch\n  https://github.com/pmkwilliams/stanley/pull/1.diff",
-    read: true,
-    archived: false,
-  },
-  {
     id: 'm1',
     from: 'Sam Lee',
     address: 'sam.lee@fastmail.com',
@@ -49,6 +39,16 @@ const seed: Email[] = [
     date: '2026-10-09T11:42',
     body: "Hey! Are you free for lunch on Friday? I was thinking that new ramen place on 5th, around 12:30. Let me know and I'll grab a table.\n\nSam",
     read: false,
+    archived: false,
+  },
+  {
+    id: 'm5',
+    from: 'GitHub',
+    address: 'notifications@github.com',
+    subject: '[pmkwilliams/stanley] Email: sidebar layout, avatars, fixed header and reply box (PR #1)',
+    date: '2026-10-09T10:30',
+    body: "You can view, comment on, or merge this pull request online at:\n\n  https://github.com/pmkwilliams/stanley/pull/1\n\nOverhauls the Email app's layout, from a hand sketch: a sidebar with Inbox / Sent / Archived over a scrolling list, a main pane with a fixed header and reply box, and avatars for every sender.\n\nCommit Summary\n\n  * Email: sidebar layout, avatars, fixed header and reply box\n  * Email: the GitHub email is PR #1\n  * Email: drop the sample email from Mom\n\nFile Changes (24 files, +434 −225)\n\nPatch Links:\n\n  https://github.com/pmkwilliams/stanley/pull/1.patch\n  https://github.com/pmkwilliams/stanley/pull/1.diff",
+    read: true,
     archived: false,
   },
   {
