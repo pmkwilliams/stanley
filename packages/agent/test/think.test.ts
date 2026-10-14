@@ -85,6 +85,37 @@ describe('createThinker', () => {
     ])
   })
 
+  it('says what comes before a tool call as the call starts, not once it is done', async () => {
+    const spoken: string[] = []
+    let before = ''
+    const json = JSON.stringify({ path: 'Pages/rain.html', content: '<h1>Rain</h1>' })
+    const write = [
+      ...say("Sure, I'll draw that."),
+      { type: 'tool-input-start', id: 'w1', toolName: 'write_file' },
+      { type: 'tool-input-delta', id: 'w1', delta: json },
+      { type: 'tool-input-end', id: 'w1' },
+      { type: 'tool-call', toolCallId: 'w1', toolName: 'write_file', input: json },
+      finish('tool-calls'),
+    ] as Part[]
+    const m = model([write, [...say('<silent/>'), finish('stop')]])
+    const result = await createThinker({ model: m }).run(
+      request({
+        onText: (d) => spoken.push(d),
+        writeFile: async () => ((before = spoken.join('')), { text: 'Wrote it.' }),
+        editFile: async () => ({ text: '' }),
+      }),
+    )
+    // A sentence is said once something follows its full stop: the space does, before the page is written.
+    expect(before).toBe("Sure, I'll draw that. ")
+    expect(result.text).toBe("Sure, I'll draw that.")
+  })
+
+  it('joins text from separate steps with a space', async () => {
+    const m = model([[...say('Sorting.'), call('c1', { option: 'Sort' }), finish('tool-calls')], [...say('Done by date.'), finish('stop')]])
+    const result = await createThinker({ model: m }).run(request())
+    expect(result.text).toBe('Sorting. Done by date.')
+  })
+
   it("brings a single step's call back unrun, and holds its text until the end", async () => {
     const spoken: string[] = []
     let acted = false

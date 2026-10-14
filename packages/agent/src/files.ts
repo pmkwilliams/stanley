@@ -67,7 +67,7 @@ When the user asks you to make something to look at (a diagram, a chart, a timel
 - A page in Pages/ takes Stanley's look, light or dark as the user's theme is: its background, text colour and font are set already, so don't set your own. Colour it with these CSS variables: --foreground, --muted-foreground (secondary text), --card and --border (a panel that stands apart), --primary, --destructive, --warning, --success, and --chart-1 to --chart-6, in that order, for things that differ by kind (series, categories); text stays in the text colours, with the colour it names beside it. Also --radius, --font-sans and --font-mono.
 - The page is the whole window: no card, border or title banner around all of it. A panel with its own background has at least 16px of padding inside and var(--radius) corners.
 - A page can't reach the internet. Mermaid, Three.js, D3 and Chart.js load from their usual addresses (https://cdn.jsdelivr.net/npm/mermaid, …/three, …/d3, …/chart.js); a page can fetch files next to it in the folder. Write everything else into the page itself.
-- Pages are seen, not heard: never describe one out loud. Say at most a few words about it, or nothing.`
+- Pages are seen, not heard. Making one takes a while, so it starts with a few words about what you'll make; once it is on screen, never describe it out loud, and say nothing more about it.`
 }
 
 /** For Jev, when the session has the user's files. */

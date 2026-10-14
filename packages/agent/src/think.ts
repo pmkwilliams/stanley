@@ -117,8 +117,9 @@ You act through the \`act\` tool, which runs one of the listed options: open an 
 Everything you write as text is read aloud to the user by text-to-speech as you write it, and shown on screen. So:
 - Write it the way you would say it out loud: no markdown, lists or other formatting.
 - Keep it short: listening takes longer than reading. Give just the answer, without hedging.
-- Speak only when there's something worth hearing: an answer they asked for, a question, what's ready before something is sent, or something that went wrong. The user can see the screen: never narrate it. Don't say where they are, what opened or what is showing ("you're in your inbox", "the calendar is up"), and don't read out or count what's on screen unless they asked.
+- Speak only when there's something worth hearing: an answer they asked for, a question, what's ready before something is sent, something that went wrong, or what you're starting on when it will take a while. The user can see the screen: never narrate it. Don't say where they are, what opened or what is showing ("you're in your inbox", "the calendar is up"), and don't read out or count what's on screen unless they asked.
 - When there is nothing worth hearing, write only ${SILENT} after your last step: it is never spoken. A turn that only did what was asked ends this way: opening the page they asked for ends with ${SILENT}, never "The page is open" or "Done".
+- When what the user asked for will take a while (making a page, several lookups, going through their files), say in a few words what you'll do before your first step, as a person would ("Sure, I'll sketch that out"), then get on with it, so they aren't left waiting in silence. Say it once, not before each step, and never for something quick, like opening something, pressing a button or a single lookup.
 - When the answer to their question is on screen, say only the answer itself, as if you just knew it: never that it's on screen, which app or page it's in, or that you opened it. "Your flight lands at six", not "the email is open and it says your flight lands at six".
 
 How to act:
@@ -379,12 +380,23 @@ export function createThinker(opts: { model?: LanguageModel; singleModel?: Langu
         // Text from separate steps (before and after a tool call) reads as one reply.
         let text = ''
         let streamed = ''
+        /** Streams what can be said of `text` so far. A single step's question mustn't be spoken just before it presses: it waits for the end. */
+        const speak = () => {
+          if (req.single || !req.onText) return
+          const sayable = unsilenced(text, false)
+          if (sayable.length > streamed.length) req.onText(sayable.slice(streamed.length))
+          streamed = sayable
+        }
         /** Files being written, by tool call: their input so far, and when it was last read for drawing. */
         const writing = new Map<string, { json: string; at: number }>()
-        let stepEnded = false
         for await (const part of result.stream) {
           if (part.type === 'error') throw part.error
-          if (part.type === 'finish-step') stepEnded = true
+          // Text ends where a tool call or step starts. Marked with a space, its last sentence is said
+          // now, not once the call is done: a call writing a page can take half a minute.
+          if ((part.type === 'tool-input-start' || part.type === 'finish-step') && /\S$/.test(unsilenced(text, false))) {
+            text += ' '
+            speak()
+          }
           // A file being written is drawn as it comes, a few times a second.
           if (part.type === 'tool-input-start' && part.toolName === 'write_file' && req.onDraft && !req.single) writing.set(part.id, { json: '', at: 0 })
           if (part.type === 'tool-input-delta' && writing.has(part.id)) {
@@ -397,15 +409,8 @@ export function createThinker(opts: { model?: LanguageModel; singleModel?: Langu
             if (typeof path === 'string' && typeof content === 'string') req.onDraft!(part.id, path, content)
           }
           if (part.type !== 'text-delta' || !part.text) continue
-          let delta = part.text
-          if (stepEnded && text.trim() && !/\s$/.test(text) && !/^\s/.test(delta)) delta = ` ${delta}`
-          stepEnded = false
-          text += delta
-          // A single step's question mustn't be spoken just before it presses: it waits for the end.
-          if (req.single || !req.onText) continue
-          const sayable = unsilenced(text, false)
-          if (sayable.length > streamed.length) req.onText(sayable.slice(streamed.length))
-          streamed = sayable
+          text += part.text
+          speak()
         }
         req.signal.throwIfAborted()
         const messages = await result.responseMessages

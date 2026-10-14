@@ -450,6 +450,12 @@ export const scenarios: Scenario[] = [
     checks: [newFile(/plumber/i, /thursday/i)],
   },
   {
+    // A page takes a while to write: a few words first, so the user isn't left waiting in silence.
+    name: 'files-page-says-first',
+    utterances: ['make me a chart of my budget'],
+    checks: [newFile(/^Pages\/.*\.html$/i, /<svg|chart/i), said(), noNarration],
+  },
+  {
     name: 'files-delete-when-asked',
     utterances: ['delete the shakshuka recipe'],
     checks: [fileGone('Recipes/shakshuka.md'), fileSays('Recipes/banana bread.md', /bananas/)],
