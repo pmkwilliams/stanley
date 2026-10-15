@@ -200,6 +200,22 @@ describe('Shell', () => {
     expect(shell.sides()).toEqual([['email']])
   })
 
+  it('leaves the screen as it is when it changes while the apps it would show open', async () => {
+    let open!: () => void
+    const opening = new Promise<void>((r) => (open = r))
+    const slowTasks = { ...tasksApp, init: async (ctx: Parameters<typeof tasksApp.init>[0]) => (await opening, tasksApp.init(ctx)) }
+    const shell = new Shell([emailApp, slowTasks], { env: {}, fetch }, () => {})
+    await shell.open('email')
+    const arranging = shell.arrange([['email'], ['tasks']])
+    await shell.global('show')
+    open()
+    expect((await arranging).summary).toBe('The screen changed while the apps opened: left as it is')
+    expect(shell.sides()).toEqual([['email']])
+    // Nor when whoever asked has moved on.
+    expect((await shell.arrange([['email'], ['tasks']], () => false)).summary).toBe('The screen changed while the apps opened: left as it is')
+    expect(shell.sides()).toEqual([['email']])
+  })
+
   it("won't lay out a screen it can't show", async () => {
     const shell = make()
     await expect(shell.arrange([['email', 'tasks']])).rejects.toThrow()

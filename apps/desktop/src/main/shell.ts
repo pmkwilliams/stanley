@@ -32,6 +32,8 @@ export class Shell implements World {
   readonly surfaces = new Map<string, unknown>()
   /** What is in front of the user, left to right; none = home screen. */
   private shown: Sides = []
+  /** Bumped by every change to `shown`, and by every `arrange` as it starts: one still opening apps is overtaken by any change after it. */
+  private revision = 0
   /** Apps put in full screen: they fill the screen whenever they're shown alone and their screen can. */
   private full = new Set<string>()
   /** Surface the agent is working on; may be hidden. `null` = home screen. */
@@ -117,17 +119,26 @@ export class Shell implements World {
 
   /**
    * Lays the screen out: these apps, where `sides` puts them. Apps not open yet are opened; what
-   * Stanley works on stays the same. Beside another app, none fills the screen.
+   * Stanley works on stays the same. Beside another app, none fills the screen. Left as it is when
+   * the screen changes while apps open, or `fresh` says the request is stale by then.
    */
-  async arrange(sides: Sides): Promise<StepResult> {
+  async arrange(sides: Sides, fresh: () => boolean = () => true): Promise<StepResult> {
     if (!validSides(sides)) throw new Error(`The screen can't show ${JSON.stringify(sides)}`)
     const apps = sides.flat().map((id) => this.app(id))
+    const mine = ++this.revision
     for (const app of apps) await this.serial(app.id, () => this.ensure(app))
+    // Opening an app can take a while (a forecast is fetched): the screen may have changed since, or the request gone stale.
+    if (mine !== this.revision || !fresh()) return { summary: 'The screen changed while the apps opened: left as it is' }
     const shown = describeScreen(sides, (id) => this.app(id).title)
     if (sameSides(sides, this.shown)) return { summary: `The screen already shows that: ${shown}` }
-    this.shown = sides.map((side) => [...side])
+    this.show(sides)
     this.onChange()
     return { summary: `Now on the screen: ${shown}` }
+  }
+
+  private show(sides: Sides) {
+    this.shown = sides.map((side) => [...side])
+    this.revision++
   }
 
   /**
@@ -204,7 +215,7 @@ export class Shell implements World {
   }
 
   async global(option: 'show' | 'home' | 'back') {
-    if (option === 'show') this.shown = this.focus ? [[this.focus]] : []
+    if (option === 'show') this.show(this.focus ? [[this.focus]] : [])
     if (option === 'home') this.navigate(null)
     if (option === 'back') await this.back()
     this.onChange()
@@ -275,7 +286,7 @@ export class Shell implements World {
     const on = !this.filling(app.id)
     if (on) {
       this.full.add(app.id)
-      this.shown = [[app.id]]
+      this.show([[app.id]])
     } else this.full.delete(app.id)
     this.navigate(app.id)
     this.onChange()

@@ -18,8 +18,8 @@ export type Target =
   | { kind: 'file'; path: string }
   /** Read in the background, so what it says to do is in the conversation. */
   | { kind: 'skill'; skill: Skill }
-  /** The screen laid out as Jev's `show` and `left` answers say (see screen.ts): Jev's alone. Offered without `sides`; run with them. */
-  | { kind: 'arrange'; sides?: Sides; shown?: string }
+  /** The screen laid out as Jev's `show` and `left` answers say (see screen.ts): Jev's alone. Offered without `sides`; run with them, and `fresh` to drop it if it goes stale while apps open. */
+  | { kind: 'arrange'; sides?: Sides; shown?: string; fresh?: () => boolean }
 
 export interface OptionSet {
   /** Option name → description, sent to Jev as one question's options. */

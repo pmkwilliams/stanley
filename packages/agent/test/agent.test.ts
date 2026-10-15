@@ -2344,6 +2344,46 @@ describe('Agent screen layout', () => {
     expect(performed).toEqual(['home', 'arrange '])
   })
 
+  it('leaves the screen when the user starts again while Jev is asked what it should show', async () => {
+    let answer!: () => void
+    const asking = new Promise<void>((r) => (answer = r))
+    const { agent, performed } = setup(async (req, i) => (!req.questions.step ? (await asking, { next: 'done', show: 'Tasks' }) : i === 0 ? { next: 'think' } : { next: 'listen' }), {
+      world: { sides: [['email']] },
+      thinker: { run: async () => ({ text: 'You have two tasks.' }) },
+    })
+    agent.utteranceStart()
+    spoke(agent, 'how many tasks do I have in total')
+    await settle()
+    agent.utteranceStart()
+    agent.segment('stop')
+    answer()
+    await settle()
+    expect(performed.filter((p) => p.startsWith('arrange') || p === 'show')).toEqual([])
+  })
+
+  it("doesn't fall back to showing the app it worked on when the user said more before the call failed", async () => {
+    let fail!: () => void
+    const failing = new Promise<void>((r) => (fail = r))
+    let asks = 0
+    const { agent, performed } = setup(async (req, i) => {
+      if (!req.questions.step) {
+        // The first call fails once the user has said more; the next task's is never answered.
+        if (asks++) return new Promise<never>(() => {})
+        await failing
+        throw new Error('gateway down')
+      }
+      // The new words are a turn of their own, which only listens.
+      return i === 0 ? { next: 'act', step: 'Sort' } : i === 1 ? { next: 'think' } : { next: 'listen' }
+    }, { world: { sides: [['email']] }, thinker: { run: async () => ({ text: 'Sorted.' }) } })
+    agent.utteranceStart()
+    spoke(agent, 'sort my tasks')
+    await settle()
+    agent.segment('sort my tasks and leave the screen alone')
+    fail()
+    await settle()
+    expect(performed).not.toContain('show')
+  })
+
   it('leaves the screen when new words came while the decision that finished the task was made', async () => {
     let release!: () => void
     const gate = new Promise<void>((r) => (release = r))

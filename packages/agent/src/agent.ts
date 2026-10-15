@@ -1099,7 +1099,9 @@ export class Agent {
     this.report(id, d, option, 'executed')
     this.events.status?.('acting')
     this.events.debug?.({ type: 'screen', tickId: id, source: 'step', before, after: sidesKey(choice.sides), confidence: choice.confidence, left: choice.left })
-    const done = await this.attempt(id, option, { kind: 'arrange', sides: choice.sides, shown: this.shownText(choice.sides) }, {}, 'jev', { jev: true }, decision)
+    // Still wanted once the apps it shows are open: no new words, and the screen as Jev saw it.
+    const fresh = () => !changed() && sameSides(this.world.sides!(), ask.before)
+    const done = await this.attempt(id, option, { kind: 'arrange', sides: choice.sides, shown: this.shownText(choice.sides), fresh }, {}, 'jev', { jev: true }, decision)
     if (done) this.arranged = true
     this.request('action')
     return option
@@ -1363,7 +1365,7 @@ export class Agent {
       if (target.kind === 'app') result = await this.world.open(target.app.id)
       else if (target.kind === 'element') result = await this.world.perform(target.node, args)
       else if (target.kind === 'page') result = await this.world.openUrl!(target.url)
-      else if (target.kind === 'arrange') result = await this.world.arrange!(target.sides ?? [])
+      else if (target.kind === 'arrange') result = await this.world.arrange!(target.sides ?? [], target.fresh)
       else if (target.kind === 'folder' || target.kind === 'file' || target.kind === 'skill') throw new Error('Files are looked at in the background, not opened')
       else if (target.kind === 'lock') {
         // The session ends with it: this agent is cancelled, and what it reports from here is ignored.
@@ -1891,49 +1893,57 @@ export class Agent {
    * worked on, as always. A task that laid it out itself leaves it; so does a decision new words
    * made stale (`keep`). Otherwise Jev's answers say (the finishing tick's, or a call of its own),
    * when they are fresh and sure; unsure, the screen stays as it is. If Jev can't be asked, the app
-   * Stanley worked on is shown, as always. Nothing here holds up the end of the task.
+   * Stanley worked on is shown, as always. The task ends once this has, and a failed call doesn't
+   * keep it from ending.
    */
   private async settleScreen(end: ScreenEnd): Promise<void> {
     const w = this.world
     if (!w.arrange || !w.sides) return w.global('show')
     const tickId = end.tickId ?? this.tickId
-    const before = sidesKey(w.sides())
-    const leave = (reason: string, choice?: ScreenChoice) => this.events.debug?.({ type: 'screen', tickId, source: end.d ? 'done' : 'asked', before, after: null, confidence: choice?.confidence, left: choice?.left, reason })
+    const before = w.sides()
+    const source = end.d ? 'done' : 'asked'
+    const leave = (reason: string, choice?: ScreenChoice) => this.events.debug?.({ type: 'screen', tickId, source, before: sidesKey(before), after: null, confidence: choice?.confidence, left: choice?.left, reason })
     if (this.arranged) return leave('the task laid the screen out itself')
     if (end.keep) return leave(end.keep)
+    // Fresh while the user has said nothing new, not started speaking again, and not changed the
+    // screen, and the agent hasn't been cancelled: checked on the answers, before falling back,
+    // and by the shell once the apps it shows are open.
+    const abort = new AbortController()
+    this.screenAbort = abort
+    const utterance = this.utteranceId
+    const seen = structuredClone(this.transcript)
+    const fresh = () => !abort.signal.aborted && this.utteranceId === utterance && !hasNewWords(this.transcript, seen) && sameSides(w.sides!(), before)
     const shown = async () => {
-      if (!(await w.screen()).visible) await w.global('show')
+      if (fresh() && !(await w.screen()).visible) await w.global('show')
     }
     try {
       const started = performance.now()
-      const seen = structuredClone(this.transcript)
-      const asked = end.d?.answers.show && end.d.answers.left && end.ask ? { ask: end.ask, show: end.d.answers.show, left: end.d.answers.left } : await this.askScreen()
-      if (!asked) return shown()
+      const asked = end.d?.answers.show && end.d.answers.left && end.ask ? { ask: end.ask, show: end.d.answers.show, left: end.d.answers.left } : await this.askScreen(abort.signal)
+      if (!asked) return await shown()
       const choice = chooseScreen(asked.ask, asked, this.config.screen.left)
       const latencyMs = end.d ? undefined : performance.now() - started
-      if (!sameSides(w.sides(), asked.ask.before) || hasNewWords(this.transcript, seen)) return leave('the screen or the words changed since Jev decided', choice)
+      if (!fresh() || !sameSides(asked.ask.before, before)) return leave('the screen or the words changed since Jev decided', choice)
       if (choice.confidence < this.config.screen.show) return leave(`unsure: P(show) ${choice.confidence.toFixed(2)} < screen.show ${this.config.screen.show}`, choice)
-      this.events.debug?.({ type: 'screen', tickId, source: end.d ? 'done' : 'asked', before, after: sidesKey(choice.sides), confidence: choice.confidence, left: choice.left, latencyMs })
-      if (!sameSides(choice.sides, asked.ask.before)) await w.arrange(choice.sides)
+      this.events.debug?.({ type: 'screen', tickId, source, before: sidesKey(before), after: sidesKey(choice.sides), confidence: choice.confidence, left: choice.left, latencyMs })
+      if (!sameSides(choice.sides, before)) await w.arrange(choice.sides, fresh)
     } catch (err) {
       // Cancelled with the agent (the session ended): nothing more to show.
-      if (this.screenAbort?.signal.aborted) return
+      if (abort.signal.aborted) return
       leave(`failed: ${err instanceof Error ? err.message : String(err)}`)
       await shown().catch(() => {})
     }
   }
 
   /** Jev's screen answers on their own, for a task that ended without a decision that asked them. */
-  private async askScreen(): Promise<{ ask: ScreenAsk; show: Answer; left: Answer } | null> {
+  private async askScreen(signal: AbortSignal): Promise<{ ask: ScreenAsk; show: Answer; left: Answer } | null> {
     const screen = await this.world.screen()
     const ask = this.screenAsk(screen)
     if (!ask) return null
     const name = this.name()
-    this.screenAbort = new AbortController()
     const { answers } = await this.jev.decide({
       state: this.jevState(screen, ask),
       questions: { show: { instructions: named(ask.show.instructions, name), options: ask.show.options }, left: { instructions: named(ask.left.instructions, name), options: ask.left.options } },
-      signal: this.screenAbort.signal,
+      signal,
     })
     return { ask, show: answers.show!, left: answers.left! }
   }

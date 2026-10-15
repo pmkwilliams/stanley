@@ -1,8 +1,7 @@
 <script lang="ts">
   import type { Snapshot } from '../../shared/ipc'
   import { untrack } from 'svelte'
-  import { cubicOut } from 'svelte/easing'
-  import { fade, scale } from 'svelte/transition'
+  import { fade } from 'svelte/transition'
   import { FULLSCREEN } from '@stanley/app-sdk'
   import { appWindow } from '@stanley/app-ui/components/app'
   import LockScreen from './LockScreen.svelte'
@@ -11,7 +10,7 @@
   import StatusBar from './StatusBar.svelte'
   import { ONSET_HOLD_MS, voiceMayStart } from './duck'
   import { dbfs, loudness, mic, voiceOut } from './presence'
-  import { leave, Motion } from './motion'
+  import { enter, leave, Motion } from './motion'
   import { screenGrid, windowPlace, windowTile } from './screen'
   import { backgrounds, kept, surfaces } from './surfaces'
   import { setTheme } from './theme.svelte'
@@ -135,7 +134,7 @@
           style={windowPlace(sides, id)}
           data-fullscreen={fullscreen || undefined}
           {@attach motion.track(id)}
-          in:scale={{ start: 0.85, duration: 340, easing: cubicOut }}
+          in:enter
           out:leave={{ from: motion.was(id) }}
         >
           <Surface data={snapshot.surfaces[id]} perform={(nodeId: string, args?: { text?: string }) => window.stanley.perform(id, nodeId, args)} agentName={snapshot.name} {fullscreen} />
@@ -147,7 +146,7 @@
         {@const on = shown.includes(id)}
         {@const full = on && fullscreen}
         <div
-          class={[appWindow, 'transition-all', on ? [sides.length < 2 && 'col-start-1 row-start-1', windowTile(sides), 'duration-340 ease-out', full ? 'z-4' : 'z-1'] : 'invisible absolute z-0 scale-88 opacity-0 duration-260 ease-in']}
+          class={[appWindow, 'transition-all motion-reduce:transition-none', on ? [sides.length < 2 && 'col-start-1 row-start-1', windowTile(sides), 'duration-340 ease-out', full ? 'z-4' : 'z-1'] : 'invisible absolute z-0 scale-88 opacity-0 duration-260 ease-in']}
           style={on ? windowPlace(sides, id) : ''}
           data-fullscreen={full || undefined}
           inert={!on}
