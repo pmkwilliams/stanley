@@ -1,6 +1,7 @@
 import { generateText, jsonSchema, parsePartialJson, stepCountIs, streamText, tool, type LanguageModel, type LanguageModelUsage, type ModelMessage, type Tool, type ToolResultPart, type ToolSet } from 'ai'
 import { DEFAULT_AGENT_NAME } from '@stanley/app-sdk'
 import { filesPrompt, type PageSize } from './files'
+import { memoryPrompt } from './memory'
 import { named } from './narrate'
 import { skillsPrompt, type SkillScan } from './skills'
 import type { WebResult } from './web'
@@ -175,11 +176,13 @@ export function longDate(d: Date): string {
 /**
  * Thinking's instructions for a session. Fixed from its start (a new day, and a change to the
  * skills, arrive as notes), unless the user renames the assistant. `files` is where the user's
- * files are, when the session has them, `skills` the skills in them when it started, and `page`
- * the size pages are shown at then (a change arrives as a note too).
+ * files are, when the session has them, `skills` the skills in them when it started, `memory` its
+ * memory file's text then, and `page` the size pages are shown at then (a change arrives as a note too).
  */
-export function instructions(opts: { web: boolean; files?: string; skills?: SkillScan; background?: boolean; today: Date; name?: string; page?: PageSize }): string {
-  const files = opts.files ? [filesPrompt(opts.files, opts.page, opts.background), ...(opts.skills ? [skillsPrompt(opts.skills)] : [])] : []
+export function instructions(opts: { web: boolean; files?: string; skills?: SkillScan; memory?: string; background?: boolean; today: Date; name?: string; page?: PageSize }): string {
+  const files = opts.files
+    ? [filesPrompt(opts.files, opts.page, opts.background), ...(opts.skills ? [skillsPrompt(opts.skills)] : []), ...(opts.memory !== undefined ? [memoryPrompt(opts.memory)] : [])]
+    : []
   const text = [THINKING_PROMPT, MISHEARD, ...(opts.web ? [WEB] : []), ...files, ...(opts.background ? [BACKGROUND] : []), `Today is ${longDate(opts.today)}.`].join('\n\n')
   return named(text, opts.name ?? DEFAULT_AGENT_NAME)
 }

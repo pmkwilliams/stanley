@@ -109,10 +109,7 @@ function frontMatter(head: string): Record<string, string> {
 export function skillsPrompt(scan: SkillScan): string {
   return [
     `## Skills
-Skills are what the user taught you: how they like something done, or what to do when they say something. They are in .agents/skills in the folder (~/.agents/skills, as your home is the folder), in the Agent Skills format: a folder for each skill, named for it, with a SKILL.md in it. A SKILL.md starts with front matter (name: the folder's name; description: what the skill does and when to use it), then says what to do.
-- When a request is one a skill is for, read its SKILL.md with \`bash\` before anything else, unless it is already in the conversation, and follow it. Read the other files in a skill's folder only when it says to.
-- When the user asks you to remember how they like something done, or what to do when they say something, write it as a skill, with a description that names the requests it is for, as they would say them. Change or delete a skill only when they ask. Then say in a few words what you'll do from now on.
-- When skills change, a note says so.`,
+Skills are in ~/.agents/skills, in the Agent Skills format: a folder for each, with a SKILL.md. When a request is one a skill is for, read its SKILL.md with \`bash\` first, unless it is already in the conversation, and follow it.`,
     skillList(scan),
   ].join('\n')
 }
@@ -127,7 +124,7 @@ function skillList(scan: SkillScan): string {
 }
 
 /** For Jev, when there are skills. */
-export const JEV_SKILLS = `Skills are what the user taught Stanley: how they like something done, or what to do when they say something. Each has a "use skill" step, described by when it is for. When the user asks for something a skill is for, take that step first: it reads the skill, in the background. Then do what the skill says, a step at a time.`
+export const JEV_SKILLS = `Each skill has a "use skill" step, described by when it is for. When the user asks for something a skill is for, take that step first: it reads the skill, in the background. Then do what the skill says, a step at a time.`
 
 /** How the skills changed from `before` to `after`, as a sentence, or null when they didn't. */
 export function skillChanges(before: SkillScan, after: SkillScan): string | null {

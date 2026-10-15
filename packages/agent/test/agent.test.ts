@@ -1860,6 +1860,55 @@ describe('Agent skills', () => {
   })
 })
 
+describe('Agent memory', () => {
+  /** A folder whose memory file says `memory`, or has none. */
+  function memoryFiles(memory?: string): FileTools {
+    return {
+      root: '~/Wren',
+      paths: async () => [],
+      bash: async () => ({ output: '', exitCode: 0 }),
+      read: async (path) => {
+        if (path !== '.agents/MEMORY.md' || memory === undefined) throw new Error(`no ${path}`)
+        return memory
+      },
+    }
+  }
+
+  it('gives thinking and Jev the memory file as it was when the session started', async () => {
+    const states: string[] = []
+    const { agent, thinker } = setup(
+      (req) => {
+        states.push(req.state)
+        return { next: 'think' }
+      },
+      { deps: { files: memoryFiles("- The user's manager is Priya Shah.\n") } },
+    )
+    agent.utteranceStart()
+    agent.segment('email my manager')
+    agent.utteranceEnd()
+    await settle()
+    expect(thinker.runs[0]!.instructions).toContain("## Memory\nWhat you kept from earlier sessions, in ~/.agents/MEMORY.md:\n<memory>\n- The user's manager is Priya Shah.\n</memory>")
+    expect(states[0]).toContain("<memory>\n- The user's manager is Priya Shah.\n</memory>")
+  })
+
+  it('says where memory goes when there is none, and gives Jev nothing', async () => {
+    const states: string[] = []
+    const { agent, thinker } = setup(
+      (req) => {
+        states.push(req.state)
+        return { next: 'think' }
+      },
+      { deps: { files: memoryFiles() } },
+    )
+    agent.utteranceStart()
+    agent.segment('remember that I like tea')
+    agent.utteranceEnd()
+    await settle()
+    expect(thinker.runs[0]!.instructions).toContain('You have kept nothing from earlier sessions yet: ~/.agents/MEMORY.md is where it goes.')
+    expect(states[0]).not.toContain('<memory>')
+  })
+})
+
 describe('Agent background tasks', () => {
   /** A folder that keeps what is written to it, a world that can draw its pages out of sight, and quick delivery. */
   function backgroundSetup(run: (req: ThinkRequest, main: boolean) => Promise<{ text: string } | ThinkResult>, script: Script = () => ({ next: 'think' }), quick?: Thinker['quick']) {

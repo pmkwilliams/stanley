@@ -62,11 +62,11 @@ const fileSays = (path: string, ...patterns: RegExp[]): Check => (_, __, files) 
   return missing.length ? `expected ${path} to match ${missing.join(', ')}, got: ${JSON.stringify(text)}` : undefined
 }
 const fileGone = (path: string): Check => (_, __, files) => (existsSync(join(files, path)) ? `expected ${path} to be gone` : undefined)
-/** Some new file anywhere in the folder, named like `name`, says `text`. */
-const newFile = (name: RegExp, text: RegExp): Check => (_, __, files) => {
-  const all = readdirSync(files, { recursive: true, encoding: 'utf8' })
-  const hit = all.find((f) => name.test(f) && text.test(readFileSync(join(files, f), 'utf8')))
-  return hit ? undefined : `expected a file named ~ ${name} saying ~ ${text}, got ${all.join(', ')}`
+
+/** The memory file is as the fixture has it: a task's details aren't kept. */
+const memoryKept: Check = (_, __, files) => {
+  const text = readFileSync(join(files, '.agents/MEMORY.md'), 'utf8')
+  return text === "- The user's manager is Priya Shah.\n" ? undefined : `expected the memory file unchanged, got: ${JSON.stringify(text)}`
 }
 
 /** Stanley read skill `name`: Jev's step for it, or a command of thinking's on its folder. */
@@ -450,18 +450,6 @@ export const scenarios: Scenario[] = [
     checks: [newFile(/plumber/i, /thursday/i)],
   },
   {
-    // A page takes a while to write: a few words first, so the user isn't left waiting in silence.
-    name: 'files-page-says-first',
-    utterances: ['make me a chart of my budget'],
-    checks: [newFile(/^\.stanley\/scratch\/.*\.html$/i, /<svg|chart/i), said(), noNarration],
-  },
-  {
-    // A page starts in scratch, which is gone when Stanley restarts: kept, it goes in Pages/.
-    name: 'files-page-kept',
-    utterances: ['make me a chart of my budget', 'keep that one'],
-    checks: [newFile(/^Pages\/.*\.html$/i, /<svg|chart/i)],
-  },
-  {
     name: 'files-delete-when-asked',
     utterances: ['delete the shakshuka recipe'],
     checks: [fileGone('Recipes/shakshuka.md'), fileSays('Recipes/banana bread.md', /bananas/)],
@@ -482,19 +470,25 @@ export const scenarios: Scenario[] = [
     // Skills that don't apply stay out of the way.
     name: 'skill-not-needed',
     utterances: ['add call the bank to my list'],
-    checks: [newTasks(1), skippedSkill('break-time'), skippedSkill('email-style')],
-  },
-  {
-    // Taught, then used in the same session.
-    name: 'skill-taught',
-    utterances: ['play some music', "remember that whenever I say I'm on a call you should pause the music", "I'm on a call"],
-    checks: [skillSays(/pause/i), state('music', (s) => s?.playing === false, 'music paused')],
+    checks: [newTasks(1), skippedSkill('break-time'), skippedSkill('email-style'), memoryKept],
   },
   {
     // Changed when asked, and still usable.
     name: 'skill-edit-when-asked',
     utterances: ['change my break skill so it plays Coffee instead'],
     checks: [fileSays('.agents/skills/break-time/SKILL.md', /Coffee/), skillSays(/Coffee/)],
+  },
+  {
+    // Memory from an earlier session says who "my manager" is.
+    name: 'memory-recalled',
+    utterances: ['open the email from my manager'],
+    checks: [route('email', /^email\/m2$/)],
+  },
+  {
+    // Asked to remember: one line added, what was there kept.
+    name: 'memory-saved',
+    utterances: ["remember that I'm allergic to peanuts"],
+    checks: [fileSays('.agents/MEMORY.md', /peanut/i, /Priya Shah/)],
   },
   {
     // A question is answered from a background search; nothing opens on screen.

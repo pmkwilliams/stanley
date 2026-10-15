@@ -25,6 +25,7 @@ import {
   type TaskMeta,
 } from './conversation'
 import { anyUnsure, markUnsure, unmarked, type HeardWord } from './heard'
+import { jevMemory, MEMORY_PATH } from './memory'
 import { describeStep, named, namedOptions, narrate } from './narrate'
 import { navigates, stepOptions, type OptionSet, type Target } from './options'
 import { JEV_SKILLS, NO_SKILLS, skillBody, skillChanges, type Skill, type SkillScan } from './skills'
@@ -295,6 +296,9 @@ export class Agent {
   private skillsReady: Promise<void>
   /** The skills as thinking was last told about them. */
   private skillsKnown: SkillScan = NO_SKILLS
+  /** The memory file's text when the session started, which thinking and Jev are given, once it is read. */
+  private sessionMemory?: string
+  private memoryReady: Promise<void>
   private world: World
   private jev: DecisionClient
   private thinker: Thinker
@@ -345,6 +349,12 @@ export class Agent {
       this.sessionSkills = scan
       this.skillsKnown = scan
     })
+    this.memoryReady = this.files?.read
+      ? this.files.read(MEMORY_PATH).then(
+          (text) => void (this.sessionMemory = text),
+          () => void (this.sessionMemory = ''),
+        )
+      : Promise.resolve()
   }
 
   /** Thinking's instructions, fixed for the session unless the user renames the assistant. */
@@ -353,7 +363,8 @@ export class Agent {
     // The size when the session's instructions were first made; a change comes as a note (`observe`).
     this.sessionPage ??= this.pageSize()
     this.pageKnown ??= this.sessionPage
-    return instructions({ web: !!this.web, files: this.files?.root, skills, today: this.started, name: this.name(), page: this.sessionPage, background: !!this.background })
+    const memory = this.files?.read ? (this.sessionMemory ?? '') : undefined
+    return instructions({ web: !!this.web, files: this.files?.root, skills, memory, today: this.started, name: this.name(), page: this.sessionPage, background: !!this.background })
   }
 
   /** An utterance is open: the user is speaking, or paused without having finished. */
@@ -699,10 +710,12 @@ export class Agent {
       this.events.status?.(!seenEnded && this.steps === 0 ? 'guessing' : 'thinking')
       const screen = await this.world.screen()
       const skills = await this.scanSkills()
+      await this.memoryReady
       const options = this.options(screen, this.config.maxElements, this.pages(), await this.knownFiles(), this.unread(skills))
       this.warmEffects(screen, options)
       const name = this.name()
-      const prompt = [SYSTEM_PROMPT, ...(this.files ? [JEV_FILES] : []), ...(skills.skills.length ? [JEV_SKILLS] : [])].join('\n\n')
+      const memory = this.sessionMemory?.trim() ? [jevMemory(this.sessionMemory)] : []
+      const prompt = [SYSTEM_PROMPT, ...(this.files ? [JEV_FILES] : []), ...(skills.skills.length ? [JEV_SKILLS] : []), ...memory].join('\n\n')
       const state = `${named(prompt, name)}\n\nToday is ${longDate(this.clock())}.\n\n${narrate(this.view(), screen, this.live(), this.config.jevTurns, name)}`
       const questions: Record<string, Question> = {
         next: { instructions: named(withNote(NEXT_INSTRUCTIONS, this.jevNotes?.next), name), options: namedOptions(NEXT, name) },
@@ -1312,6 +1325,7 @@ export class Agent {
     const options = this.options(screen, this.config.thinkingElements)
     const next = single ? (single.kind === 'write' ? writeNote(single.option, !!this.files) : confirmNote(single.option)) : note
     const news = await this.skillNews()
+    await this.memoryReady
     const files = await this.topFiles()
     const working = mode === 'run' ? (this.background?.working() ?? []) : []
     const tasks = working.length ? [`Background tasks still working: ${working.map((t) => `${t.id}, "${t.title}"`).join('; ')}.`] : []

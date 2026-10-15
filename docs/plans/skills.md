@@ -58,9 +58,9 @@ Jev already loaded is in the history as Stanley's own `bash` call, so thinking d
 
 ## Creating and editing skills
 
-Thinking does it with `bash`, when the user asks ("remember that…", "next time I say…", "change my
-wind-down skill"). The instructions say where skills live and that they follow the Agent Skills
-format; the rest models know. It edits a skill only when asked, as for the user's other files.
+Thinking does it with its file tools, only when the user asks for a skill. The instructions say
+only where skills live and that they follow the Agent Skills format; the rest models know. Facts
+the user asks Stanley to remember go in memory instead (`docs/plans/memory.md`).
 
 ## Keeping the list current
 
