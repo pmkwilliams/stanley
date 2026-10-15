@@ -62,6 +62,12 @@ const fileSays = (path: string, ...patterns: RegExp[]): Check => (_, __, files) 
   return missing.length ? `expected ${path} to match ${missing.join(', ')}, got: ${JSON.stringify(text)}` : undefined
 }
 const fileGone = (path: string): Check => (_, __, files) => (existsSync(join(files, path)) ? `expected ${path} to be gone` : undefined)
+/** Some new file anywhere in the folder, named like `name`, says `text`. */
+const newFile = (name: RegExp, text: RegExp): Check => (_, __, files) => {
+  const all = readdirSync(files, { recursive: true, encoding: 'utf8' })
+  const hit = all.find((f) => name.test(f) && text.test(readFileSync(join(files, f), 'utf8')))
+  return hit ? undefined : `expected a file named ~ ${name} saying ~ ${text}, got ${all.join(', ')}`
+}
 
 /** The memory file is as the fixture has it: a task's details aren't kept. */
 const memoryKept: Check = (_, __, files) => {
@@ -286,6 +292,17 @@ export const scenarios: Scenario[] = [
     name: 'reply-gist-confirms',
     utterances: ['open the email from Jordan', 'write back and politely say no'],
     checks: [state('email', (s) => !!s?.drafts?.m8, 'a drafted reply to Jordan'), sentCount(0), said(/send|\?/i)],
+  },
+  {
+    // A step of the volume needs no words: Jev presses Volume down.
+    name: 'music-quieter',
+    utterances: ['play some music', 'lower the music'],
+    checks: [state('music', (s) => s?.playing === true && s.volume < 100, 'music playing, quieter'), fastPath],
+  },
+  {
+    name: 'music-volume-exact',
+    utterances: ['play some music', 'set the music volume to 30 percent'],
+    checks: [state('music', (s) => s?.playing === true && s.volume === 30, 'music playing at 30%')],
   },
   {
     name: 'music-skip',

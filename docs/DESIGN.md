@@ -647,7 +647,7 @@ All via **Vercel AI Gateway** with the AI SDK (`ai`, pinned exactly), one `AI_GA
 | Tasks | seeded, in-memory | "Add a task" box (Enter adds); each task row has a checkbox and Delete |
 | Email | seeded, in-memory | Inbox / Sent tabs, the inbox list, an open email with Mark unread / Archive / Delete, a reply box and Send reply |
 | Weather | Open-Meteo | "Search a city" box (Enter looks up), current conditions, one button per day |
-| Music | a hard-coded 12-track playlist, mostly lo-fi from a SoundCloud set, played through SoundCloud's embedded player | Previous / Play / Next / Volume buttons, one button per track |
+| Music | a hard-coded 12-track playlist, mostly lo-fi from a SoundCloud set, played through SoundCloud's embedded player | Previous / Play / Next buttons; Volume down, a Volume slider (a field taking a percentage) and Volume up, kept across sessions; one button per track |
 | Lights | your Philips Hue Bridge | Rooms and zones, each a row with a switch, and "Turn all off"; a room has its switch, a Brightness slider (a field taking a percentage), scene buttons, color swatches and a switch per light |
 | Web | a live webview | The page's own elements and text (see **Websites**). Not in the agent's app list, since it shows nothing on its own; known pages open in it, the ones it opened included |
 
