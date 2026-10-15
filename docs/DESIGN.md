@@ -571,7 +571,14 @@ Without the model, what it says is only shown.
 - **Played in the renderer** through Web Audio, so Chromium's echo cancellation on the mic hears it.
   The player reports each piece's start and end; main knows how much is queued and how much of a
   reply has been said, to the word. Music plays at a quarter of its volume while Stanley talks or
-  the user speaks (from the VAD hearing them to the end of the utterance).
+  the user speaks: from the mic's level first rising (~100 ms, ahead of the VAD) to the end of the
+  utterance.
+- **Talking over music.** On speakers the canceller suppresses the user's voice along with loud
+  music, and the transcriber loses it (70–98% of words wrong at full volume, measured with `say`
+  over the MacBook's speakers). Music alone doesn't trouble the transcriber, but sung words reach it
+  as speech. So the mic opens twice, with the canceller and without: the cancelled one's level says
+  when the user is talking, and while they are and Stanley isn't, the transcriber hears the
+  uncancelled one.
 - **What was heard is what was said.** When a reply is stopped, the conversation keeps only the
   words played (`cut`): "Stanley started to say: "…" but the user cut in."
 

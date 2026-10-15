@@ -161,10 +161,14 @@ export const mic = { level: 0 }
 /** Stanley's own loudness, 0–1, read every frame. Set once its voice is playing (see voice.ts). */
 export const voiceOut = { level: () => 0 }
 
-/** RMS of a chunk → 0–1, mapping −50 dBFS (room noise) to 0 and −15 dBFS (close speech) to 1. */
-export function loudness(chunk: Float32Array): number {
+/** RMS of a chunk in dBFS. */
+export function dbfs(chunk: Float32Array): number {
   let sum = 0
   for (const x of chunk) sum += x * x
-  const db = 10 * Math.log10(sum / Math.max(1, chunk.length) + 1e-12)
-  return Math.min(1, Math.max(0, (db + 50) / 35))
+  return 10 * Math.log10(sum / Math.max(1, chunk.length) + 1e-12)
+}
+
+/** RMS of a chunk → 0–1, mapping −50 dBFS (room noise) to 0 and −15 dBFS (close speech) to 1. */
+export function loudness(chunk: Float32Array): number {
+  return Math.min(1, Math.max(0, (dbfs(chunk) + 50) / 35))
 }

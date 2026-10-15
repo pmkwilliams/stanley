@@ -8,7 +8,8 @@
   import { startMic } from './mic'
   import Presence from './Presence.svelte'
   import StatusBar from './StatusBar.svelte'
-  import { loudness, mic, voiceOut } from './presence'
+  import { ONSET_HOLD_MS, voiceMayStart } from './duck'
+  import { dbfs, loudness, mic, voiceOut } from './presence'
   import { backgrounds, kept, surfaces } from './surfaces'
   import { setTheme } from './theme.svelte'
   import { startVoice } from './voice'
@@ -17,6 +18,9 @@
   let stopMic: (() => void) | null = null
   /** Bumped on every listening change, so a mic that finishes starting after a newer change is stopped. */
   let micRequest = 0
+  /** The (cancelled) mic's level says the user may be talking, ahead of the VAD (see `voiceMayStart`). */
+  let voiceOnset = $state(false)
+  let voiceOnsetEnds: ReturnType<typeof setTimeout> | undefined
 
   $effect(() => {
     const voice = startVoice()
@@ -39,9 +43,16 @@
         // Dev: localStorage['stanley.noMic'] lets tests inject audio without the real mic mixing in.
         mic.level = 0
         if (!on || localStorage.getItem('stanley.noMic')) return
-        const stop = await startMic((c) => {
+        const stop = await startMic((c, uncancelled) => {
           mic.level = loudness(c)
-          window.stanley.audio(c)
+          if (voiceMayStart(dbfs(c))) {
+            voiceOnset = true
+            clearTimeout(voiceOnsetEnds)
+            voiceOnsetEnds = setTimeout(() => (voiceOnset = false), ONSET_HOLD_MS)
+          }
+          // While the user talks over music, the transcriber hears them without the canceller (see
+          // startMic). Never while Stanley talks: the canceller is what keeps it from hearing itself.
+          window.stanley.audio(uncancelled && voiceOnset && !snapshot?.talking ? uncancelled : c)
         })
         if (request === micRequest) stopMic = stop
         else stop()
@@ -55,10 +66,11 @@
   })
 
   /**
-   * How loud apps' own sound may be: a quarter while Stanley talks or the user speaks. The utterance
-   * holds it down between words, so music doesn't pump up and down with each pause.
+   * How loud apps' own sound may be: a quarter while Stanley talks or the user speaks. The mic's
+   * level ducks it as the user starts, the VAD keeps it down, and the utterance holds it between
+   * words, so music doesn't pump up and down with each pause.
    */
-  const appVolume = $derived(snapshot?.talking || snapshot?.speaking || snapshot?.utteranceOpen ? 0.25 : 1)
+  const appVolume = $derived(snapshot?.talking || voiceOnset || snapshot?.speaking || snapshot?.utteranceOpen ? 0.25 : 1)
 
   const visible = $derived(snapshot?.layout.visible ?? null)
   /** The visible app fills the screen, over the status bar but under the captions. */
