@@ -82,6 +82,8 @@ export interface ScenarioResult {
   said: string[]
   /** What the quick model tidied into fields, in order. */
   dictated: string[]
+  /** What the screen was laid out to show, or why it was left, each time Jev decided. */
+  screens: string[]
   /** Per utterance: ms from the user's last word until the agent went quiet. */
   settleMs: number[]
   /** Per utterance: ms from the user's last word until the agent ended their turn. */
@@ -158,8 +160,10 @@ export async function drive(world: World, utterances: string[], speak: Speak, fi
   const modes = new Map<number, 'run' | 'write'>()
   /** What the quick model tidied into fields. */
   const dictated: string[] = []
+  const screens: string[] = []
   const agent = makeAgent(world, {
     debug: (e) => {
+      if (e.type === 'screen') screens.push(`${e.source}: ${e.before || 'home'} → ${e.after === null ? `left (${e.reason})` : e.after || 'home'}${e.confidence === undefined ? '' : `, P(show) ${e.confidence.toFixed(2)}`}`)
       if (e.type === 'act' && !e.summary?.startsWith('ran ')) stepsAt.push(Date.now())
       if (e.type === 'think-start' && e.mode === 'run' && /^asked to type/.test(e.handover)) {
         usage.singleFallbacks++
@@ -211,7 +215,7 @@ export async function drive(world: World, utterances: string[], speak: Speak, fi
     firstStepMs.push(mine.length ? mine[0]! - delivery.lastWordAt : null)
     lastStepMs.push(mine.length ? mine.at(-1)! - delivery.lastWordAt : null)
   }
-  return { agent, turnFailures, result: { ticks, said, dictated, settleMs, endMs, firstStepMs, lastStepMs, cutIns, trace: await agent.context(), thinking } }
+  return { agent, turnFailures, result: { ticks, said, dictated, screens, settleMs, endMs, firstStepMs, lastStepMs, cutIns, trace: await agent.context(), thinking } }
 }
 
 function makeAgent(world: World, events: AgentDeps['events'], files?: FileTools): Agent {
@@ -282,6 +286,7 @@ export function report(label: string, result: ScenarioResult) {
     console.log(`   ${t.outcome.padEnd(15)} → ${t.effective.padEnd(10)} next: ${next.padEnd(22)} step: ${step}${runnersUp ? `  | ${runnersUp}` : ''}${words}${t.detail ? ` (${t.detail})` : ''}`)
   }
   for (const text of result.dictated) console.log(`   dictated: "${text}"`)
+  for (const text of result.screens) console.log(`   screen: ${text}`)
   for (const text of result.said) console.log(`   said: "${text}"`)
   const secs = (ms: (number | null)[]) => ms.map((m) => (m === null ? '—' : (m / 1000).toFixed(1))).join(', ')
   console.log(`   after the last word: settle ${secs(result.settleMs)}s, first step ${secs(result.firstStepMs)}s, last step ${secs(result.lastStepMs)}s`)

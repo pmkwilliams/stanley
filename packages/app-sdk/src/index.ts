@@ -187,8 +187,12 @@ export interface Surface<S = unknown> {
 
 /** v1: a single visible slot. Later: splits, multiple windows. */
 export interface Layout {
-  visible: string | null
-  /** The visible app fills the whole screen, over the status bar. */
+  /**
+   * The apps on the screen, left to right, each side top to bottom: none is the home screen, one
+   * side of one app fills it, two sides sit side by side (up to two apps on a side, three at most).
+   */
+  sides: string[][]
+  /** The one app shown fills the whole screen, over the status bar. */
   fullscreen?: boolean
 }
 

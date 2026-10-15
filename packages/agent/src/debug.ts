@@ -22,7 +22,7 @@ export type TickReason = 'words' | 'action' | 'end' | 'pause'
 /** What `request()` did with a tick request. Everything but `tick` means no Jev call. */
 export type RequestResult = 'tick' | 'deferred' | 'no-new-words' | 'halted' | 'nothing-to-re-ask' | 'held' | 'released'
 
-export type GateRule = 'stale' | 'act-confidence' | 'done-confidence' | 'step-confidence' | 'mid-speech' | 'thought-open' | 'turn-open' | 'early-guess' | 'unsure-words' | 'listen-ended' | 'oscillation' | 'step-cap' | 'ran-calls' | 'only-navigated' | 'skill' | 'consent'
+export type GateRule = 'stale' | 'act-confidence' | 'done-confidence' | 'step-confidence' | 'mid-speech' | 'thought-open' | 'turn-open' | 'early-guess' | 'unsure-words' | 'listen-ended' | 'oscillation' | 'step-cap' | 'ran-calls' | 'only-navigated' | 'skill' | 'consent' | 'screen'
 
 /**
  * Structured trace of the loop, for the debug window. Carries everything needed
@@ -70,6 +70,12 @@ export type AgentDebugEvent =
       latencyMs: number
     }
   | { type: 'tick-end'; tickId: number; outcome: TickOutcome; effective: string; detail?: string }
+  /**
+   * What the screen shows, decided by Jev (see screen.ts): `step` for `arrange the screen`, `done`
+   * from the tick that finished the task, `asked` from a call of its own when the task ended another
+   * way. `after` null: the screen stayed as it was, for `reason`.
+   */
+  | { type: 'screen'; tickId: number; source: 'step' | 'done' | 'asked'; before: string; after: string | null; confidence?: number; left?: number | null; reason?: string; latencyMs?: number }
   /**
    * The voice paused: Smart Turn's P(turn complete) (null without it), Jev's latest P(finished
    * saying what's needed) for these words (null if it hasn't seen them), and when the utterance

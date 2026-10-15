@@ -1,4 +1,5 @@
 import type { ActionArgs, AgentNode } from '@stanley/app-sdk'
+import type { Sides } from './screen'
 
 /** The surface Stanley is working on, which may be hidden from the user. */
 export interface Screen {
@@ -104,6 +105,15 @@ export interface World {
    */
   preview?(path: string, opts?: PreviewOptions): Promise<PagePreview>
   global(option: 'show' | 'home' | 'back'): Promise<void>
+  /**
+   * What is on the screen, left to right (see `Sides`). With `placeable` and `arrange`, Jev lays the
+   * screen out; without them, the screen shows the app Stanley worked on once it is done (`show`).
+   */
+  sides?(): Sides
+  /** Apps that can be put on the screen: the apps, and the one that shows web pages once it has a page. */
+  placeable?(): AppEntry[]
+  /** Lays the screen out as `sides` says, opening apps that aren't open yet. What Stanley works on stays the same. */
+  arrange?(sides: Sides): Promise<StepResult>
   /** Goes to the lock screen, ending the session. Without it, the agent can't lock. */
   lock?(): Promise<void>
 }

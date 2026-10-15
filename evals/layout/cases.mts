@@ -3,7 +3,8 @@ import type { Steps } from './scene.mts'
 /**
  * What the screen should show once Stanley has done what the user asked. An arrangement is written
  * as the screen reads left to right: `email` fills the screen, `email | tasks` is side by side, and
- * `email | tasks + weather` puts Tasks and Weather stacked on the right. Stacking order isn't judged.
+ * `email | tasks + weather` puts Tasks and Weather stacked on the right; `home` shows none. Stacking
+ * order isn't judged.
  * The apps hold their own data (`scene.mts`): what Stanley did is done in them by `steps`.
  */
 export interface LayoutCase {
@@ -34,6 +35,7 @@ export const cases: LayoutCase[] = [
   { name: 'tasks-beside-recipe', on: 'web', conversation: ['User: open my tasks next to this'], worked: 'web', want: pair('web', 'tasks') },
   { name: 'explicit-sides', on: 'email', conversation: ['User: inbox on the right, tasks on the left'], want: ['tasks | email'] },
   { name: 'close-weather', on: 'email | weather', conversation: ['User: close the weather'], want: ['email'] },
+  { name: 'clear-the-screen', on: 'email | tasks', conversation: ['User: clear the screen, put it all away'], want: ['home'] },
   { name: 'show-weather-from-home', on: null, conversation: ['User: show me the weather'], worked: 'weather', want: ['weather'] },
 
   // Left to Jev: the request is about something else, and what to show follows from it.
@@ -80,6 +82,14 @@ export const cases: LayoutCase[] = [
     conversation: ['User: put some music on', 'Stanley pressed [Play]: Playing "Hallucinogens" by Konteks.'],
     worked: 'music',
     want: ['email | tasks'],
+  },
+  {
+    name: 'add-task-from-home',
+    on: null,
+    conversation: ['User: put buy eggs on my task list', 'Stanley typed "Buy eggs" into [New task].', 'Stanley pressed [New task › press Enter]: Added "Buy eggs".'],
+    worked: 'tasks',
+    steps: { tasks: ['title|Buy eggs', 'add'] },
+    want: ['tasks'],
   },
   { name: 'open-tasks-switches', on: 'email', conversation: ['User: open my tasks', 'Stanley opened Tasks.'], worked: 'tasks', want: ['tasks'] },
   { name: 'check-email-switches', on: 'tasks', conversation: ['User: check my email', 'Stanley opened Email.'], worked: 'email', want: ['email'] },

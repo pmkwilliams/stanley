@@ -137,6 +137,8 @@ export function describeStep(e: StepMeta, name = DEFAULT_AGENT_NAME): string {
       return `${who} locked the computer${outcome}.`
     case 'page':
       return `${who} opened the page "${t.title}" (${shortUrl(t.url)})${outcome}.`
+    case 'arrange':
+      return `${who} arranged the screen${outcome ? `${outcome}.` : `: ${t.shown}`}`
   }
   if (t.nodeKind === 'input') {
     if (e.wrote === 'stanley') return `${who} wrote its own words into [${t.name}]${outcome}: "${e.text}"`
@@ -157,5 +159,6 @@ export function targetOf(target: StepTarget): string {
   if (target.kind === 'element') return target.name
   if (target.kind === 'app') return `open ${target.title}`
   if (target.kind === 'page') return `open page: ${target.title}`
+  if (target.kind === 'arrange') return 'arrange the screen'
   return target.kind
 }

@@ -28,6 +28,13 @@ export interface AgentConfig {
   commits: number
   /** A press that commits runs when Jev's P(the user asked for what it does) reaches this; below it, thinking gets the go-ahead. */
   consent: number
+  /**
+   * What the screen shows (see screen.ts). Jev's likeliest arrangement is made unless its `show`
+   * answer is under `show`, when the screen stays as it is: Jev's best guess beat showing the app
+   * Stanley worked on alone (eval:layout). Apps already on the screen keep their sides when its
+   * `left` answer is under `left`.
+   */
+  screen: { show: number; left: number }
   /** A navigation decided from a stale transcript still runs at or above this step confidence. */
   staleNavConfidence: number
   maxStepsPerUtterance: number
@@ -94,6 +101,7 @@ export const defaultConfig: AgentConfig = {
   warmEffects: true,
   commits: 0.3,
   consent: 0.8,
+  screen: { show: 0.3, left: 0.4 },
   staleNavConfidence: 0.8,
   maxStepsPerUtterance: 15,
   oscillation: { repeats: 3, window: 6 },

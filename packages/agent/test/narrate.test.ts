@@ -31,6 +31,14 @@ describe('narrate', () => {
     )
   })
 
+  it('says how Stanley laid the screen out', () => {
+    const r = recorder()
+    r.event('task-start')
+    r.words(1, 'swap them round')
+    r.step({ target: { kind: 'arrange', shown: 'Tasks (left), Email (right).' }, summary: 'Now on the screen', utteranceId: 1 })
+    expect(narrate(r.h.view(), screen)).toContain('User: swap them round\nWren arranged the screen: Tasks (left), Email (right).\n')
+  })
+
   it('shows the live utterance with its unfinished words, and marks it while the user is speaking', () => {
     const r = recorder()
     r.words(2, 'add a task')

@@ -1,4 +1,4 @@
-import { DEFAULT_AGENT_NAME, FILES_URL, type ActionArgs, type AgentNode } from '@stanley/app-sdk'
+import { DEFAULT_AGENT_NAME, FILES_URL, FULLSCREEN, type ActionArgs, type AgentNode } from '@stanley/app-sdk'
 import type { Answer, DecisionClient, MultiChoiceResult, Question } from '@stanley/jev'
 import type { JSONValue } from 'ai'
 import { defaultConfig, type AgentConfig, type DeciderProfile } from './config'
@@ -28,6 +28,7 @@ import { anyUnsure, markUnsure, unmarked, type HeardWord } from './heard'
 import { jevMemory, MEMORY_PATH } from './memory'
 import { describeStep, named, namedOptions, narrate } from './narrate'
 import { navigates, stepOptions, type OptionSet, type Target } from './options'
+import { chooseScreen, describeScreen, sameSides, screenQuestions, layoutText, sidesKey, type ScreenAsk, type ScreenChoice, type Sides } from './screen'
 import { JEV_SKILLS, NO_SKILLS, skillBody, skillChanges, type Skill, type SkillScan } from './skills'
 import { createThinker, dictation, DICTATE_PROMPT, DONE_CHECK, EARLY_GUESS, fileOutput, instructions, longDate, PartialTurn, goAheadNote, unsureNote, writeNote, type ActCall, type FileOutput, type PageOutput, type SearchOutput, type Thinker, type ThinkResult } from './think'
 import { extendsWords, fullText, hasNewWords, letters, normalize, type TranscriptSnapshot } from './transcript'
@@ -252,6 +253,10 @@ export class Agent {
   private utteranceId = 0
   private stepCount = 0
   private abort?: AbortController
+  /** The call asking Jev what the screen shows when a task ends another way than a `done` tick. */
+  private screenAbort?: AbortController
+  /** This task laid the screen out itself (`arrange the screen`, Full screen): it stays as it is when the task ends. */
+  private arranged = false
   /** Set while the thinking model owns the turn; aborted when the user says more that stops it (see `whileWorking`). */
   private thinking?: AbortController
   /** What kind of thinking turn it is: a whole turn (`run`), or the one step that writes a field (`write`). */
@@ -450,6 +455,7 @@ export class Agent {
     if (this.taskOpen) return
     this.taskOpen = true
     this.taskUnsure = false
+    this.arranged = false
     this.history.stage({ kind: 'event', event: 'task-start' })
   }
 
@@ -519,6 +525,7 @@ export class Agent {
 
   cancel(): void {
     this.abort?.abort()
+    this.screenAbort?.abort()
     this.thinking?.abort()
     this.background?.cancelAll()
     clearTimeout(this.deliverTimer)
@@ -637,8 +644,24 @@ export class Agent {
    * The steps on offer on `screen`: up to `limit` elements, `pages` and `files`, then `skills`, the
    * apps and navigation. Thinking gets no `files` or `skills`: it has bash.
    */
-  private options(screen: Screen, limit: number, pages: KnownPage[] = [], files?: KnownFile[], skills: Skill[] = []): OptionSet {
-    return stepOptions(screen, this.world.appList(), limit, this.focus(), pages, !!this.world.lock, files, skills)
+  private options(screen: Screen, limit: number, pages: KnownPage[] = [], files?: KnownFile[], skills: Skill[] = [], arrange = false): OptionSet {
+    return stepOptions(screen, this.world.appList(), limit, this.focus(), pages, !!this.world.lock, files, skills, arrange)
+  }
+
+  /**
+   * What Jev is asked about the screen once Stanley has done what the user asked (see screen.ts),
+   * when the world lets it lay the screen out; null when it doesn't.
+   */
+  private screenAsk(screen: Screen): ScreenAsk | null {
+    const w = this.world
+    if (!w.arrange || !w.sides || !w.placeable) return null
+    return screenQuestions(w.placeable(), w.sides(), screen.id === 'home' ? null : (screen.id.split(':')[0] ?? null))
+  }
+
+  /** What is on the screen, as Jev reads it. */
+  private shownText(sides: Sides): string {
+    const titles = new Map([...(this.world.placeable?.() ?? []), ...this.world.appList()].map((a) => [a.id, a.title]))
+    return describeScreen(sides, (id) => titles.get(id) ?? id)
   }
 
   /** The skills in the user's folder, read from disk now. */
@@ -721,17 +744,18 @@ export class Agent {
       const screen = await this.world.screen()
       const skills = await this.scanSkills()
       await this.memoryReady
-      const options = this.options(screen, this.config.maxElements, this.pages(), await this.knownFiles(), this.unread(skills))
+      const ask = this.screenAsk(screen)
+      const options = this.options(screen, this.config.maxElements, this.pages(), await this.knownFiles(), this.unread(skills), !!ask)
       this.warmEffects(screen, options)
       const name = this.name()
-      const memory = this.sessionMemory?.trim() ? [jevMemory(this.sessionMemory)] : []
-      const prompt = [SYSTEM_PROMPT, ...(this.files ? [JEV_FILES] : []), ...(skills.skills.length ? [JEV_SKILLS] : []), ...memory].join('\n\n')
-      const state = `${named(prompt, name)}\n\nToday is ${longDate(this.clock())}.\n\n${narrate(this.view(), screen, this.live(), this.config.jevTurns, name)}`
+      const state = this.jevState(screen, ask, [...(this.files ? [JEV_FILES] : []), ...(skills.skills.length ? [JEV_SKILLS] : [])])
       const questions: Record<string, Question> = {
         next: { instructions: named(withNote(NEXT_INSTRUCTIONS, this.jevNotes?.next), name), options: namedOptions(NEXT, name) },
         step: { instructions: named(withNote(STEP_INSTRUCTIONS, this.jevNotes?.step), name), options: options.criteria },
         heard: { instructions: named(HEARD_INSTRUCTIONS, name), options: namedOptions(HEARD, name) },
         words: { instructions: named(WORDS_INSTRUCTIONS, name), options: namedOptions(WORDS, name) },
+        // What the screen shows when this is done: used by the tick that finishes the task, or arranges the screen.
+        ...(ask && { show: { instructions: named(ask.show.instructions, name), options: ask.show.options }, left: { instructions: named(ask.left.instructions, name), options: ask.left.options } }),
       }
       this.events.debug?.({
         type: 'tick-start',
@@ -766,7 +790,7 @@ export class Agent {
         if (heard !== null) this.heard = { seen, p: heard }
         this.scheduleEnd()
       }
-      effective = await this.handle(id, result, options, screen, seenEnded, stale, changed)
+      effective = await this.handle(id, result, options, screen, seenEnded, stale, changed, ask)
       this.events.debug?.({ type: 'tick-end', tickId: id, effective, ...(this.outcome ?? { outcome: 'executed' }) })
     } catch (err) {
       // A failed call or step must not leave the loop stuck in `thinking`/`acting`.
@@ -822,6 +846,8 @@ export class Agent {
     decidedEnded: boolean,
     stale: boolean,
     changed: () => boolean,
+    /** The screen questions this decision answered, if it was asked them. */
+    ask: ScreenAsk | null = null,
   ): Promise<string> {
     const c = this.config
     const next = d.answers.next!
@@ -844,13 +870,14 @@ export class Agent {
     const sureStep = mode === 'act' && step.confidence >= c.staleNavConfidence
     if (stale && mode === 'done') {
       // Done changes nothing, so new words can't make it wrong: it stands, quietly, and the new
-      // words get a decision of their own.
+      // words get a decision of their own. What it would have put on the screen may not stand.
       this.report(id, d, 'done', 'executed')
-      await this.finishTask('done')
+      await this.finishTask('done', { tickId: id, keep: 'new words arrived during the call' })
       return 'done'
     }
     if (stale) {
-      const confidentNav = sureStep && navigates(target)
+      // Not laying the screen out: what to show is the very thing new words can change.
+      const confidentNav = sureStep && navigates(target) && target.kind !== 'arrange'
       if (mode !== 'listen' && !confidentNav && !(sureStep && button && added())) {
         this.gate(id, 'stale', `new words arrived during the call; only a navigation or a button at ≥ ${c.staleNavConfidence} survives`)
         this.report(id, d, 'stale', 'stale-discarded')
@@ -902,7 +929,7 @@ export class Agent {
       } else if (!(mode === 'act' && field)) {
         this.report(id, d, mode === 'think' ? 'think' : option, 'gated')
         const what = mode === 'think' ? 'thinking' : `"${option}"`
-        return this.hold(id, 'thought', 'thought-open', `${what} waits until the user finishes the thought`, () => this.handle(id, d, options, screen, this.utteranceEnded, false, changed))
+        return this.hold(id, 'thought', 'thought-open', `${what} waits until the user finishes the thought`, () => this.handle(id, d, options, screen, this.utteranceEnded, false, changed, ask))
       }
     }
 
@@ -914,7 +941,7 @@ export class Agent {
         // Having only gone where they asked, there's nothing to check or say.
         if (this.onlyNavigated()) {
           this.gate(id, 'only-navigated', 'the user has finished and Stanley only went somewhere: done, quietly')
-          await this.finishTask('done')
+          await this.finishTask('done', { tickId: id, d, ask })
           return 'done'
         }
         this.gate(id, 'listen-ended', 'the user has finished, so thinking takes the turn')
@@ -945,7 +972,7 @@ export class Agent {
       // Hands-free, the user may not be looking: say back the words of theirs that went in.
       const echo = this.dictatedThisTask()
       if (echo) this.say(`Done: "${echo}"`)
-      await this.finishTask('done')
+      await this.finishTask('done', { tickId: id, d, ask })
       return 'done'
     }
 
@@ -981,6 +1008,8 @@ export class Agent {
       return 'stuck'
     }
 
+    if (target.kind === 'arrange') return this.arrangeStep(id, option, d, ask, decision, changed)
+
     if (target.kind === 'folder' || target.kind === 'file' || target.kind === 'skill') {
       this.report(id, d, option, 'executed')
       this.events.status?.('acting')
@@ -1002,7 +1031,7 @@ export class Agent {
     if (effect === 'commits') {
       if (!this.utteranceEnded) {
         this.report(id, d, option, 'gated')
-        return this.hold(id, 'turn', 'turn-open', `"${option}" commits, so it waits until the user's turn ends`, () => this.handle(id, d, options, screen, this.utteranceEnded, false, changed))
+        return this.hold(id, 'turn', 'turn-open', `"${option}" commits, so it waits until the user's turn ends`, () => this.handle(id, d, options, screen, this.utteranceEnded, false, changed, ask))
       }
       // What it would send holds the user's words, and speech recognition wasn't sure of some of
       // them: nothing that can't be taken back goes out until they have heard them.
@@ -1044,6 +1073,48 @@ export class Agent {
       this.events.debug?.({ type: 'act', tickId: args[0], option: args[1], summary: `failed: ${err instanceof Error ? err.message : String(err)}`, latencyMs: 0 })
       return null
     }
+  }
+
+  /**
+   * Jev chose to lay the screen out: its `show` and `left` answers from the same decision say how
+   * (see screen.ts). Unsure, thinking takes the turn: it can ask, though it can't lay the screen out.
+   * The screen must be as it was when Jev decided: the user may have changed it.
+   */
+  private async arrangeStep(id: number, option: string, d: MultiChoiceResult, ask: ScreenAsk | null, decision: DecisionMeta, changed: () => boolean): Promise<string> {
+    const c = this.config
+    const choice = ask && d.answers.show && d.answers.left ? chooseScreen(ask, { show: d.answers.show, left: d.answers.left }, c.screen.left) : null
+    const before = sidesKey(ask?.before ?? [])
+    if (!ask || !choice || choice.confidence < c.screen.show) {
+      this.events.debug?.({ type: 'screen', tickId: id, source: 'step', before, after: null, confidence: choice?.confidence, left: choice?.left, reason: 'unsure' })
+      this.report(id, d, 'think', 'gated')
+      this.gate(id, 'screen', `P(show) ${choice?.confidence.toFixed(2) ?? '—'} < screen.show ${c.screen.show} → think`)
+      return this.think(id, 'Jev chose to arrange the screen, but was unsure how')
+    }
+    if (changed() || !sameSides(this.world.sides!(), ask.before)) {
+      this.events.debug?.({ type: 'screen', tickId: id, source: 'step', before, after: null, confidence: choice.confidence, left: choice.left, reason: 'stale' })
+      this.gate(id, 'stale', 'new words, or the screen changed, since Jev decided how to arrange it')
+      this.report(id, d, 'stale', 'stale-discarded')
+      return 'stale'
+    }
+    this.report(id, d, option, 'executed')
+    this.events.status?.('acting')
+    this.events.debug?.({ type: 'screen', tickId: id, source: 'step', before, after: sidesKey(choice.sides), confidence: choice.confidence, left: choice.left })
+    const done = await this.attempt(id, option, { kind: 'arrange', sides: choice.sides, shown: this.shownText(choice.sides) }, {}, 'jev', { jev: true }, decision)
+    if (done) this.arranged = true
+    this.request('action')
+    return option
+  }
+
+  /**
+   * What Jev reads: the prompt (with `extra` sections, and what the user asked it to remember),
+   * today, the screen's layout when Stanley lays it out, and the conversation with the screen.
+   */
+  private jevState(screen: Screen, ask: ScreenAsk | null, extra: string[] = []): string {
+    const name = this.name()
+    const memory = this.sessionMemory?.trim() ? [jevMemory(this.sessionMemory)] : []
+    const prompt = [SYSTEM_PROMPT, ...extra, ...memory].join('\n\n')
+    const shown = ask ? [named(layoutText(this.shownText(ask.before)), name)] : []
+    return [named(prompt, name), `Today is ${longDate(this.clock())}.`, ...shown, narrate(this.view(), screen, this.live(), this.config.jevTurns, name)].join('\n\n')
   }
 
   /**
@@ -1292,6 +1363,7 @@ export class Agent {
       if (target.kind === 'app') result = await this.world.open(target.app.id)
       else if (target.kind === 'element') result = await this.world.perform(target.node, args)
       else if (target.kind === 'page') result = await this.world.openUrl!(target.url)
+      else if (target.kind === 'arrange') result = await this.world.arrange!(target.sides ?? [])
       else if (target.kind === 'folder' || target.kind === 'file' || target.kind === 'skill') throw new Error('Files are looked at in the background, not opened')
       else if (target.kind === 'lock') {
         // The session ends with it: this agent is cancelled, and what it reports from here is ignored.
@@ -1299,6 +1371,11 @@ export class Agent {
         result = { summary: 'Locked the computer' }
       } else {
         await this.world.global(target.kind)
+        // The home screen shows no app: going there lays the screen out, as the user asked.
+        if (target.kind === 'home' && this.world.arrange) {
+          await this.world.arrange([])
+          this.arranged = true
+        }
         result = { summary: target.kind === 'back' ? 'Went back' : 'Went to the home screen' }
       }
     } catch (err) {
@@ -1308,6 +1385,8 @@ export class Agent {
     // A page is recorded under the title it opened with, which the address alone doesn't give.
     if (meta.target.kind === 'page' && result.title) meta.target = { ...meta.target, title: result.title }
     save({ ...meta, summary: result.summary, observation: result.observation })
+    // Full screen lays the screen out as surely as arranging it: the end of the task leaves it.
+    if (target.kind === 'element' && target.node.id.endsWith(FULLSCREEN)) this.arranged = true
     const nodeId = target.kind === 'element' ? target.node.id : undefined
     this.events.debug?.({ type: 'act', tickId, option, nodeId, args, ...result, latencyMs: performance.now() - started })
     return result
@@ -1796,11 +1875,67 @@ export class Agent {
 
   // ── Helpers ─────────────────────────────────────────────────────────────
 
-  private async finishTask(status: AgentStatus): Promise<void> {
-    await this.world.global('show')
+  /**
+   * Ends the task, and lays the screen out for what it did. `end` carries the decision that
+   * finished it, whose screen answers saw it done; without one, Jev is asked (see `settleScreen`).
+   */
+  private async finishTask(status: AgentStatus, end: ScreenEnd = {}): Promise<void> {
+    await this.settleScreen(end)
     if (this.taskOpen) this.history.stage({ kind: 'event', event: 'task-end' })
     this.taskOpen = false
     this.halt(status)
+  }
+
+  /**
+   * What the screen shows once a task ends. Without a world that lays it out, the app Stanley
+   * worked on, as always. A task that laid it out itself leaves it; so does a decision new words
+   * made stale (`keep`). Otherwise Jev's answers say (the finishing tick's, or a call of its own),
+   * when they are fresh and sure; unsure, the screen stays as it is. If Jev can't be asked, the app
+   * Stanley worked on is shown, as always. Nothing here holds up the end of the task.
+   */
+  private async settleScreen(end: ScreenEnd): Promise<void> {
+    const w = this.world
+    if (!w.arrange || !w.sides) return w.global('show')
+    const tickId = end.tickId ?? this.tickId
+    const before = sidesKey(w.sides())
+    const leave = (reason: string, choice?: ScreenChoice) => this.events.debug?.({ type: 'screen', tickId, source: end.d ? 'done' : 'asked', before, after: null, confidence: choice?.confidence, left: choice?.left, reason })
+    if (this.arranged) return leave('the task laid the screen out itself')
+    if (end.keep) return leave(end.keep)
+    const shown = async () => {
+      if (!(await w.screen()).visible) await w.global('show')
+    }
+    try {
+      const started = performance.now()
+      const seen = structuredClone(this.transcript)
+      const asked = end.d?.answers.show && end.d.answers.left && end.ask ? { ask: end.ask, show: end.d.answers.show, left: end.d.answers.left } : await this.askScreen()
+      if (!asked) return shown()
+      const choice = chooseScreen(asked.ask, asked, this.config.screen.left)
+      const latencyMs = end.d ? undefined : performance.now() - started
+      if (!sameSides(w.sides(), asked.ask.before) || hasNewWords(this.transcript, seen)) return leave('the screen or the words changed since Jev decided', choice)
+      if (choice.confidence < this.config.screen.show) return leave(`unsure: P(show) ${choice.confidence.toFixed(2)} < screen.show ${this.config.screen.show}`, choice)
+      this.events.debug?.({ type: 'screen', tickId, source: end.d ? 'done' : 'asked', before, after: sidesKey(choice.sides), confidence: choice.confidence, left: choice.left, latencyMs })
+      if (!sameSides(choice.sides, asked.ask.before)) await w.arrange(choice.sides)
+    } catch (err) {
+      // Cancelled with the agent (the session ended): nothing more to show.
+      if (this.screenAbort?.signal.aborted) return
+      leave(`failed: ${err instanceof Error ? err.message : String(err)}`)
+      await shown().catch(() => {})
+    }
+  }
+
+  /** Jev's screen answers on their own, for a task that ended without a decision that asked them. */
+  private async askScreen(): Promise<{ ask: ScreenAsk; show: Answer; left: Answer } | null> {
+    const screen = await this.world.screen()
+    const ask = this.screenAsk(screen)
+    if (!ask) return null
+    const name = this.name()
+    this.screenAbort = new AbortController()
+    const { answers } = await this.jev.decide({
+      state: this.jevState(screen, ask),
+      questions: { show: { instructions: named(ask.show.instructions, name), options: ask.show.options }, left: { instructions: named(ask.left.instructions, name), options: ask.left.options } },
+      signal: this.screenAbort.signal,
+    })
+    return { ask, show: answers.show!, left: answers.left! }
   }
 
   /** The user is mid-sentence: words are still being decoded and no pause has finalized them. */
@@ -2044,6 +2179,16 @@ function dictatedOf(d: MultiChoiceResult): number | null {
   return words.probabilities.user ?? (words.choice === 'user' ? words.confidence : 1 - words.confidence)
 }
 
+/** How a task ended, for what the screen shows then (see `settleScreen`). */
+interface ScreenEnd {
+  tickId?: number
+  /** The decision that finished it, and the screen questions it answered. */
+  d?: MultiChoiceResult
+  ask?: ScreenAsk | null
+  /** Leave the screen as it is, and why. */
+  keep?: string
+}
+
 /** P(finished) from Jev's `heard` answer, or null when the decision didn't include it. */
 function heardOf(d: MultiChoiceResult): number | null {
   const heard = d.answers.heard
@@ -2056,6 +2201,7 @@ export function stepTarget(option: string, target: Target): StepTarget {
   if (target.kind === 'app') return { kind: 'app', appId: target.app.id, title: target.app.title }
   if (target.kind === 'element') return { kind: 'element', name: option, role: target.role, nodeKind: target.node.kind, nodeId: target.node.id }
   if (target.kind === 'page') return { kind: 'page', url: target.url, title: target.title }
+  if (target.kind === 'arrange') return { kind: 'arrange', shown: target.shown ?? '' }
   if (target.kind === 'folder' || target.kind === 'file' || target.kind === 'skill') throw new Error('Files are looked at in the background, not opened')
   return { kind: target.kind }
 }

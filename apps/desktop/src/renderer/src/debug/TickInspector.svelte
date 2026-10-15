@@ -96,6 +96,18 @@
     </ul>
   {/if}
 
+  {#if tick.screens.length}
+    <h2 class={h2}>The screen</h2>
+    <ul class={list}>
+      {#each tick.screens as sc, i (i)}
+        <li>
+          <strong>{sc.source}</strong>: {sc.before || 'home'} → {sc.after === null ? `left as it was (${sc.reason})` : sc.after || 'home'}
+          <span class="text-muted-foreground">{sc.confidence === undefined ? '' : `· show ${(sc.confidence * 100).toFixed(0)}%`}{sc.left == null ? '' : ` · left ${(sc.left * 100).toFixed(0)}%`}{sc.latencyMs === undefined ? '' : ` · ${ms(sc.latencyMs)}`}</span>
+        </li>
+      {/each}
+    </ul>
+  {/if}
+
   {#if tick.acts.length}
     <h2 class={h2}>Steps</h2>
     {#each tick.acts as act, i (i)}

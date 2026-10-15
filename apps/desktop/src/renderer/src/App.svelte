@@ -10,6 +10,7 @@
   import StatusBar from './StatusBar.svelte'
   import { ONSET_HOLD_MS, voiceMayStart } from './duck'
   import { dbfs, loudness, mic, voiceOut } from './presence'
+  import { screenGrid, windowPlace } from './screen'
   import { backgrounds, kept, surfaces } from './surfaces'
   import { setTheme } from './theme.svelte'
   import { startVoice } from './voice'
@@ -72,12 +73,14 @@
    */
   const appVolume = $derived(snapshot?.talking || voiceOnset || snapshot?.speaking || snapshot?.utteranceOpen ? 0.25 : 1)
 
-  const visible = $derived(snapshot?.layout.visible ?? null)
-  /** The visible app fills the screen, over the status bar but under the captions. */
+  /** The apps on the screen, left to right (see screen.ts). */
+  const sides = $derived(snapshot?.layout.sides ?? [])
+  const shown = $derived(sides.flat())
+  /** The one app shown fills the screen, over the status bar but under the captions. */
   const fullscreen = $derived(!!snapshot?.layout.fullscreen)
 
   function leaveFullscreen(e: KeyboardEvent) {
-    if (e.key === 'Escape' && fullscreen && visible && !locked) window.stanley.perform(visible, FULLSCREEN)
+    if (e.key === 'Escape' && fullscreen && shown.length === 1 && !locked) window.stanley.perform(shown[0]!, FULLSCREEN)
   }
   /** Main owns it (see `lock` there); locked until the first snapshot says otherwise. */
   const locked = $derived(snapshot?.locked ?? true)
@@ -97,17 +100,18 @@
   style="--bar-height: 80px; --caption-height: 48px; --window-max-width: calc(100vw - 64px); --window-max-height: calc(100vh - var(--bar-height) - var(--caption-height) - 64px)"
   inert={locked}
 >
-  {#if snapshot}<Presence {snapshot} docked={!!visible && !locked} captions={!locked} />{/if}
+  {#if snapshot}<Presence {snapshot} docked={shown.length > 0 && !locked} captions={!locked} />{/if}
   <StatusBar {snapshot} onlock={() => window.stanley.lock()} />
 
-  <main class={['relative overflow-auto pb-(--caption-height) transition-opacity duration-250 has-[>div]:grid has-[>div]:place-items-center has-[>div]:overflow-hidden', locked && 'opacity-0']}>
+  <main class={['relative overflow-auto pb-(--caption-height) transition-opacity duration-250 has-[>div]:grid has-[>div]:place-items-center has-[>div]:overflow-hidden', screenGrid(sides), locked && 'opacity-0']}>
     {#if snapshot}
       <!-- Keyed on the app, so switching plays the old window's outro while the new one pops in over it. -->
-      <!-- Windows share one cell, so an outgoing one sinks behind the incoming one instead of pushing it aside; Svelte marks it inert. -->
-      {#each visible && surfaces[visible] && !kept.has(visible) ? [visible] : [] as id (id)}
+      <!-- One app alone shares one cell with the one leaving, so it sinks behind the incoming one instead of pushing it aside; Svelte marks it inert. Side by side, each window has a cell of its own. -->
+      {#each shown.filter((id) => surfaces[id] && !kept.has(id)) as id (id)}
         {@const Surface = surfaces[id]}
         <div
-          class={[appWindow, 'col-start-1 row-start-1 inert:z-0', fullscreen ? 'z-4' : 'z-1']}
+          class={[appWindow, sides.length < 2 && 'col-start-1 row-start-1', 'inert:z-0', fullscreen ? 'z-4' : 'z-1']}
+          style={windowPlace(sides, id)}
           data-fullscreen={fullscreen || undefined}
           in:scale={{ start: 0.85, duration: 340, easing: cubicOut }}
           out:scale={{ start: 0.88, duration: 260, easing: cubicIn }}
@@ -115,14 +119,16 @@
           <Surface data={snapshot.surfaces[id]} perform={(nodeId: string, args?: { text?: string }) => window.stanley.perform(id, nodeId, args)} agentName={snapshot.name} {fullscreen} />
         </div>
       {/each}
-      <!-- A kept window is never taken out: hidden, it stays laid out at full size, out of sight and out of reach, and pops in and out the same way. -->
+      <!-- A kept window is never taken out: hidden, it stays laid out at full size, out of sight, out of reach and out of the grid, and pops in and out the same way. -->
       {#each [...kept].filter((id) => snapshot!.surfaces[id] !== undefined) as id (id)}
         {@const Surface = surfaces[id]}
-        {@const full = visible === id && fullscreen}
+        {@const on = shown.includes(id)}
+        {@const full = on && fullscreen}
         <div
-          class={[appWindow, 'col-start-1 row-start-1 transition-all', visible === id ? ['duration-340 ease-out', full ? 'z-4' : 'z-1'] : 'invisible z-0 scale-88 opacity-0 duration-260 ease-in']}
+          class={[appWindow, 'transition-all', on ? [sides.length < 2 && 'col-start-1 row-start-1', 'duration-340 ease-out', full ? 'z-4' : 'z-1'] : 'invisible absolute z-0 scale-88 opacity-0 duration-260 ease-in']}
+          style={on ? windowPlace(sides, id) : ''}
           data-fullscreen={full || undefined}
-          inert={visible !== id}
+          inert={!on}
         >
           <Surface data={snapshot.surfaces[id]} perform={(nodeId: string, args?: { text?: string }) => window.stanley.perform(id, nodeId, args)} agentName={snapshot.name} fullscreen={full} />
         </div>

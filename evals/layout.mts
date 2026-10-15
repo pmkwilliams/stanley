@@ -13,11 +13,11 @@
  *
  * Paid: one Jev call per case, three or so with --check.
  */
-import { longDate, SYSTEM_PROMPT } from '@stanley/agent'
+import { chooseScreen, defaultConfig, describeScreen, JEV_SCREEN, layoutText, longDate, screenQuestions, sidesKey, SYSTEM_PROMPT, type Sides } from '@stanley/agent'
 import { experimental_decide } from 'ai'
 import { cases, type LayoutCase } from './layout/cases.mts'
 import { APPS, markdown, screens, states } from './layout/scene.mts'
-import { flag, loadEnv, median, pool, select, usage } from './harness.mts'
+import { flag, loadEnv, median, overrides, pool, select, usage } from './harness.mts'
 
 const selected = select(cases, (c) => c.name, 'pnpm eval:layout')
 if (!selected) process.exit(0)
@@ -29,33 +29,30 @@ const check = process.argv.includes('--check')
 const modelAt = process.argv.indexOf('--model')
 const model = modelAt !== -1 ? process.argv[modelAt + 1]! : image ? 'typesafe-ai/jev-1.14.0' : 'typesafe-ai/jev'
 const runs = flag('runs', 1)
+const config = overrides(defaultConfig)
 const verbose = process.argv.includes('--verbose')
 const shots = image ? await screens() : null
 
 const title = (id: string) => APPS[id]!.title
 
-const SCREEN_PROMPT = `## The user's screen
-Up to three apps fit on the screen at once: one alone fills it, two sit side by side, and with three, two are stacked on one side. When Stanley has done what the user asked, the screen shows what they asked to see, what they are in the middle of, and what Stanley did that they would want to look at. Work they don't need to see stays in the background.`
-
-/** `email | tasks + weather` → sides of app ids; `null` (home) → none. */
-const parse = (arrangement: string | null): string[][] => (arrangement ? arrangement.split('|').map((side) => side.split('+').map((a) => a.trim())) : [])
+/** `email | tasks + weather` → sides of app ids; `null` or `home` → none. */
+const parse = (arrangement: string | null): string[][] => (arrangement && arrangement !== 'home' ? arrangement.split('|').map((side) => side.split('+').map((a) => a.trim())) : [])
 
 /** Sides compared with stacking order left out. */
-const key = (sides: string[][]) => sides.map((s) => [...s].sort().join(' + ')).join(' | ')
+const key = (sides: string[][]) => sidesKey(sides.map((s) => [...s].sort()))
 
-function describe(sides: string[][]): string {
-  if (!sides.length) return 'The home screen, listing the apps.'
-  if (sides.length === 1) return `${title(sides[0]![0]!)}, filling the screen.`
-  const at = (side: string[], where: string) => (side.length === 1 ? [`${title(side[0]!)} (${where})`] : side.map((a, i) => `${title(a)} (${i ? 'bottom' : 'top'} ${where})`))
-  return `${[...at(sides[0]!, 'left'), ...at(sides[1]!, 'right')].join(', ')}.`
-}
+const describe = (sides: Sides) => describeScreen(sides, title)
 
-/** What Jev reads: the prompt, what is on the screen (unless `--no-line`), the conversation, and the screen Stanley worked on. */
+/**
+ * What Jev reads, as the agent writes it (`jevState`): the prompt, today, how the screen works and
+ * what is on it (unless `--no-line`), then the conversation and the screen Stanley worked on.
+ */
 function state(c: LayoutCase, all: Record<string, unknown>, after?: { sides: string[][]; picture: boolean }): string {
-  const lines = [SYSTEM_PROMPT, `Today is ${longDate(new Date('2026-10-15T12:00:00'))}.`, SCREEN_PROMPT]
-  if (after || line) lines.push(`${after ? 'Before, on the screen' : 'Now on the screen'}: ${describe(parse(c.on))}${!after && image ? ' A picture of it follows.' : ''}`)
-  else if (image) lines.push('A picture of the screen as it is now follows.')
-  lines.push('## Conversation', ...c.conversation)
+  const lines = [SYSTEM_PROMPT, '', `Today is ${longDate(new Date('2026-10-15T12:00:00'))}.`, '']
+  if (after) lines.push(layoutText(describe(parse(c.on))).replace('Now on the screen', 'Before, on the screen'))
+  else if (line) lines.push(`${layoutText(describe(parse(c.on)))}${image ? ' A picture of it follows.' : ''}`)
+  else lines.push(`${JEV_SCREEN}${image ? '\nA picture of the screen as it is now follows.' : ''}`)
+  lines.push('', '## Conversation', ...c.conversation)
   if (c.worked) {
     const shown = parse(c.on).flat().includes(c.worked)
     lines.push('', `## Screen: ${title(c.worked)} (${shown ? 'in front of the user' : "in the background, the user can't see it"})`, markdown(c.worked, all[c.worked]))
@@ -82,46 +79,26 @@ async function decide(text: string, picture: Buffer | undefined, questions: Ques
   return Object.fromEntries(Object.entries(r.answers).map(([id, a]) => [id, (a as { probabilities: Record<string, number> }).probabilities]))
 }
 
-/** Every set of one to three apps. */
-function sets(ids: string[]): string[][] {
-  const out: string[][] = []
-  const walk = (from: number, chosen: string[]) => {
-    if (chosen.length) out.push(chosen)
-    if (chosen.length === 3) return
-    for (let i = from; i < ids.length; i++) walk(i + 1, [...chosen, ids[i]!])
-  }
-  walk(0, [])
-  return out
-}
-
-/** Named as a person would: "Email", "Email and Tasks", "Email, Tasks and Weather". */
-const names = (set: string[]) => {
-  const t = set.map(title)
-  return t.length === 1 ? t[0]! : `${t.slice(0, -1).join(', ')} and ${t.at(-1)}`
-}
-
 const top = (p: Record<string, number>) => Object.entries(p).sort(([, a], [, b]) => b - a).slice(0, 3).map(([k, v]) => `${k} ${v.toFixed(2)}`).join(', ')
 
+const entries = Object.entries(APPS).map(([id, app]) => ({ id, title: app.title, description: app.description }))
+
+/**
+ * The agent's questions and choice (screen.ts), and what it does when unsure: the screen stays as it is.
+ */
 async function arrange(c: LayoutCase): Promise<{ sides: string[][]; detail: string[] }> {
   const all = await states(c.steps)
   const picture = shots ? await shots.shoot(parse(c.on), all) : undefined
-  const every = sets(Object.keys(APPS))
-  const show = Object.fromEntries(every.map((set) => [names(set), set.length === 1 ? `${names(set)} fills the screen on its own` : `${names(set)} side by side`]))
-  const left = Object.fromEntries(every.filter((set) => set.length <= 2).map((set) => [names(set), `${names(set)} on the left`]))
-  const p = await decide(state(c, all), picture, {
-    show: { instructions: 'When Stanley has done what the user asked, which apps are on the screen?', options: show },
-    left: { instructions: 'When Stanley has done what the user asked, which apps are on the left side of the screen? (Ignored when one app fills it.)', options: left },
-  })
-  const visible = every.reduce((a, b) => ((p.show![names(b)] ?? 0) > (p.show![names(a)] ?? 0) ? b : a))
-  let sides = [visible]
-  if (visible.length > 1) {
-    // The likeliest left side these apps can make: at least one app on each side, at most two.
-    const pl = (set: string[]) => p.left![names(set)] ?? 0
-    const fits = every.filter((l) => l.every((a) => visible.includes(a)) && l.length < visible.length && visible.length - l.length <= 2 && l.length <= 2)
-    const best = fits.sort((a, b) => pl(b) - pl(a))[0]!
-    sides = [best, visible.filter((a) => !best.includes(a))]
+  const before = parse(c.on)
+  const ask = screenQuestions(entries, before, c.worked ?? null)
+  const p = await decide(state(c, all), picture, { show: ask.show, left: ask.left })
+  const answer = (probabilities: Record<string, number>) => {
+    const [choice, confidence] = Object.entries(probabilities).sort(([, a], [, b]) => b - a)[0]!
+    return { choice, confidence, probabilities }
   }
-  return { sides, detail: [`show: ${top(p.show!)}`, `left: ${top(p.left!)}`] }
+  const choice = chooseScreen(ask, { show: answer(p.show!), left: answer(p.left!) }, config.screen.left)
+  const sure = choice.confidence >= config.screen.show
+  return { sides: sure ? choice.sides : before, detail: [`show: ${top(p.show!)}`, `left: ${top(p.left!)}`, ...(sure ? [] : [`unsure (P(show) ${choice.confidence.toFixed(2)}): the screen stays as it is`])] }
 }
 
 /** The arrangements a check is tried on: the right one, and the likely wrong ones (the screen left as it was, the app worked on alone, the sides swapped). */

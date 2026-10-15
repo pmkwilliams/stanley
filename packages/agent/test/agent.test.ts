@@ -11,6 +11,7 @@ import type { Effect } from '../src/effects'
 import { topFiles, type FileTools } from '../src/files'
 import type { SkillScan } from '../src/skills'
 import { DONE_CHECK, scriptedTurn, type FileOutput, type ThinkRequest, type Thinker, type ThinkResult } from '../src/think'
+import { sidesKey, type Sides } from '../src/screen'
 import type { WebTools } from '../src/web'
 import type { World } from '../src/world'
 
@@ -21,10 +22,12 @@ const elements: AgentNode[] = [
   { id: 'tasks:delete', kind: 'action', label: 'Delete' },
 ]
 
-function fakeWorld(opts: { screenChanges?: boolean; failOn?: string; titles?: Record<string, string> } = {}) {
+function fakeWorld(opts: { screenChanges?: boolean; failOn?: string; titles?: Record<string, string>; sides?: Sides } = {}) {
   const performed: string[] = []
+  // With `sides`, the world lays the screen out, starting with them: Tasks is in view only when on it.
+  let sides = opts.sides
   const world: World = {
-    screen: async () => ({ id: 'tasks:list', title: 'Tasks', visible: true, markdown: opts.screenChanges ? `${performed.length} done` : '# Tasks', elements }),
+    screen: async () => ({ id: 'tasks:list', title: 'Tasks', visible: sides ? sides.flat().includes('tasks') : true, markdown: opts.screenChanges ? `${performed.length} done` : '# Tasks', elements }),
     appList: () => [
       { id: 'tasks', title: 'Tasks', description: 'tasks' },
       { id: 'email', title: 'Email', description: 'mail' },
@@ -44,6 +47,19 @@ function fakeWorld(opts: { screenChanges?: boolean; failOn?: string; titles?: Re
       return { summary: `Opened ${url}`, title: opts.titles?.[url] }
     },
     fileUrl: (path) => (/\.(html|pdf)$/.test(path) && !path.startsWith('missing') ? `stanley://files/${path.replace(/^~\/Wren\//, '')}` : undefined),
+    ...(sides && {
+      sides: () => sides!,
+      placeable: () => world.appList(),
+      arrange: async (next: Sides) => {
+        performed.push(`arrange ${sidesKey(next)}`)
+        sides = next
+        return { summary: `Now on the screen: ${sidesKey(next)}` }
+      },
+      global: async (option: 'show' | 'home' | 'back') => {
+        performed.push(option)
+        if (option === 'show') sides = [['tasks']]
+      },
+    }),
   }
   return { world, performed }
 }
@@ -57,6 +73,10 @@ interface Pick {
   heard?: number
   /** P(the user said the words for a field themselves); without it, Jev doesn't answer `words`. */
   dictated?: number
+  /** The screen's answers, when asked: the apps on it (`show`), which are on the left, and P(show). */
+  show?: string
+  left?: string
+  showConfidence?: number
 }
 type Script = (req: DecideRequest, call: number) => Pick | Promise<Pick>
 
@@ -70,10 +90,20 @@ function scripted(script: Script, effect: Effect = 'changes', working: Working =
     consentCalls: 0,
     heardWhileWorking: [] as string[],
     async decide(req: DecideRequest): Promise<MultiChoiceResult> {
-      const { next, step = 'home screen', nextConfidence = 0.9, stepConfidence = 0.9, heard = 0.9, dictated } = await script(req, client.calls++)
+      const { next, step = 'home screen', nextConfidence = 0.9, stepConfidence = 0.9, heard = 0.9, dictated, show, left, showConfidence = 0.9 } = await script(req, client.calls++)
+      const screen = req.questions.show && show
+        ? {
+            show: { choice: show, confidence: showConfidence, probabilities: { [show]: showConfidence } },
+            left: { choice: left ?? show, confidence: 0.9, probabilities: { [left ?? show]: 0.9 } },
+          }
+        : {}
+      if (req.questions.show && show && !(show in req.questions.show.options)) throw new Error(`"${show}" not in show's options`)
+      // Asked about the screen alone, when a task ended without a decision that was.
+      if (!req.questions.step) return { answers: screen, latencyMs: 1 }
       if (!(step in req.questions.step!.options)) throw new Error(`"${step}" not in options: ${Object.keys(req.questions.step!.options).join(', ')}`)
       return {
         answers: {
+          ...screen,
           next: { choice: next, confidence: nextConfidence, probabilities: { [next]: nextConfidence } },
           step: { choice: step, confidence: stepConfidence, probabilities: { [step]: stepConfidence } },
           heard: { choice: heard >= 0.5 ? 'finished' : 'more', confidence: Math.max(heard, 1 - heard), probabilities: { finished: heard, more: 1 - heard } },
@@ -2223,5 +2253,116 @@ describe('Agent background tasks', () => {
     await ask(agent, 'look into something')
     expect(thinker.runs[0]!.delegate).toBeUndefined()
     expect(thinker.runs[0]!.instructions).not.toContain('## Background tasks')
+  })
+})
+
+describe('Agent screen layout', () => {
+  it('lays the screen out as the decision that finished the task says', async () => {
+    const { agent, performed, debug } = setup(plan({ next: 'act', step: 'open Tasks' }, { next: 'done', show: 'Tasks and Email', left: 'Email' }), { world: { sides: [['email']] } })
+    agent.utteranceStart()
+    spoke(agent, 'show me my inbox and my tasks')
+    await settle()
+    expect(performed).toEqual(['open tasks', 'arrange email | tasks'])
+    expect(debug.find((e) => e.type === 'screen')).toMatchObject({ source: 'done', before: 'email', after: 'email | tasks' })
+  })
+
+  it('asks what is on the screen in every decision, with the screen as it is', async () => {
+    const { agent, jev } = setup(plan({ next: 'done', show: 'Email' }), { world: { sides: [['email'], ['tasks']] } })
+    const states: string[] = []
+    const decide = jev.decide.bind(jev)
+    jev.decide = async (req) => (states.push(req.state), decide(req))
+    agent.utteranceStart()
+    spoke(agent, 'just the inbox')
+    await settle()
+    expect(states[0]).toMatch(/## The user's screen\n.*\nNow on the screen: Email \(left\), Tasks \(right\)\.\n\n## Conversation/)
+  })
+
+  it('arranges the screen as a step, which the conversation records, and leaves it so when the task ends', async () => {
+    const { agent, jev, performed } = setup(plan({ next: 'act', step: 'arrange the screen', show: 'Tasks and Email', left: 'Tasks' }, { next: 'done', show: 'Email' }), { world: { sides: [['email'], ['tasks']] } })
+    const states: string[] = []
+    const decide = jev.decide.bind(jev)
+    jev.decide = async (req) => (states.push(req.state), decide(req))
+    agent.utteranceStart()
+    spoke(agent, 'swap them round')
+    await settle()
+    expect(performed).toEqual(['arrange tasks | email'])
+    expect(states[1]).toContain('arranged the screen: Tasks (left), Email (right).')
+  })
+
+  it('hands an unsure arrangement to thinking, which can ask', async () => {
+    const { agent, performed, thinker, debug } = setup(plan({ next: 'act', step: 'arrange the screen', show: 'Email', showConfidence: 0.2 }), { world: { sides: [['email'], ['tasks']] } })
+    agent.utteranceStart()
+    spoke(agent, 'put that one over there')
+    await settle()
+    expect(performed.filter((p) => p.startsWith('arrange'))).toEqual([])
+    expect(thinker.runs).toHaveLength(1)
+    expect(debug.some((e) => e.type === 'gate' && e.rule === 'screen')).toBe(true)
+  })
+
+  it("doesn't offer thinking the screen to arrange: it is Jev's", async () => {
+    const { agent, thinker } = setup(plan({ next: 'think' }), { world: { sides: [['email']] } })
+    agent.utteranceStart()
+    spoke(agent, 'what can you do')
+    await settle()
+    expect(JSON.stringify(thinker.runs[0]!.messages)).not.toContain('arrange the screen')
+  })
+
+  it('leaves the screen as it is when unsure what it should show', async () => {
+    const { agent, performed, debug } = setup(plan({ next: 'act', step: 'Sort' }, { next: 'done', show: 'Tasks', showConfidence: 0.2 }), { world: { sides: [['email']] } })
+    agent.utteranceStart()
+    spoke(agent, 'sort my tasks')
+    await settle()
+    expect(performed).toEqual(['tasks:sort'])
+    expect(debug.find((e) => e.type === 'screen')).toMatchObject({ after: null, reason: expect.stringMatching(/^unsure/) })
+  })
+
+  it('leaves the screen when it shows nothing new: the app worked on is already on it', async () => {
+    const { agent, performed } = setup(plan({ next: 'act', step: 'Sort' }, { next: 'done', show: 'Email and Tasks', left: 'Email' }), { world: { sides: [['email'], ['tasks']] } })
+    agent.utteranceStart()
+    spoke(agent, 'sort my tasks')
+    await settle()
+    expect(performed).toEqual(['tasks:sort'])
+  })
+
+  it('asks Jev on its own what the screen shows when thinking ended the task', async () => {
+    const { agent, jev, performed } = setup((req, i) => (!req.questions.step ? { next: 'done', show: 'Tasks' } : i === 0 ? { next: 'think' } : { next: 'done' }), { world: { sides: [['email']] }, thinker: { run: async () => ({ text: 'You have two tasks.' }) } })
+    const asked: string[][] = []
+    const decide = jev.decide.bind(jev)
+    jev.decide = async (req) => (asked.push(Object.keys(req.questions)), decide(req))
+    agent.utteranceStart()
+    spoke(agent, 'how many tasks do I have')
+    await settle()
+    expect(asked.at(-1)).toEqual(['show', 'left'])
+    expect(performed).toEqual(['arrange tasks'])
+  })
+
+  it('shows the home screen as soon as it goes there, and leaves it so', async () => {
+    const { agent, performed } = setup(plan({ next: 'act', step: 'home screen' }, { next: 'done', show: 'Email' }), { world: { sides: [['email'], ['tasks']] } })
+    agent.utteranceStart()
+    spoke(agent, 'go to the home screen')
+    await settle()
+    expect(performed).toEqual(['home', 'arrange '])
+  })
+
+  it('leaves the screen when new words came while the decision that finished the task was made', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((r) => (release = r))
+    const { agent, performed } = setup(
+      async (_, i) => {
+        if (i === 0) {
+          await gate
+          return { next: 'done', nextConfidence: 0.3, show: 'Tasks' }
+        }
+        return { next: 'listen' }
+      },
+      { world: { sides: [['email']] } },
+    )
+    agent.utteranceStart()
+    agent.segment('show my tasks')
+    await settle()
+    agent.segment('actually leave it')
+    release()
+    await settle()
+    expect(performed).toEqual([])
   })
 })

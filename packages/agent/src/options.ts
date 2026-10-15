@@ -1,5 +1,6 @@
 import type { AgentNode } from '@stanley/app-sdk'
 import type { KnownFile } from './files'
+import type { Sides } from './screen'
 import type { Skill } from './skills'
 import { domainOf, sameUrl, type KnownPage } from './web'
 import type { AppEntry, Screen } from './world'
@@ -17,6 +18,8 @@ export type Target =
   | { kind: 'file'; path: string }
   /** Read in the background, so what it says to do is in the conversation. */
   | { kind: 'skill'; skill: Skill }
+  /** The screen laid out as Jev's `show` and `left` answers say (see screen.ts): Jev's alone. Offered without `sides`; run with them. */
+  | { kind: 'arrange'; sides?: Sides; shown?: string }
 
 export interface OptionSet {
   /** Option name → description, sent to Jev as one question's options. */
@@ -29,6 +32,7 @@ export const NAVIGATION = {
   home: 'Go to the home screen, which lists the apps.',
   lock: 'Lock the computer: go to the lock screen.',
   files: "List the user's files, in the background.",
+  arrange: 'Change which apps are on the screen, or where they are, as the user asked: show, hide, swap or put apps side by side.',
 } as const
 
 export function roleOf(node: AgentNode): string {
@@ -106,12 +110,12 @@ export function findElement(screen: Screen, nodeId: string): { node: AgentNode; 
 /**
  * What Stanley can do next: the screen's elements in screen order, the pages it found or read on
  * the web and the files it has seen (up to `limit` together, see `pick`), the user's `skills`, the
- * apps, back / home (and lock, when `lock`), and listing the user's files (when there are `files`). A file the screen
- * can show can also be opened; the one on screen isn't offered. Names are unique;
- * a clash gets a counter. `focus` is what the user is asking for, used to choose when there are too
+ * apps, back / home (and lock, when `lock`), listing the user's files (when there are `files`), and
+ * laying the screen out (when `arrange`). A file the screen can show can also be opened; the one on
+ * screen isn't offered. Names are unique; a clash gets a counter. `focus` is what the user is asking for, used to choose when there are too
  * many. The page already on screen isn't offered: opening it again does nothing.
  */
-export function stepOptions(screen: Screen, apps: AppEntry[], limit: number, focus = '', pages: KnownPage[] = [], lock = false, files?: KnownFile[], skills: Skill[] = []): OptionSet {
+export function stepOptions(screen: Screen, apps: AppEntry[], limit: number, focus = '', pages: KnownPage[] = [], lock = false, files?: KnownFile[], skills: Skill[] = [], arrange = false): OptionSet {
   const criteria: Record<string, string | null> = {}
   const targets = new Map<string, Target>()
   const add = (name: string, description: string, target: Target) => {
@@ -156,6 +160,7 @@ export function stepOptions(screen: Screen, apps: AppEntry[], limit: number, foc
   for (const app of apps) add(`open ${app.title}`, `app: ${app.description}`, { kind: 'app', app })
   add('back', NAVIGATION.back, { kind: 'back' })
   add('home screen', NAVIGATION.home, { kind: 'home' })
+  if (arrange) add('arrange the screen', NAVIGATION.arrange, { kind: 'arrange' })
   if (lock) add('lock', NAVIGATION.lock, { kind: 'lock' })
   if (files) add('list files', NAVIGATION.files, { kind: 'folder', path: '' })
   return { criteria, targets }

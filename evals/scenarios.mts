@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { filesOf, lookupsOf, parseSkill, saidOf, stepsOf, targetOf, type Agent } from '@stanley/agent'
+import { filesOf, lookupsOf, parseSkill, saidOf, sidesKey, stepsOf, targetOf, type Agent } from '@stanley/agent'
 import type { Shell } from '../apps/desktop/src/main/shell'
 
 /** Returns a failure message, or nothing when the check passes. `files` is the user's folder for the run. */
@@ -14,8 +14,23 @@ export interface Scenario {
   cache?: { minReadRatio: number; maxInputTokens: number }
 }
 
-const visible = (appId: string | null): Check => (shell) =>
-  shell.layout.visible === appId ? undefined : `expected ${appId} visible, got ${shell.layout.visible}`
+/** `appId` alone on the screen; `null`, the home screen. */
+const visible = (appId: string | null): Check => (shell) => {
+  const got = sidesKey(shell.layout.sides)
+  return got === (appId ?? '') ? undefined : `expected ${appId ?? 'home'} alone on the screen, got ${got || 'home'}`
+}
+
+/** These apps on the screen together, however they are laid out. */
+const together = (...appIds: string[]): Check => (shell) => {
+  const got = shell.layout.sides.flat()
+  return got.length === appIds.length && appIds.every((id) => got.includes(id)) ? undefined : `expected ${appIds.join(' and ')} on the screen, got ${sidesKey(shell.layout.sides) || 'home'}`
+}
+
+/** Exactly this on the screen: `email | tasks + weather` (as `sidesKey` writes it). */
+const screen = (want: string): Check => (shell) => {
+  const got = sidesKey(shell.layout.sides)
+  return got === want ? undefined : `expected the screen to show ${want}, got ${got || 'home'}`
+}
 
 const route = (appId: string, pattern: RegExp): Check => (shell) => {
   const state = shell.surfaces.get(appId) as { route?: string } | undefined
@@ -598,5 +613,43 @@ export const scenarios: Scenario[] = [
     ],
     checks: [newTasks(4)],
     cache: { minReadRatio: 0.7, maxInputTokens: 100_000 },
+  },
+  // The screen laid out by Jev: up to three apps, as the user asks or as what they asked needs.
+  {
+    name: 'screen-inbox-and-tasks',
+    utterances: ['show me my inbox and my tasks'],
+    checks: [together('email', 'tasks'), fastPath],
+  },
+  {
+    name: 'screen-sides-and-swap',
+    utterances: ['put my email on the left and my tasks on the right', 'now swap them round'],
+    checks: [screen('tasks | email'), fastPath],
+  },
+  {
+    name: 'screen-just-the-inbox',
+    utterances: ['show me my inbox and my tasks', 'just the inbox now'],
+    checks: [visible('email'), fastPath],
+  },
+  {
+    name: 'screen-three-at-once',
+    utterances: ['show me my email, my tasks and the weather all at once'],
+    checks: [together('email', 'tasks', 'weather')],
+  },
+  {
+    name: 'screen-clear',
+    utterances: ['show me my inbox and my tasks', 'ok clear the screen, put it all away'],
+    checks: [visible(null)],
+  },
+  {
+    // Reading the invoice, the task about it goes beside it.
+    name: 'screen-task-for-this-email',
+    utterances: ['open the email from Alex about the invoice', 'add a task to pay this invoice'],
+    checks: [together('email', 'tasks'), route('email', /^email\/m6/), state('tasks', (s) => s?.tasks.some((t: any) => /invoice|alex/i.test(t.title)), 'a task to pay the invoice')],
+  },
+  {
+    // Music started while reading: the inbox stays in front, alone or beside the player, not covered by it.
+    name: 'screen-music-while-reading',
+    utterances: ['open my inbox', 'play some music'],
+    checks: [either(visible('email'), together('email', 'music')), state('music', (s) => s?.playing === true, 'music playing')],
   },
 ]

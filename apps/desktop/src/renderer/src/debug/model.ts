@@ -13,6 +13,8 @@ export interface TickView {
   gates: Of<'gate'>[]
   /** What a button does, judged before pressing it. */
   effects: Of<'effect'>[]
+  /** What the screen was laid out to show, or why it was left. */
+  screens: Of<'screen'>[]
   /** Steps taken, by Jev or by thinking. */
   acts: Of<'act'>[]
   /** Thinking calls: a single step on a field or button Jev chose, or a whole turn (one may follow the other). */
@@ -112,7 +114,7 @@ export function buildModel(events: DebugEvent[]): DebugModel {
         continue
       }
       if (ev.type === 'tick-start') {
-        const tick: TickView = { id: ev.tickId, at: e.at, task: (task as TaskView | null)?.index ?? null, start: ev, gates: [], effects: [], acts: [], thinking: [] }
+        const tick: TickView = { id: ev.tickId, at: e.at, task: (task as TaskView | null)?.index ?? null, start: ev, gates: [], effects: [], screens: [], acts: [], thinking: [] }
         ticks.set(ev.tickId, tick)
         model.ticks.push(tick)
         ;(task as TaskView | null)?.ticks.push(tick)
@@ -130,6 +132,7 @@ export function buildModel(events: DebugEvent[]): DebugModel {
       else if (ev.type === 'decision') tick.decision = ev
       else if (ev.type === 'act') tick.acts.push(ev)
       else if (ev.type === 'effect') tick.effects.push(ev)
+      else if (ev.type === 'screen') tick.screens.push(ev)
       else if (ev.type === 'think-start') tick.thinking.push({ start: ev, steps: [] })
       else if (ev.type === 'think-step') tick.thinking.at(-1)?.steps.push(ev)
       else if (ev.type === 'think-end') {

@@ -118,7 +118,7 @@ const tabs = new WebviewTabs({
   backdrop: (url) => backdrop(url, readSettings(store).theme),
   // Escape leaves full screen, as in a browser, also when the page has the keyboard.
   escape: () => {
-    if (shell.layout.fullscreen && shell.layout.visible === 'web' && !locked) void shell.performIn('web', FULLSCREEN, {})
+    if (shell.layout.fullscreen && shell.layout.sides[0]?.[0] === 'web' && !locked) void shell.performIn('web', FULLSCREEN, {})
   },
 })
 /** Each tab's page as the Web app works it, made once per session (a page remembers which of its elements are fields). */

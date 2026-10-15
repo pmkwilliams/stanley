@@ -94,9 +94,11 @@ three apps, one alone, two side by side, or three with two stacked on one side. 
 lists the arrangements that pass. Some ask for the screen in so many words ("swap them"); the rest
 leave it to Jev to judge from what was asked ("add a task to pay this invoice" while reading it).
 The apps hold their real data (`layout/scene.mts`): what Jev reads of an app is its own markdown.
-Two questions in one call: which set of apps is on the screen, and which of them are on the left.
-Asking each app where it goes on its own passed 31/38 to this shape's 37/38: it missed which apps go
-together.
+It asks the agent's own two questions (`packages/agent/src/screen.ts`) on the state laid out as the
+agent writes it, and does what the agent does when unsure (leaves the screen). 54/57 over 3 runs;
+`--set screen.show=…` tries another floor. How the questions are asked and where the screen goes in
+what Jev reads came from this eval (see `docs/plans/layout.md`): asking each app where it goes on its
+own passed 31/38 to the set shape's 37/38.
 
 `--image` also shows Jev a picture of the screen, drawn by the gallery with the apps' real windows
 (`apps/desktop/gallery/Screen.svelte`), on jev-1.14.0, which takes pictures; `--no-line` leaves out

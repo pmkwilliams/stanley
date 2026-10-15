@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import type { AppEntry, PageDraft, PageLook, PagePreview, PreviewOptions, Screen, StepResult, World } from '@stanley/agent'
+import { describeScreen, sameSides, validSides, type AppEntry, type PageDraft, type PageLook, type PagePreview, type PreviewOptions, type Screen, type Sides, type StepResult, type World } from '@stanley/agent'
 import { FULLSCREEN, type ActionArgs, type AgentNode, type AppContext, type AppModule, type Layout } from '@stanley/app-sdk'
 import { fileUrl, inFolder, viewable } from './folder-pages'
 
@@ -25,14 +25,14 @@ export interface ShellOptions {
 }
 
 /**
- * Owns surfaces and layout, and exposes them to the agent as one node tree.
- * v1: one surface per app (surface id = app id) and a single visible slot.
+ * Owns surfaces and layout, and exposes them to the agent as one node tree. One surface per app
+ * (surface id = app id); up to three of them on the screen at once (see `Sides`).
  */
 export class Shell implements World {
   readonly surfaces = new Map<string, unknown>()
-  /** The app in front of the user; `null` = home screen. */
-  private shown: string | null = null
-  /** Apps put in full screen: they fill the screen whenever they're shown and their screen can. */
+  /** What is in front of the user, left to right; none = home screen. */
+  private shown: Sides = []
+  /** Apps put in full screen: they fill the screen whenever they're shown alone and their screen can. */
   private full = new Set<string>()
   /** Surface the agent is working on; may be hidden. `null` = home screen. */
   focus: string | null = null
@@ -79,7 +79,7 @@ export class Shell implements World {
   screenNow(): Screen {
     if (!this.focus) {
       const list = this.appList().map((a) => `- ${a.title}: ${a.description}`).join('\n')
-      return { id: 'home', title: 'Home', visible: this.shown === null, markdown: `# Home\n${list}`, elements: [] }
+      return { id: 'home', title: 'Home', visible: this.shown.length === 0, markdown: `# Home\n${list}`, elements: [] }
     }
     return this.screenOf(this.focus)
   }
@@ -92,7 +92,7 @@ export class Shell implements World {
     return {
       id: `${app.id}${SEP}${app.current(state)}`,
       title: app.title,
-      visible: this.shown === app.id,
+      visible: this.shown.flat().includes(app.id),
       url: app.url?.(state),
       markdown: app.toMarkdown(state, this.ctx),
       elements: [...this.windowControls(app, state), ...prefix(app.id, app.nodes(state))],
@@ -100,7 +100,34 @@ export class Shell implements World {
   }
 
   get layout(): Layout {
-    return { visible: this.shown, fullscreen: this.filling(this.shown) }
+    const alone = this.shown.length === 1 ? this.shown[0]![0]! : null
+    return { sides: this.sides(), fullscreen: this.filling(alone) }
+  }
+
+  /** What is on the screen, left to right. */
+  sides(): Sides {
+    return this.shown.map((side) => [...side])
+  }
+
+  /** The apps, and the one that shows web pages once it has a page to show. */
+  placeable(): AppEntry[] {
+    const showing = this.apps.filter((a) => a.openUrl && this.surfaces.has(a.id) && a.url?.(this.surfaces.get(a.id)))
+    return [...this.appList(), ...showing.map(({ id, title, description }) => ({ id, title, description }))]
+  }
+
+  /**
+   * Lays the screen out: these apps, where `sides` puts them. Apps not open yet are opened; what
+   * Stanley works on stays the same. Beside another app, none fills the screen.
+   */
+  async arrange(sides: Sides): Promise<StepResult> {
+    if (!validSides(sides)) throw new Error(`The screen can't show ${JSON.stringify(sides)}`)
+    const apps = sides.flat().map((id) => this.app(id))
+    for (const app of apps) await this.serial(app.id, () => this.ensure(app))
+    const shown = describeScreen(sides, (id) => this.app(id).title)
+    if (sameSides(sides, this.shown)) return { summary: `The screen already shows that: ${shown}` }
+    this.shown = sides.map((side) => [...side])
+    this.onChange()
+    return { summary: `Now on the screen: ${shown}` }
   }
 
   /**
@@ -177,7 +204,7 @@ export class Shell implements World {
   }
 
   async global(option: 'show' | 'home' | 'back') {
-    if (option === 'show') this.shown = this.focus
+    if (option === 'show') this.shown = this.focus ? [[this.focus]] : []
     if (option === 'home') this.navigate(null)
     if (option === 'back') await this.back()
     this.onChange()
@@ -233,23 +260,32 @@ export class Shell implements World {
     return { summary: result.summary, observation: result.observation }
   }
 
-  /** Window controls, ahead of the app's own elements as a title bar is: Full screen, for an app that can fill the screen. */
+  /**
+   * Window controls, ahead of the app's own elements as a title bar is: Full screen, for an app
+   * that can fill the screen. It reads as the screen is now: beside another app, nothing fills it.
+   */
   private windowControls(app: AppModule<any>, state: unknown): AgentNode[] {
     if (!app.fullscreen?.(state)) return []
-    const label = this.full.has(app.id) ? 'Exit full screen' : 'Full screen'
+    const label = this.filling(app.id) ? 'Exit full screen' : 'Full screen'
     return [{ id: `${app.id}${SEP}${FULLSCREEN}`, kind: 'action', role: 'button', label }]
   }
 
+  /** Full screen shows the app alone, filling the screen; leaving it keeps it alone. */
   private toggleFullscreen(app: AppModule<any>): StepResult {
-    const on = !this.full.delete(app.id)
-    if (on) this.full.add(app.id)
+    const on = !this.filling(app.id)
+    if (on) {
+      this.full.add(app.id)
+      this.shown = [[app.id]]
+    } else this.full.delete(app.id)
     this.navigate(app.id)
     this.onChange()
     return { summary: on ? `${app.title} is full screen` : `${app.title} left full screen` }
   }
 
+  /** The app fills the screen: it is shown alone, put in full screen, and its screen can fill it. */
   private filling(appId: string | null): boolean {
-    return appId !== null && this.full.has(appId) && !!this.app(appId).fullscreen?.(this.surfaces.get(appId))
+    const alone = this.shown.length === 1 && this.shown[0]![0] === appId
+    return appId !== null && alone && this.full.has(appId) && !!this.app(appId).fullscreen?.(this.surfaces.get(appId))
   }
 
   /** The app's surface exists. A new one is shown to the renderer at once: a live page needs its view in place before it can load. */
