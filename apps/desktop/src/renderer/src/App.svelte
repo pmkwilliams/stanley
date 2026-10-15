@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Snapshot } from '../../shared/ipc'
-  import { cubicIn, cubicOut } from 'svelte/easing'
+  import { untrack } from 'svelte'
+  import { cubicOut } from 'svelte/easing'
   import { fade, scale } from 'svelte/transition'
   import { FULLSCREEN } from '@stanley/app-sdk'
   import { appWindow } from '@stanley/app-ui/components/app'
@@ -10,6 +11,7 @@
   import StatusBar from './StatusBar.svelte'
   import { ONSET_HOLD_MS, voiceMayStart } from './duck'
   import { dbfs, loudness, mic, voiceOut } from './presence'
+  import { leave, Motion } from './motion'
   import { screenGrid, windowPlace } from './screen'
   import { backgrounds, kept, surfaces } from './surfaces'
   import { setTheme } from './theme.svelte'
@@ -79,6 +81,25 @@
   /** The one app shown fills the screen, over the status bar but under the captions. */
   const fullscreen = $derived(!!snapshot?.layout.fullscreen)
 
+  /**
+   * Windows glide to their new places when the layout changes (motion.ts): where they are is
+   * measured before the change reaches the page, and each moves from there once it has.
+   */
+  const motion = new Motion()
+  const layoutKey = $derived(`${JSON.stringify(sides)} ${fullscreen}`)
+  let wasShown: string[] = []
+  $effect.pre(() => {
+    void layoutKey
+    untrack(() => motion.measure(wasShown))
+  })
+  $effect(() => {
+    void layoutKey
+    untrack(() => {
+      motion.play(shown)
+      wasShown = shown
+    })
+  })
+
   function leaveFullscreen(e: KeyboardEvent) {
     if (e.key === 'Escape' && fullscreen && shown.length === 1 && !locked) window.stanley.perform(shown[0]!, FULLSCREEN)
   }
@@ -106,15 +127,16 @@
   <main class={['relative overflow-auto pb-(--caption-height) transition-opacity duration-250 has-[>div]:grid has-[>div]:place-items-center has-[>div]:overflow-hidden', screenGrid(sides), locked && 'opacity-0']}>
     {#if snapshot}
       <!-- Keyed on the app, so switching plays the old window's outro while the new one pops in over it. -->
-      <!-- One app alone shares one cell with the one leaving, so it sinks behind the incoming one instead of pushing it aside; Svelte marks it inert. Side by side, each window has a cell of its own. -->
+      <!-- A window leaving stays where it was, out of the grid, and sinks behind the others as it goes; Svelte marks it inert. Those staying glide to their new places (motion.ts). -->
       {#each shown.filter((id) => surfaces[id] && !kept.has(id)) as id (id)}
         {@const Surface = surfaces[id]}
         <div
           class={[appWindow, sides.length < 2 && 'col-start-1 row-start-1', 'inert:z-0', fullscreen ? 'z-4' : 'z-1']}
           style={windowPlace(sides, id)}
           data-fullscreen={fullscreen || undefined}
+          {@attach motion.track(id)}
           in:scale={{ start: 0.85, duration: 340, easing: cubicOut }}
-          out:scale={{ start: 0.88, duration: 260, easing: cubicIn }}
+          out:leave={{ from: motion.was(id) }}
         >
           <Surface data={snapshot.surfaces[id]} perform={(nodeId: string, args?: { text?: string }) => window.stanley.perform(id, nodeId, args)} agentName={snapshot.name} {fullscreen} />
         </div>
@@ -129,6 +151,7 @@
           style={on ? windowPlace(sides, id) : ''}
           data-fullscreen={full || undefined}
           inert={!on}
+          {@attach motion.track(id)}
         >
           <Surface data={snapshot.surfaces[id]} perform={(nodeId: string, args?: { text?: string }) => window.stanley.perform(id, nodeId, args)} agentName={snapshot.name} fullscreen={full} />
         </div>

@@ -75,6 +75,9 @@ is alone. Pressing it shows the app alone, filling the screen; beside another ap
 - Renderer: `screen.ts` places windows on a two-column grid (`screenGrid`, `windowPlace`); the
   gallery's `Screen.svelte` uses the same, so the eval's pictures match the app. A hidden kept
   window (Web) is out of the grid.
+- Motion (`motion.ts`), as a tiling window manager's (Hyprland): windows that stay glide to their
+  new cells, resizing on the way, with a slight overshoot (FLIP, 450 ms); new ones pop in; leaving
+  ones shrink away where they were, out of the grid. Full screen glides the same way.
 - Debug: a `screen` event per decision (source, before, after or why it was left, confidence), shown
   in the tick inspector.
 
@@ -88,6 +91,5 @@ right choices than it caught wrong ones. So no check, and the decision reads wor
 
 ## Follow-ups
 
-- Windows that move cells jump; animate them.
 - Stacked windows are half height: apps should lay out for it (the Tasks list and the forecast are
   cut off and scroll).
