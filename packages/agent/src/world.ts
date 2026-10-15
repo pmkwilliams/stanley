@@ -114,7 +114,8 @@ export interface World {
   placeable?(): AppEntry[]
   /**
    * Lays the screen out as `sides` says, opening apps that aren't open yet. What Stanley works on
-   * stays the same. Left as it is if the screen changes while apps open, or `fresh` turns false.
+   * stays the same. Its summary is what is on the screen then. Throws, leaving it as it is, if the
+   * screen changes while apps open, or `fresh` turns false.
    */
   arrange?(sides: Sides, fresh?: () => boolean): Promise<StepResult>
   /** Goes to the lock screen, ending the session. Without it, the agent can't lock. */

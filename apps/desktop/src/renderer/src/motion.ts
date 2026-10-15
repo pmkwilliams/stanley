@@ -64,6 +64,17 @@ export class Motion {
   was(id: string): DOMRect | undefined {
     return this.before.get(id)
   }
+
+  /**
+   * A style keeping a window that left the screen, but stays in the page (a kept one), where it
+   * was while it fades: out of the grid, at the place and size it had. `''` when it wasn't shown.
+   */
+  pinned(id: string): string {
+    const from = this.before.get(id)
+    const parent = this.nodes.get(id)?.offsetParent?.getBoundingClientRect()
+    if (!from || !parent) return ''
+    return `left: ${from.left - parent.left}px; top: ${from.top - parent.top}px; width: ${from.width}px; height: ${from.height}px; max-width: none; max-height: none`
+  }
 }
 
 /**

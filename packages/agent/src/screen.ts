@@ -10,7 +10,10 @@ export type Sides = string[][]
 /** Apps Jev chooses among: every set of up to three of 11 is 231 options, and home makes 232, under Jev's 255. */
 const MAX_CANDIDATES = 11
 
-/** The home screen, named apart from how it reads on the screen (`describeScreen`): an option echoing it drew answers to it (eval:layout). */
+/**
+ * The home screen, named apart from how it reads on the screen (`describeScreen`): an option
+ * echoing that drew answers to it (eval:layout).
+ */
 export const HOME_OPTION = 'No apps'
 
 /**

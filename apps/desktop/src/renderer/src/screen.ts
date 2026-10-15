@@ -2,14 +2,18 @@
  * Where windows sit on the screen (`Layout.sides`). One app is centred, as it always was; two sides
  * are two columns, and a side with one app beside a side with two spans both rows. Side by side,
  * windows fill their cells, 1rem apart and 1rem from the screen's edges: half the width, and half
- * the height when stacked. The screen's own size comes from `--bar-height` and `--caption-height` on an
- * ancestor.
+ * the height when stacked. The screen's own size comes from `--bar-height` and `--caption-height`
+ * on an ancestor.
  */
 
-/** The main area's grid for these sides, as classes. */
+/**
+ * The main area's grid and padding for these sides, as classes: it keeps the captions' strip clear,
+ * and side by side, 1rem all round, so each tile is exactly as big as the most it may take.
+ */
 export function screenGrid(sides: string[][]): string {
-  if (sides.length < 2) return ''
-  return sides.flat().length === 3 ? 'grid-cols-2 grid-rows-2 gap-4 px-4' : 'grid-cols-2 gap-4 px-4'
+  if (sides.length < 2) return 'pb-(--caption-height)'
+  const grid = sides.flat().length === 3 ? 'grid-cols-2 grid-rows-2' : 'grid-cols-2'
+  return `${grid} gap-4 px-4 pt-4 pb-[calc(var(--caption-height)+1rem)]`
 }
 
 /**

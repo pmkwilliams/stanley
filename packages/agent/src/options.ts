@@ -18,8 +18,11 @@ export type Target =
   | { kind: 'file'; path: string }
   /** Read in the background, so what it says to do is in the conversation. */
   | { kind: 'skill'; skill: Skill }
-  /** The screen laid out as Jev's `show` and `left` answers say (see screen.ts): Jev's alone. Offered without `sides`; run with them, and `fresh` to drop it if it goes stale while apps open. */
-  | { kind: 'arrange'; sides?: Sides; shown?: string; fresh?: () => boolean }
+  /**
+   * The screen laid out as Jev's `show` and `left` answers say (see screen.ts): Jev's alone.
+   * Offered without `sides`; run with them, and `fresh` to drop it if it goes stale while apps open.
+   */
+  | { kind: 'arrange'; sides?: Sides; fresh?: () => boolean }
 
 export interface OptionSet {
   /** Option name → description, sent to Jev as one question's options. */
@@ -32,7 +35,7 @@ export const NAVIGATION = {
   home: 'Go to the home screen, which lists the apps.',
   lock: 'Lock the computer: go to the lock screen.',
   files: "List the user's files, in the background.",
-  arrange: 'Lay the screen out: which apps are on it, side by side, swapped or hidden.',
+  arrange: 'Move, show or hide the windows on the screen.',
 } as const
 
 export function roleOf(node: AgentNode): string {
@@ -112,8 +115,9 @@ export function findElement(screen: Screen, nodeId: string): { node: AgentNode; 
  * the web and the files it has seen (up to `limit` together, see `pick`), the user's `skills`, the
  * apps, back / home (and lock, when `lock`), listing the user's files (when there are `files`), and
  * laying the screen out (when `arrange`). A file the screen can show can also be opened; the one on
- * screen isn't offered. Names are unique; a clash gets a counter. `focus` is what the user is asking for, used to choose when there are too
- * many. The page already on screen isn't offered: opening it again does nothing.
+ * screen isn't offered. Names are unique; a clash gets a counter. `focus` is what the user is asking
+ * for, used to choose when there are too many. The page already on screen isn't offered: opening it
+ * again does nothing.
  */
 export function stepOptions(screen: Screen, apps: AppEntry[], limit: number, focus = '', pages: KnownPage[] = [], lock = false, files?: KnownFile[], skills: Skill[] = [], arrange = false): OptionSet {
   const criteria: Record<string, string | null> = {}

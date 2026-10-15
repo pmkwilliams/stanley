@@ -185,7 +185,7 @@ export interface Surface<S = unknown> {
   state: S
 }
 
-/** v1: a single visible slot. Later: splits, multiple windows. */
+/** What the screen shows: up to three apps, laid out by Jev (see the agent's screen.ts). */
 export interface Layout {
   /**
    * The apps on the screen, left to right, each side top to bottom: none is the home screen, one

@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { untrack } from 'svelte'
   import StatusBar from '../src/renderer/src/StatusBar.svelte'
-  import { enter, leave, Motion } from '../src/renderer/src/motion'
+  import { glide } from '../src/renderer/src/glide.svelte'
+  import { enter, leave } from '../src/renderer/src/motion'
   import { screenGrid, windowPlace, windowTile } from '../src/renderer/src/screen'
   import { surfaces } from '../src/renderer/src/surfaces'
   import { appWindow } from '@stanley/app-ui/components/app'
@@ -22,19 +22,7 @@
   const snapshot = $derived({ layout: { sides }, surfaces: states, focus: null, status: 'idle', listening: false, tasks: [] } as any)
   ;(window as any).stanley = { perform: () => {}, open: () => {}, toggleListening: () => {}, lock: () => {} }
 
-  const motion = new Motion()
-  let wasShown: string[] = []
-  $effect.pre(() => {
-    void JSON.stringify(sides)
-    untrack(() => motion.measure(wasShown))
-  })
-  $effect(() => {
-    void JSON.stringify(sides)
-    untrack(() => {
-      motion.play(shown)
-      wasShown = shown
-    })
-  })
+  const motion = glide(() => ({ key: JSON.stringify(sides), shown }))
 
   // A browser has no <webview>: the page's HTML goes in a frame where it would be.
   $effect(() => {
@@ -58,7 +46,7 @@
          background: radial-gradient(40% 30% at 30% 100%, rgba(79, 209, 165, 0.35), transparent 70%), radial-gradient(40% 30% at 70% 100%, rgba(138, 124, 240, 0.35), transparent 70%), var(--background)"
 >
   <div><StatusBar {snapshot} onlock={() => {}} /></div>
-  <main class={['relative grid min-h-0 place-items-center overflow-hidden pb-(--caption-height)', screenGrid(sides)]}>
+  <main class={['relative grid min-h-0 place-items-center overflow-hidden', screenGrid(sides)]}>
     {#each shown as id (id)}
       {@const Surface = surfaces[id]}
       <div class={[appWindow, sides.length < 2 && 'col-start-1 row-start-1', windowTile(sides), 'inert:z-0']} style={windowPlace(sides, id)} {@attach motion.track(id)} in:enter out:leave={{ from: motion.was(id) }}>

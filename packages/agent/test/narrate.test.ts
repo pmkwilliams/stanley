@@ -35,7 +35,7 @@ describe('narrate', () => {
     const r = recorder()
     r.event('task-start')
     r.words(1, 'swap them round')
-    r.step({ target: { kind: 'arrange', shown: 'Tasks (left), Email (right).' }, summary: 'Now on the screen', utteranceId: 1 })
+    r.step({ target: { kind: 'arrange' }, summary: 'Tasks (left), Email (right).', utteranceId: 1 })
     expect(narrate(r.h.view(), screen)).toContain('User: swap them round\nWren arranged the screen: Tasks (left), Email (right).\n')
   })
 

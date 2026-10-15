@@ -138,7 +138,7 @@ export function describeStep(e: StepMeta, name = DEFAULT_AGENT_NAME): string {
     case 'page':
       return `${who} opened the page "${t.title}" (${shortUrl(t.url)})${outcome}.`
     case 'arrange':
-      return `${who} arranged the screen${outcome ? `${outcome}.` : `: ${t.shown}`}`
+      return `${who} arranged the screen${outcome ? `${outcome}.` : `: ${e.summary}`}`
   }
   if (t.nodeKind === 'input') {
     if (e.wrote === 'stanley') return `${who} wrote its own words into [${t.name}]${outcome}: "${e.text}"`

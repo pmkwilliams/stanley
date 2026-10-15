@@ -13,7 +13,7 @@
  *
  * Paid: one Jev call per case, three or so with --check.
  */
-import { chooseScreen, defaultConfig, describeScreen, JEV_SCREEN, layoutText, longDate, screenQuestions, sidesKey, SYSTEM_PROMPT, type Sides } from '@stanley/agent'
+import { chooseScreen, defaultConfig, describeScreen, JEV_FILES, JEV_SCREEN, jevPreamble, screenQuestions, sidesKey, type Sides } from '@stanley/agent'
 import { experimental_decide } from 'ai'
 import { cases, type LayoutCase } from './layout/cases.mts'
 import { APPS, markdown, screens, states } from './layout/scene.mts'
@@ -44,14 +44,16 @@ const key = (sides: string[][]) => sidesKey(sides.map((s) => [...s].sort()))
 const describe = (sides: Sides) => describeScreen(sides, title)
 
 /**
- * What Jev reads, as the agent writes it (`jevState`): the prompt, today, how the screen works and
- * what is on it (unless `--no-line`), then the conversation and the screen Stanley worked on.
+ * What Jev reads: what comes ahead of the conversation as the agent writes it (`jevPreamble`, the
+ * desktop app's files section included), with what is on the screen (unless `--no-line`); then the
+ * conversation, written by hand as `narrate` would, and the screen Stanley worked on.
  */
 function state(c: LayoutCase, all: Record<string, unknown>, after?: { sides: string[][]; picture: boolean }): string {
-  const lines = [SYSTEM_PROMPT, '', `Today is ${longDate(new Date('2026-10-15T12:00:00'))}.`, '']
-  if (after) lines.push(layoutText(describe(parse(c.on))).replace('Now on the screen', 'Before, on the screen'))
-  else if (line) lines.push(`${layoutText(describe(parse(c.on)))}${image ? ' A picture of it follows.' : ''}`)
-  else lines.push(`${JEV_SCREEN}${image ? '\nA picture of the screen as it is now follows.' : ''}`)
+  const preamble = (shown?: string) => jevPreamble({ name: 'Stanley', today: new Date('2026-10-15T12:00:00'), extra: [JEV_FILES], shown })
+  const lines: string[] = []
+  if (after) lines.push(preamble(describe(parse(c.on))).replace('Now on the screen', 'Before, on the screen'))
+  else if (line) lines.push(preamble(`${describe(parse(c.on))}${image ? ' A picture of it follows.' : ''}`))
+  else lines.push(`${preamble()}\n\n${JEV_SCREEN}${image ? '\nA picture of the screen as it is now follows.' : ''}`)
   lines.push('', '## Conversation', ...c.conversation)
   if (c.worked) {
     const shown = parse(c.on).flat().includes(c.worked)

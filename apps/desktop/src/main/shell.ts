@@ -119,8 +119,8 @@ export class Shell implements World {
 
   /**
    * Lays the screen out: these apps, where `sides` puts them. Apps not open yet are opened; what
-   * Stanley works on stays the same. Beside another app, none fills the screen. Left as it is when
-   * the screen changes while apps open, or `fresh` says the request is stale by then.
+   * Stanley works on stays the same. Beside another app, none fills the screen. Throws, leaving it
+   * as it is, when the screen changes while apps open, or `fresh` says the request is stale by then.
    */
   async arrange(sides: Sides, fresh: () => boolean = () => true): Promise<StepResult> {
     if (!validSides(sides)) throw new Error(`The screen can't show ${JSON.stringify(sides)}`)
@@ -128,12 +128,13 @@ export class Shell implements World {
     const mine = ++this.revision
     for (const app of apps) await this.serial(app.id, () => this.ensure(app))
     // Opening an app can take a while (a forecast is fetched): the screen may have changed since, or the request gone stale.
-    if (mine !== this.revision || !fresh()) return { summary: 'The screen changed while the apps opened: left as it is' }
-    const shown = describeScreen(sides, (id) => this.app(id).title)
-    if (sameSides(sides, this.shown)) return { summary: `The screen already shows that: ${shown}` }
+    if (mine !== this.revision || !fresh()) throw new Error('the screen changed while the apps opened, so it was left as it is')
+    // What is on the screen now, as Jev reads it, whether or not it was already so.
+    const summary = describeScreen(sides, (id) => this.app(id).title)
+    if (sameSides(sides, this.shown)) return { summary }
     this.show(sides)
     this.onChange()
-    return { summary: `Now on the screen: ${shown}` }
+    return { summary }
   }
 
   private show(sides: Sides) {
@@ -215,7 +216,8 @@ export class Shell implements World {
   }
 
   async global(option: 'show' | 'home' | 'back') {
-    if (option === 'show') this.show(this.focus ? [[this.focus]] : [])
+    // Showing what Stanley works on: a layout it is already in stays (writing a page beside the inbox).
+    if (option === 'show' && !(this.focus && this.shown.flat().includes(this.focus))) this.show(this.focus ? [[this.focus]] : [])
     if (option === 'home') this.navigate(null)
     if (option === 'back') await this.back()
     this.onChange()

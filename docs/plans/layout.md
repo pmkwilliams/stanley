@@ -56,8 +56,9 @@ option names are frozen with the question, so answers map back to ids.
    A stale one never runs (unlike other navigation).
 3. **Going home** shows the home screen at once.
 
-Mid-task nothing moves: Stanley works in the background until the task ends. A user's own click on
-an app still shows it alone.
+Mid-task nothing moves: Stanley works in the background until the task ends, except that a page it
+writes is shown as it is written. Showing the app Stanley works on (that page, or the user's own
+click on an app) leaves a layout it is already in, and otherwise shows it alone.
 
 ## Full screen
 
@@ -88,6 +89,17 @@ picture with the words passed 31/38 to the words' 37/38 on `jev`, and a picture 
 Checking the screen after it is arranged, in words or as a picture, kept 32/38 right arrangements
 and turned down only 30–34 of 50 wrong ones, favouring the app Stanley worked on: it would undo more
 right choices than it caught wrong ones. So no check, and the decision reads words.
+
+## What the decision costs the rest
+
+Two more questions make each decision read about 55% more (64 + 28 options), at the same p50
+(0.2 s). Replaying the decisions where two scenarios went wrong, ten-odd times each through Jev
+with parts of the prompt taken out: `tasks-homophone-fixed` sits on the act threshold with or
+without the layout (P(act) 0.53–0.57, 0.55 on main), so it is main's own flake. `files-answer`
+turned on the `arrange the screen` option's description, which tipped a near tie between "list
+files" and "open Tasks" to the wrong side; "Move, show or hide the windows on the screen." put it
+back (8/8 over 8 runs, 6/8 before). What is on the screen raises P(act) a little (0.73, against 0.58
+without it) without changing the step.
 
 ## Follow-ups
 

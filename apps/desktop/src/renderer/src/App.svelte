@@ -1,6 +1,5 @@
 <script lang="ts">
   import type { Snapshot } from '../../shared/ipc'
-  import { untrack } from 'svelte'
   import { fade } from 'svelte/transition'
   import { FULLSCREEN } from '@stanley/app-sdk'
   import { appWindow } from '@stanley/app-ui/components/app'
@@ -10,7 +9,8 @@
   import StatusBar from './StatusBar.svelte'
   import { ONSET_HOLD_MS, voiceMayStart } from './duck'
   import { dbfs, loudness, mic, voiceOut } from './presence'
-  import { enter, leave, Motion } from './motion'
+  import { glide } from './glide.svelte'
+  import { enter, leave } from './motion'
   import { screenGrid, windowPlace, windowTile } from './screen'
   import { backgrounds, kept, surfaces } from './surfaces'
   import { setTheme } from './theme.svelte'
@@ -80,24 +80,8 @@
   /** The one app shown fills the screen, over the status bar but under the captions. */
   const fullscreen = $derived(!!snapshot?.layout.fullscreen)
 
-  /**
-   * Windows glide to their new places when the layout changes (motion.ts): where they are is
-   * measured before the change reaches the page, and each moves from there once it has.
-   */
-  const motion = new Motion()
-  const layoutKey = $derived(`${JSON.stringify(sides)} ${fullscreen}`)
-  let wasShown: string[] = []
-  $effect.pre(() => {
-    void layoutKey
-    untrack(() => motion.measure(wasShown))
-  })
-  $effect(() => {
-    void layoutKey
-    untrack(() => {
-      motion.play(shown)
-      wasShown = shown
-    })
-  })
+  /** Windows glide to their new places when the layout changes, full screen included (glide.svelte.ts). */
+  const motion = glide(() => ({ key: `${JSON.stringify(sides)} ${fullscreen}`, shown }))
 
   function leaveFullscreen(e: KeyboardEvent) {
     if (e.key === 'Escape' && fullscreen && shown.length === 1 && !locked) window.stanley.perform(shown[0]!, FULLSCREEN)
@@ -123,7 +107,7 @@
   {#if snapshot}<Presence {snapshot} docked={shown.length > 0 && !locked} captions={!locked} />{/if}
   <StatusBar {snapshot} onlock={() => window.stanley.lock()} />
 
-  <main class={['relative overflow-auto pb-(--caption-height) transition-opacity duration-250 has-[>div]:grid has-[>div]:place-items-center has-[>div]:overflow-hidden', screenGrid(sides), locked && 'opacity-0']}>
+  <main class={['relative overflow-auto transition-opacity duration-250 has-[>div]:grid has-[>div]:place-items-center has-[>div]:overflow-hidden', screenGrid(sides), locked && 'opacity-0']}>
     {#if snapshot}
       <!-- Keyed on the app, so switching plays the old window's outro while the new one pops in over it. -->
       <!-- A window leaving stays where it was, out of the grid, and sinks behind the others as it goes; Svelte marks it inert. Those staying glide to their new places (motion.ts). -->
@@ -140,14 +124,14 @@
           <Surface data={snapshot.surfaces[id]} perform={(nodeId: string, args?: { text?: string }) => window.stanley.perform(id, nodeId, args)} agentName={snapshot.name} {fullscreen} />
         </div>
       {/each}
-      <!-- A kept window is never taken out: hidden, it stays laid out at full size, out of sight, out of reach and out of the grid, and pops in and out the same way. -->
+      <!-- A kept window is never taken out: hidden, it stays laid out, out of sight, out of reach and out of the grid, where it was (`pinned`) as it fades, and pops in and out the same way. Only its fade is a CSS transition: moving and resizing are the glide's. -->
       {#each [...kept].filter((id) => snapshot!.surfaces[id] !== undefined) as id (id)}
         {@const Surface = surfaces[id]}
         {@const on = shown.includes(id)}
         {@const full = on && fullscreen}
         <div
-          class={[appWindow, 'transition-all motion-reduce:transition-none', on ? [sides.length < 2 && 'col-start-1 row-start-1', windowTile(sides), 'duration-340 ease-out', full ? 'z-4' : 'z-1'] : 'invisible absolute z-0 scale-88 opacity-0 duration-260 ease-in']}
-          style={on ? windowPlace(sides, id) : ''}
+          class={[appWindow, 'transition-[opacity,scale,visibility] motion-reduce:transition-none', on ? [sides.length < 2 && 'col-start-1 row-start-1', windowTile(sides), 'duration-340 ease-out', full ? 'z-4' : 'z-1'] : 'invisible absolute z-0 scale-88 opacity-0 duration-260 ease-in']}
+          style={on ? windowPlace(sides, id) : motion.pinned(id)}
           data-fullscreen={full || undefined}
           inert={!on}
           {@attach motion.track(id)}

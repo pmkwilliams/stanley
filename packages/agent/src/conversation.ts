@@ -21,8 +21,8 @@ export type StepTarget =
   | { kind: 'lock' }
   /** A web page Stanley found or read, opened on screen by its address. */
   | { kind: 'page'; url: string; title: string }
-  /** The screen laid out: what is on it now, as Jev reads it (`describeScreen`). */
-  | { kind: 'arrange'; shown: string }
+  /** The screen laid out: what is on it then is the step's summary (`describeScreen`). */
+  | { kind: 'arrange' }
 
 /** A step that ran on screen. */
 export interface StepMeta {

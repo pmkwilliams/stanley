@@ -179,7 +179,7 @@
   </App.Sidebar>
 
   <!-- A message: its header stays put, the body scrolls on its own, and the reply box stays at the bottom. -->
-  <App.Main class={!reading ? '@max-3xl:hidden' : ''}>
+  <App.Main class={[!reading && '@max-3xl:hidden']}>
     {#if open}
       {#key open.id}
         <article class="flex min-h-0 flex-1 flex-col">

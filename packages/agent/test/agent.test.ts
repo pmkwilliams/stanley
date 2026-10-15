@@ -11,7 +11,7 @@ import type { Effect } from '../src/effects'
 import { topFiles, type FileTools } from '../src/files'
 import type { SkillScan } from '../src/skills'
 import { DONE_CHECK, scriptedTurn, type FileOutput, type ThinkRequest, type Thinker, type ThinkResult } from '../src/think'
-import { sidesKey, type Sides } from '../src/screen'
+import { describeScreen, sidesKey, type Sides } from '../src/screen'
 import type { WebTools } from '../src/web'
 import type { World } from '../src/world'
 
@@ -53,7 +53,7 @@ function fakeWorld(opts: { screenChanges?: boolean; failOn?: string; titles?: Re
       arrange: async (next: Sides) => {
         performed.push(`arrange ${sidesKey(next)}`)
         sides = next
-        return { summary: `Now on the screen: ${sidesKey(next)}` }
+        return { summary: describeScreen(next, (id) => world.appList().find((a) => a.id === id)!.title) }
       },
       global: async (option: 'show' | 'home' | 'back') => {
         performed.push(option)
@@ -206,7 +206,7 @@ function setup(script: Script, opts: { world?: Parameters<typeof fakeWorld>[0]; 
     events: { tick: (t) => ticks.push(t), status: (s) => statuses.push(s), debug: (e) => debug.push(e), said: (t) => said.push(t), ...opts.events },
     ...opts.deps,
   })
-  return { agent, jev, thinker, performed, ticks, statuses, debug, said }
+  return { agent, jev, thinker, world, performed, ticks, statuses, debug, said }
 }
 
 const plan = (...picks: Pick[]): Script => (_, i) => picks[i] ?? { next: 'done' }
@@ -2382,6 +2382,60 @@ describe('Agent screen layout', () => {
     fail()
     await settle()
     expect(performed).not.toContain('show')
+  })
+
+  it('ends the task before deciding what the screen shows: words said meanwhile start a task of their own', async () => {
+    let answer!: () => void
+    const asking = new Promise<void>((r) => (answer = r))
+    const { agent } = setup(async (req, i) => (!req.questions.step ? (await asking, { next: 'done', show: 'Tasks' }) : i === 0 ? { next: 'think' } : { next: 'listen' }), {
+      world: { sides: [['email']] },
+      thinker: { run: async () => ({ text: 'You have two tasks.' }) },
+    })
+    agent.utteranceStart()
+    spoke(agent, 'how many tasks do I have in total')
+    await settle()
+    agent.utteranceStart()
+    agent.segment('and what about tomorrow')
+    answer()
+    await settle()
+    const marks = agent.history.view().flatMap((e) => (e.meta.kind === 'event' ? [e.meta.event] : e.meta.kind === 'words' && typeof e.message?.content === 'string' ? [e.message.content] : []))
+    expect(marks.slice(-3)).toEqual(['task-end', 'task-start', 'and what about tomorrow'])
+  })
+
+  it('decides again when the user changes the screen while Jev decides how to arrange it', async () => {
+    let world!: World
+    const { agent, jev, performed, ...rest } = setup(async (_, i) => {
+      // The user clicks while the call is out: the screen is no longer what Jev saw.
+      if (i === 0) await world.global('show')
+      return i === 0 ? { next: 'act', step: 'arrange the screen', show: 'Tasks and Email', left: 'Tasks' } : { next: 'done', show: 'Tasks' }
+    }, { world: { sides: [['email']] } })
+    world = rest.world
+    agent.utteranceStart()
+    spoke(agent, 'put my tasks on the left')
+    await settle()
+    expect(jev.calls).toBeGreaterThanOrEqual(2)
+    expect(performed.filter((p) => p.startsWith('arrange'))).toEqual([])
+  })
+
+  it('records an arrangement that gave way as failed, and lays the screen out when the task ends', async () => {
+    const { agent, jev, world, performed } = setup(plan({ next: 'act', step: 'arrange the screen', show: 'Tasks and Email', left: 'Tasks' }, { next: 'done', show: 'Tasks' }), { world: { sides: [['email'], ['tasks']] } })
+    const states: string[] = []
+    const decide = jev.decide.bind(jev)
+    jev.decide = async (req) => (states.push(req.state), decide(req))
+    let first = true
+    const arrange = world.arrange!.bind(world)
+    world.arrange = async (sides, fresh) => {
+      if (first) {
+        first = false
+        throw new Error('the screen changed while the apps opened, so it was left as it is')
+      }
+      return arrange(sides, fresh)
+    }
+    agent.utteranceStart()
+    spoke(agent, 'swap them round')
+    await settle()
+    expect(states[1]).toContain('arranged the screen: failed (the screen changed while the apps opened, so it was left as it is).')
+    expect(performed).toEqual(['arrange tasks'])
   })
 
   it('leaves the screen when new words came while the decision that finished the task was made', async () => {
