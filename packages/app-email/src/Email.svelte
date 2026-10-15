@@ -32,6 +32,10 @@
           .map((e) => ({ node: `email/${e.id}`, who: e.from, address: e.address, subject: e.subject, body: e.body, unread: !e.read, selected: open?.id === e.id })),
   )
 
+  /** A message is open (received or sent): narrow, it takes the window, and the list waits behind Back. */
+  let reading = $derived(!!(open ?? sent))
+  let viewLabel = $derived(views.find((t) => t.id === view)?.label ?? 'Inbox')
+
   /** The body's first line, for the list's summary. */
   const firstLine = (body: string) => body.split('\n').find((line) => line.trim())?.trim() ?? ''
 
@@ -92,7 +96,7 @@
 
 <!-- A message's text, its web addresses links that open in Web. Kept on few lines: the paragraph keeps whitespace. -->
 {#snippet body(message: string, text: string)}
-  <p class="min-h-0 flex-1 overflow-auto px-6 py-5 leading-relaxed whitespace-pre-wrap">{#each linkify(text) as segment, i (i)}{#if segment.url}<a
+  <p class="min-h-0 flex-1 overflow-auto px-6 py-5 leading-relaxed whitespace-pre-wrap @max-3xl:px-4 @max-3xl:py-4">{#each linkify(text) as segment, i (i)}{#if segment.url}<a
           href={segment.url}
           class="font-medium wrap-anywhere text-primary underline underline-offset-4"
           onclick={(e) => {
@@ -102,8 +106,15 @@
         >{:else}{segment.text}{/if}{/each}</p>
 {/snippet}
 
+<!-- Narrow, the way back to the list the message was opened from. -->
+{#snippet back()}
+  <Button variant="ghost" size="sm" class="-ml-2 gap-0.5 pl-1 text-muted-foreground @3xl:hidden" onclick={() => perform(view)}>
+    <Icon name="chevron-left" size={16} weight={2} />{viewLabel}
+  </Button>
+{/snippet}
+
 {#snippet person(name: string, address: string | undefined, date: string)}
-  <div class="mt-4 flex items-center gap-3">
+  <div class="mt-4 flex items-center gap-3 @max-3xl:mt-3">
     {@render avatar(name, address, 'lg')}
     <div class="flex min-w-0 flex-1 flex-col">
       <span class="font-semibold">{name}</span>
@@ -113,8 +124,13 @@
   </div>
 {/snippet}
 
-<App.Root size="wide">
-  <App.Sidebar>
+<!--
+  Responsive to its own width (a container, since a window may be a tile beside others): wide, the
+  list and the message side by side; narrow, one at a time, as Mail on a phone. The message takes
+  the window with Back to its list, and the list takes it when none is open.
+-->
+<App.Root size="wide" class="@container">
+  <App.Sidebar class={['@max-3xl:w-full @max-3xl:border-r-0', reading && '@max-3xl:hidden']}>
     <Tabs.Root value={view} activationMode="manual" class="flex-none px-3 pt-3 pb-2">
       <Tabs.List aria-label="Mailbox" class="w-full">
         {#each views as t (t.id)}
@@ -163,14 +179,16 @@
   </App.Sidebar>
 
   <!-- A message: its header stays put, the body scrolls on its own, and the reply box stays at the bottom. -->
-  <App.Main>
+  <App.Main class={!reading ? '@max-3xl:hidden' : ''}>
     {#if open}
       {#key open.id}
         <article class="flex min-h-0 flex-1 flex-col">
-          <header class="flex-none border-b px-6 pt-5 pb-4">
-            <div class="flex items-start gap-4">
-              <h2 class="flex-1 text-2xl leading-tight font-bold tracking-tight text-balance wrap-anywhere">{open.subject}</h2>
-              <ButtonGroup>
+          <header class="flex-none border-b px-6 pt-5 pb-4 @max-3xl:px-4 @max-3xl:pt-3">
+            <!-- Narrow: Back and the actions on one row, the subject under them. -->
+            <div class="flex items-start gap-4 @max-3xl:flex-wrap @max-3xl:items-center @max-3xl:gap-y-2">
+              {@render back()}
+              <h2 class="flex-1 text-2xl leading-tight font-bold tracking-tight text-balance wrap-anywhere @max-3xl:order-last @max-3xl:basis-full @max-3xl:text-xl">{open.subject}</h2>
+              <ButtonGroup class="@max-3xl:ml-auto">
                 <Button variant="secondary" size="icon" aria-label="Mark unread" title="Mark unread" onclick={() => act('unread')}><Icon name="envelope" size={18} /></Button>
                 {#if open.archived}
                   <Button variant="secondary" size="icon" aria-label="Move to Inbox" title="Move to Inbox" onclick={() => act('restore')}><Icon name="tray" size={18} /></Button>
@@ -183,12 +201,12 @@
             {@render person(open.from, open.address, formatDate(open.date))}
           </header>
           {@render body(`email/${open.id}`, open.body)}
-          <form class="flex-none px-6 pt-1 pb-5" onsubmit={send}>
+          <form class="flex-none px-6 pt-1 pb-5 @max-3xl:px-4 @max-3xl:pb-4" onsubmit={send}>
             <InputGroup.Root>
               <InputGroup.Textarea
                 name="reply"
                 rows={3}
-                class="max-h-40 min-h-16"
+                class="max-h-40 min-h-16 @max-3xl:min-h-10"
                 placeholder="Reply to {open.from}"
                 aria-label="Reply to {open.from}"
                 value={data.drafts[open.id] ?? ''}
@@ -204,8 +222,9 @@
       {/key}
     {:else if sent}
       <article class="flex min-h-0 flex-1 flex-col">
-        <header class="flex-none border-b px-6 pt-5 pb-4">
-          <h2 class="text-2xl leading-tight font-bold tracking-tight text-balance wrap-anywhere">{sent.subject}</h2>
+        <header class="flex-none border-b px-6 pt-5 pb-4 @max-3xl:px-4 @max-3xl:pt-3">
+          {@render back()}
+          <h2 class="text-2xl leading-tight font-bold tracking-tight text-balance wrap-anywhere @max-3xl:mt-2 @max-3xl:text-xl">{sent.subject}</h2>
           {@render person(sent.to, addressOf(sent.to), formatDate(sent.date))}
         </header>
         {@render body(`sent/${sent.id}`, sent.body)}
