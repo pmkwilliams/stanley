@@ -1,6 +1,6 @@
 <script lang="ts">
   import StatusBar from '../src/renderer/src/StatusBar.svelte'
-  import { screenGrid, windowPlace } from '../src/renderer/src/screen'
+  import { screenGrid, windowPlace, windowTile } from '../src/renderer/src/screen'
   import { surfaces } from '../src/renderer/src/surfaces'
   import { appWindow } from '@stanley/app-ui/components/app'
 
@@ -32,7 +32,7 @@
 
 <div
   class="relative grid h-screen grid-rows-[var(--bar-height)_minmax(0,1fr)]"
-  style="--bar-height: 80px; --caption-height: 0px; --window-max-width: calc(100vw - 64px); --window-max-height: calc(100vh - var(--bar-height) - 64px);
+  style="--bar-height: 80px; --caption-height: 0px; --window-max-width: calc(100vw - 2rem); --window-max-height: calc(100vh - var(--bar-height) - 2rem);
          background: radial-gradient(40% 30% at 30% 100%, rgba(79, 209, 165, 0.35), transparent 70%), radial-gradient(40% 30% at 70% 100%, rgba(138, 124, 240, 0.35), transparent 70%), var(--background)"
 >
   <div><StatusBar {snapshot} onlock={() => {}} /></div>
@@ -40,7 +40,7 @@
     {#each sides as side}
       {#each side as id (id)}
         {@const Surface = surfaces[id]}
-        <div class={appWindow} style={windowPlace(sides, id)}>
+        <div class={[appWindow, windowTile(sides)]} style={windowPlace(sides, id)}>
           <Surface data={states[id]} perform={() => {}} />
         </div>
       {/each}

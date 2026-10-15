@@ -91,5 +91,5 @@ right choices than it caught wrong ones. So no check, and the decision reads wor
 
 ## Follow-ups
 
-- Stacked windows are half height: apps should lay out for it (the Tasks list and the forecast are
-  cut off and scroll).
+- Tiles are as big as their cells: apps should lay out for a half-height tile (the forecast and
+  the inbox list scroll).

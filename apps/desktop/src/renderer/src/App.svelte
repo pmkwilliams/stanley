@@ -12,7 +12,7 @@
   import { ONSET_HOLD_MS, voiceMayStart } from './duck'
   import { dbfs, loudness, mic, voiceOut } from './presence'
   import { leave, Motion } from './motion'
-  import { screenGrid, windowPlace } from './screen'
+  import { screenGrid, windowPlace, windowTile } from './screen'
   import { backgrounds, kept, surfaces } from './surfaces'
   import { setTheme } from './theme.svelte'
   import { startVoice } from './voice'
@@ -118,7 +118,7 @@
 <svelte:window onkeydown={leaveFullscreen} />
 <div
   class={['grid h-screen grid-cols-1 grid-rows-[var(--bar-height)_minmax(0,1fr)] bg-background [&>header]:transition-opacity [&>header]:duration-250', locked && '[&>header]:opacity-0']}
-  style="--bar-height: 80px; --caption-height: 48px; --window-max-width: calc(100vw - 64px); --window-max-height: calc(100vh - var(--bar-height) - var(--caption-height) - 64px)"
+  style="--bar-height: 80px; --caption-height: 48px; --window-max-width: calc(100vw - 2rem); --window-max-height: calc(100vh - var(--bar-height) - var(--caption-height) - 2rem)"
   inert={locked}
 >
   {#if snapshot}<Presence {snapshot} docked={shown.length > 0 && !locked} captions={!locked} />{/if}
@@ -131,7 +131,7 @@
       {#each shown.filter((id) => surfaces[id] && !kept.has(id)) as id (id)}
         {@const Surface = surfaces[id]}
         <div
-          class={[appWindow, sides.length < 2 && 'col-start-1 row-start-1', 'inert:z-0', fullscreen ? 'z-4' : 'z-1']}
+          class={[appWindow, sides.length < 2 && 'col-start-1 row-start-1', windowTile(sides), 'inert:z-0', fullscreen ? 'z-4' : 'z-1']}
           style={windowPlace(sides, id)}
           data-fullscreen={fullscreen || undefined}
           {@attach motion.track(id)}
@@ -147,7 +147,7 @@
         {@const on = shown.includes(id)}
         {@const full = on && fullscreen}
         <div
-          class={[appWindow, 'transition-all', on ? [sides.length < 2 && 'col-start-1 row-start-1', 'duration-340 ease-out', full ? 'z-4' : 'z-1'] : 'invisible absolute z-0 scale-88 opacity-0 duration-260 ease-in']}
+          class={[appWindow, 'transition-all', on ? [sides.length < 2 && 'col-start-1 row-start-1', windowTile(sides), 'duration-340 ease-out', full ? 'z-4' : 'z-1'] : 'invisible absolute z-0 scale-88 opacity-0 duration-260 ease-in']}
           style={on ? windowPlace(sides, id) : ''}
           data-fullscreen={full || undefined}
           inert={!on}
