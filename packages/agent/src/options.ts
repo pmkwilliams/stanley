@@ -32,7 +32,7 @@ export const NAVIGATION = {
   home: 'Go to the home screen, which lists the apps.',
   lock: 'Lock the computer: go to the lock screen.',
   files: "List the user's files, in the background.",
-  arrange: 'Change which apps are on the screen, or where they are, as the user asked: show, hide, swap or put apps side by side.',
+  arrange: 'Lay the screen out: which apps are on it, side by side, swapped or hidden.',
 } as const
 
 export function roleOf(node: AgentNode): string {
