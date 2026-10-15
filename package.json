@@ -14,6 +14,7 @@
     "eval:web": "pnpm --filter @stanley/evals eval:web",
     "eval:working": "pnpm --filter @stanley/evals eval:working",
     "eval:answer": "pnpm --filter @stanley/evals eval:answer",
+    "eval:layout": "pnpm --filter @stanley/evals eval:layout",
     "smoke:desktop": "pnpm build && pnpm --filter @stanley/evals smoke:desktop",
     "eval:stt": "pnpm --filter @stanley/evals eval:stt",
     "eval:turn": "pnpm --filter @stanley/evals eval:turn",

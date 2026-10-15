@@ -12,6 +12,7 @@
     "eval:web": "tsx web.mts",
     "eval:working": "tsx working.mts",
     "eval:answer": "tsx answer.mts",
+    "eval:layout": "tsx layout.mts",
     "smoke:desktop": "tsx desktop-smoke.mts"
   },
   "dependencies": {

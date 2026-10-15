@@ -9,6 +9,7 @@
 | `pnpm eval:web <filter>` | The same agent on fixture websites in headless Chromium | Paid (Jev + Sonnet) |
 | `pnpm eval:web --live <filter>` | Read-only scenarios on real websites (they change, so not in the default set) | Paid (Jev + Sonnet) |
 | `pnpm eval:answer <filter>` | Answering from the page with Jev alone (`answer.ts`): right answers spoken, wrong ones never, on saved real pages | 1–4 Jev calls per case |
+| `pnpm eval:layout <filter>` | What the screen shows once Stanley is done: which apps, and which side each is on | 1 Jev call per case |
 | `pnpm eval:working` | Whether words said while Stanley works stop it or wait for it to finish (`WORKING`) | 15 Jev calls |
 | `pnpm smoke:desktop` | Builds and launches the real app, types two utterances, screenshots both windows | A few paid calls |
 
@@ -84,6 +85,18 @@ page, one fact said twice in different words). Each case in `answer/cases.mts` s
 should be spoken, declined, or either, and what the spoken answer must and must not contain. The
 summary leads with wrong answers spoken: declining only hands the turn to thinking, but a wrong
 answer is said out loud. `--verbose` prints each pass's top passages and the runs.
+
+## The screen's layout
+
+`pnpm eval:layout` asks Jev what the screen shows once Stanley has done what the user asked: up to
+three apps, one alone, two side by side, or three with two stacked on one side. Each case in
+`layout/cases.mts` gives what is on the screen, the conversation, and the app Stanley worked on, and
+lists the arrangements that pass. Some ask for the screen in so many words ("swap them"); the rest
+leave it to Jev to judge from what was asked ("add a task to pay this invoice" while reading it).
+Two questions in one call: which set of apps is on the screen, and which of them are on the left.
+Asking each app where it goes on its own passed 31/38 to this shape's 37/38: it missed which apps go
+together.
+`--model typesafe-ai/jev-1.14.0` tries another Jev.
 
 ## Recording clips
 

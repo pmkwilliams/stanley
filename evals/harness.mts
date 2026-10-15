@@ -57,7 +57,7 @@ export function loadEnv() {
  */
 export function select<T>(items: T[], name: (t: T) => string, command: string): T[] | null {
   const args = process.argv.slice(2)
-  const filters = args.filter((a, i) => !a.startsWith('-') && !/^--(runs|concurrency|jev-turns|word-ms|effort|quick-model|set)$/.test(args[i - 1] ?? ''))
+  const filters = args.filter((a, i) => !a.startsWith('-') && !/^--(runs|concurrency|jev-turns|word-ms|effort|quick-model|set|model)$/.test(args[i - 1] ?? ''))
   if (!filters.length && !args.includes('--all')) {
     console.log(`${items.length} available — each makes several paid Jev/thinking calls:`)
     for (const t of items) console.log(`  ${name(t)}`)
