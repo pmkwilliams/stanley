@@ -5,6 +5,7 @@
   import { Button } from '@stanley/app-ui/components/button'
   import * as Item from '@stanley/app-ui/components/item'
   import { Progress } from '@stanley/app-ui/components/progress'
+  import { Slider } from '@stanley/app-ui/components/slider'
   import { cover } from './art'
   import { CREDIT, LIST_TITLE, nowPlaying, time, type MusicState } from './core'
   import { playback } from './Player.svelte'
@@ -12,6 +13,11 @@
   let { data, perform, agentName = DEFAULT_AGENT_NAME }: AppUiProps<MusicState> = $props()
   let track = $derived(nowPlaying(data))
   let elapsed = $derived(track ? Math.min(playback.elapsed, track.durationSec) : 0)
+  /** The volume as the slider shows it: it follows the state, and moves at once as it is dragged. */
+  let volume = $state(0)
+  $effect(() => {
+    volume = data.volume
+  })
 
   /** The playlist's columns, shared by its header and rows: number · art, title and artist · album · time. */
   const COLUMNS = 'grid grid-cols-[1.25rem_minmax(0,3fr)_minmax(0,2fr)_2.5rem] items-center gap-3'
@@ -53,6 +59,17 @@
         </Button>
         <Button variant="ghost" size="icon-lg" class="size-11 rounded-full [&_svg]:size-7!" aria-label="Next" onclick={() => perform('next')}>
           <Icon name="skip-forward" weight={1.5} />
+        </Button>
+      </div>
+
+      <!-- The volume: a speaker at each end of the slider, each a button that steps it down or up. -->
+      <div class="mx-auto flex w-full max-w-64 items-center gap-1 text-muted-foreground">
+        <Button variant="ghost" size="icon-sm" class="rounded-full" aria-label="Volume down" onclick={() => perform('volume-down')}>
+          <Icon name={volume === 0 ? 'speaker-off' : 'speaker-low'} />
+        </Button>
+        <Slider type="single" class="flex-1" bind:value={volume} max={100} step={1} thumbLabel="Volume" onValueChange={(v: number) => perform('volume', { text: String(v) })} />
+        <Button variant="ghost" size="icon-sm" class="rounded-full" aria-label="Volume up" onclick={() => perform('volume-up')}>
+          <Icon name="speaker-high" />
         </Button>
       </div>
     </div>

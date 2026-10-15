@@ -31,9 +31,9 @@ export const fixtures: Record<string, Record<string, unknown>> = {
   },
   music: {
     /** The playlist, its first track playing. */
-    playing: { tracks: playlist, currentId: playlist[0]!.id, playing: true } satisfies MusicState,
+    playing: { tracks: playlist, currentId: playlist[0]!.id, playing: true, volume: 80 } satisfies MusicState,
     /** Paused partway down the list. */
-    paused: { tracks: playlist, currentId: playlist[5]!.id, playing: false } satisfies MusicState,
+    paused: { tracks: playlist, currentId: playlist[5]!.id, playing: false, volume: 80 } satisfies MusicState,
   },
   weather: {
     denver: {

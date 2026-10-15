@@ -1,6 +1,6 @@
-import type { AppContext } from '@stanley/app-sdk'
+import type { AppContext, AppStore } from '@stanley/app-sdk'
 import { describe, expect, it, vi } from 'vitest'
-import { musicApp, nowPlaying, playlist, type MusicState } from '../src/core'
+import { gain, musicApp, nowPlaying, playlist, type MusicState } from '../src/core'
 
 const fetch = vi.fn() as unknown as typeof globalThis.fetch
 const ctx: AppContext = { env: {}, fetch }
@@ -24,9 +24,33 @@ describe('music', () => {
     expect(s.tracks).toEqual(playlist)
     expect(s).toMatchObject({ currentId: playlist[0]!.id, playing: false })
     expect(fetch).not.toHaveBeenCalled()
-    expect(nodeIds(s)).toEqual(['previous', 'toggle', 'next', 'songs', ...playlist.map((t) => `track/${t.id}`)])
+    expect(nodeIds(s)).toEqual(['previous', 'toggle', 'next', 'volume-down', 'volume', 'volume-up', 'songs', ...playlist.map((t) => `track/${t.id}`)])
     expect(musicApp.toMarkdown(s)).toContain('## Playlist\n- ▶ Hallucinogens — Konteks (1:54)')
     expect(musicApp.toMarkdown(s)).toContain('Music from SoundCloud')
+  })
+
+  it('turns down and up a step at a time, or to a percentage, and keeps the volume for the next session', async () => {
+    const values = new Map<string, unknown>()
+    const store: AppStore = { get: (k) => values.get(k), set: (k, v) => void values.set(k, v) }
+    const saving = { ...ctx, store }
+    let s = await musicApp.init(saving)
+    expect(s.volume).toBe(100)
+    expect(musicApp.nodes(s).find((n) => n.id === 'volume')).toMatchObject({ kind: 'input', role: 'slider', label: 'Volume', value: '100%' })
+    expect((await musicApp.perform(s, 'volume-up', {}, saving)).summary).toBe('The music is already at full volume')
+    let r = await musicApp.perform(s, 'volume-down', {}, saving)
+    expect(r.summary).toBe('Turned the music down to 80%')
+    r = await musicApp.perform(r.state, 'volume', { text: '30 percent' }, saving)
+    expect(r.summary).toBe("Set the music's volume to 30%")
+    expect(musicApp.toMarkdown(r.state)).toContain('Volume: 30%')
+    expect((await musicApp.perform(r.state, 'volume', { text: 'quiet' }, saving)).summary).toBe('Volume takes a percentage, not "quiet"')
+    s = (await musicApp.perform(r.state, 'volume-down', {}, saving)).state
+    expect((await musicApp.perform(s, 'volume-down', {}, saving)).summary).toBe('Turned the music all the way down')
+    expect((await musicApp.init(saving)).volume).toBe(0)
+    expect((await musicApp.init(ctx)).volume).toBe(100)
+  })
+
+  it('plays louder on a curve, so steps sound alike', () => {
+    expect([0, 50, 100].map(gain)).toEqual([0, 0.25, 1])
   })
 
   it('has no search', async () => {

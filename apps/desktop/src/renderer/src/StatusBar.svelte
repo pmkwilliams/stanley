@@ -3,6 +3,8 @@
   import MiniPlayer from '@stanley/app-music/mini'
   import type { MusicState } from '@stanley/app-music/core'
   import { fade } from 'svelte/transition'
+  import * as Popover from '@stanley/app-ui/components/popover'
+  import { Slider } from '@stanley/app-ui/components/slider'
   import * as Tooltip from '@stanley/app-ui/components/tooltip'
   import { clock, time, weekday } from './clock.svelte'
   import CometTrail from './CometTrail.svelte'
@@ -12,6 +14,12 @@
   const music = $derived(snapshot?.surfaces.music as MusicState | undefined)
   /** What the background-work icon says it is, for screen readers. */
   const working = $derived(`Working in the background: ${snapshot?.tasks.map((t) => t.title).join(', ') ?? ''}`)
+
+  /** The music's volume, as the slider shows it: it follows Music, and moves at once as it is dragged. */
+  let volume = $state(0)
+  $effect(() => {
+    if (music) volume = music.volume
+  })
 </script>
 
 <!--
@@ -83,11 +91,33 @@
           </Tooltip.Provider>
         </span>
       {/if}
-      <span class="grid size-5 place-items-center" aria-label="Wi-Fi">
-        <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round">
-          <path d="M1.6 7.6a12 12 0 0 1 16.8 0M4.6 10.6a7.8 7.8 0 0 1 10.8 0M7.6 13.6a3.6 3.6 0 0 1 4.8 0" /><circle cx="10" cy="16.4" r="1.3" fill="currentColor" stroke="none" />
-        </svg>
-      </span>
+      <!-- The music's volume, there while Music is, as the player beside it is. The speaker shows the level (a cross at none, then one wave, then two); pressing it opens a slider below, on glass like the tooltip's. -->
+      {#if music}
+        <span class="grid size-5 place-items-center" transition:fade={{ duration: 180 }}>
+          <Popover.Root>
+            <Popover.Trigger
+              class="relative grid size-5 place-items-center before:absolute before:-inset-1.5 before:rounded-lg before:transition-colors hover:before:bg-foreground/12"
+              aria-label={`Music volume, ${volume}%`}
+            >
+              <svg class="relative" viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+                <path d="M2.5 7.4h2.9L9.6 4v12l-4.2-3.4H2.5a.9.9 0 0 1-.9-.9V8.3a.9.9 0 0 1 .9-.9z" fill="currentColor" stroke="currentColor" stroke-width="0.6" stroke-linejoin="round" />
+                {#if volume === 0}
+                  <path d="M13 7.6l4.8 4.8M17.8 7.6 13 12.4" />
+                {:else}
+                  <path d="M12.6 7.6a3.4 3.4 0 0 1 0 4.8" /><path class="transition-opacity duration-200" class:opacity-0={volume < 50} d="M15.2 5a7 7 0 0 1 0 10" />
+                {/if}
+              </svg>
+            </Popover.Trigger>
+            <Popover.Content side="bottom" sideOffset={20} class="flex w-60 flex-col gap-2 rounded-xl bg-muted/50 px-4 py-3 text-foreground shadow-none backdrop-blur-sm backdrop-saturate-150">
+              <p class="text-xs font-medium tracking-wide text-muted-foreground uppercase">Music volume</p>
+              <div class="flex items-center gap-3">
+                <Slider type="single" bind:value={volume} max={100} step={1} thumbLabel="Music volume" onValueChange={(level: number) => window.stanley.perform('music', 'volume', { text: String(level) })} />
+                <span class="w-9 text-right text-sm tabular-nums">{volume}%</span>
+              </div>
+            </Popover.Content>
+          </Popover.Root>
+        </span>
+      {/if}
       <span class="grid h-5 w-6.5 place-items-center" aria-label="Battery">
         <svg viewBox="0 0 26 20" width="26" height="20">
           <rect x="0.8" y="4.3" width="21.4" height="11.4" rx="3.4" fill="none" stroke="currentColor" stroke-width="1.4" opacity="0.5" />
