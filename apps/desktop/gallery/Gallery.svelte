@@ -58,7 +58,7 @@
   })
 
   /** Just enough of the shell's snapshot for the real status bar; its buttons act on this app. */
-  const snapshot = $derived({ layout: { visible: id }, surfaces: data ? { [id]: data } : {}, focus: null, status: 'idle', listening: false } as any)
+  const snapshot = $derived({ layout: { visible: id }, surfaces: data ? { [id]: data } : {}, focus: null, status: 'idle', listening: false, tasks: [] } as any)
   ;(window as any).stanley = { perform: (_: string, nodeId: string, args?: ActionArgs) => perform(nodeId, args), open: () => {}, toggleListening: () => {}, lock: () => {} }
 
   const Surface = surfaces[id]

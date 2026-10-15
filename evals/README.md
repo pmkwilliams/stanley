@@ -93,10 +93,29 @@ three apps, one alone, two side by side, or three with two stacked on one side. 
 `layout/cases.mts` gives what is on the screen, the conversation, and the app Stanley worked on, and
 lists the arrangements that pass. Some ask for the screen in so many words ("swap them"); the rest
 leave it to Jev to judge from what was asked ("add a task to pay this invoice" while reading it).
+The apps hold their real data (`layout/scene.mts`): what Jev reads of an app is its own markdown.
 Two questions in one call: which set of apps is on the screen, and which of them are on the left.
 Asking each app where it goes on its own passed 31/38 to this shape's 37/38: it missed which apps go
 together.
-`--model typesafe-ai/jev-1.14.0` tries another Jev.
+
+`--image` also shows Jev a picture of the screen, drawn by the gallery with the apps' real windows
+(`apps/desktop/gallery/Screen.svelte`), on jev-1.14.0, which takes pictures; `--no-line` leaves out
+the words saying what is on it. `--check` asks instead whether the screen after, in words or as a
+picture, is what the user wants, for the right arrangement and likely wrong ones. On 2 runs each:
+
+| | passed |
+|---|---|
+| jev, in words | 37/38 |
+| jev-1.14.0, in words | 32/38 |
+| jev-1.14.0, in words and a picture | 31/38 |
+| jev-1.14.0, a picture only | 28/38 |
+| check, jev in words | right kept 32/38, wrong turned down 34/50 |
+| check, jev-1.14.0 in words | 32/38, 32/50 |
+| check, jev-1.14.0 as a picture | 32/38, 30/50 |
+
+A picture costs about twice the input and 0.5 s to 0.2 s, and helps neither the choice nor a check
+of it. Checking after is worse than choosing: it wants the app Stanley worked on in front (music
+over the inbox it was reading), so it would undo right choices more often than it caught wrong ones.
 
 ## Recording clips
 

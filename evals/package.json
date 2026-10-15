@@ -21,13 +21,15 @@
     "@stanley/app-lights": "workspace:*",
     "@stanley/app-music": "workspace:*",
     "@stanley/app-sdk": "workspace:*",
+    "@stanley/app-settings": "workspace:*",
     "@stanley/app-tasks": "workspace:*",
     "@stanley/app-weather": "workspace:*",
     "@stanley/app-web": "workspace:*",
     "@stanley/browser": "workspace:^",
     "@stanley/files": "workspace:*",
     "@stanley/jev": "workspace:*",
-    "@stanley/stt": "workspace:*"
+    "@stanley/stt": "workspace:*",
+    "ai": "7.0.137"
   },
   "devDependencies": {
     "hyparquet": "^1.31.3",
