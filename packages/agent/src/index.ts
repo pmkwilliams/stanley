@@ -1,4 +1,5 @@
 export * from './agent'
+export * from './answer'
 export * from './background'
 export * from './barge'
 export * from './config'

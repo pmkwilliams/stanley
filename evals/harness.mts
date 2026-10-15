@@ -221,7 +221,7 @@ function makeAgent(world: World, events: AgentDeps['events'], files?: FileTools)
   return new Agent({ world, jev: countedJev(createDecisionClient()), thinker: countedThinker(createThinker({ effort, singleModel })), web: key ? countedWeb(parallelWeb(key)) : undefined, files, events, config, jevNotes: profile.notes })
 }
 
-function overrides(config: AgentConfig): AgentConfig {
+export function overrides(config: AgentConfig): AgentConfig {
   const out = structuredClone(config) as unknown as Record<string, unknown>
   process.argv.forEach((a, i) => {
     if (a !== '--set') return
@@ -325,7 +325,7 @@ export async function typeUtterance(agent: Agent, utterance: string, _index = 0,
   return { lastWordAt, cutIns }
 }
 
-function countedJev(client: DecisionClient): DecisionClient {
+export function countedJev(client: DecisionClient): DecisionClient {
   const count = <T extends { usage?: { inputTokens?: number }; latencyMs: number }>(result: T) => {
     usage.jev++
     usage.jevInputTokens += result.usage?.inputTokens ?? 0

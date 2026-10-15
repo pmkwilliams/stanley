@@ -8,6 +8,7 @@
 | `pnpm eval <filter>` | Agent behaviour on typed scenarios, demo apps | Paid (Jev + Sonnet) |
 | `pnpm eval:web <filter>` | The same agent on fixture websites in headless Chromium | Paid (Jev + Sonnet) |
 | `pnpm eval:web --live <filter>` | Read-only scenarios on real websites (they change, so not in the default set) | Paid (Jev + Sonnet) |
+| `pnpm eval:answer <filter>` | Answering from the page with Jev alone (`answer.ts`): right answers spoken, wrong ones never, on saved real pages | 1–4 Jev calls per case |
 | `pnpm eval:working` | Whether words said while Stanley works stop it or wait for it to finish (`WORKING`) | 15 Jev calls |
 | `pnpm smoke:desktop` | Builds and launches the real app, types two utterances, screenshots both windows | A few paid calls |
 
@@ -72,6 +73,17 @@ would see, and `npx tsx web/peek-live.mts <url>` does the same for a real page; 
 
 Chromium comes from `$STANLEY_CHROMIUM`, else the newest Playwright headless shell in
 `~/Library/Caches/ms-playwright`, else Homebrew's `chromium`.
+
+## Answering from the page
+
+`pnpm eval:answer` asks questions about pages in `answer/pages/`, saved from real sites through the
+same extractor the agent reads them with (`npx tsx answer/snapshot.mts <name> <url>`, no model
+calls). Pages change, so the eval reads the saved copy. The few pages marked `contrived` stand in
+for an edge case real pages don't reliably have (a dozen-word screen, a time corrected later on the
+page, one fact said twice in different words). Each case in `answer/cases.mts` says whether it
+should be spoken, declined, or either, and what the spoken answer must and must not contain. The
+summary leads with wrong answers spoken: declining only hands the turn to thinking, but a wrong
+answer is said out loud. `--verbose` prints each pass's top passages and the runs.
 
 ## Recording clips
 

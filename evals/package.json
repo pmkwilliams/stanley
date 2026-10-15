@@ -11,6 +11,7 @@
     "clips:label": "tsx label.mts",
     "eval:web": "tsx web.mts",
     "eval:working": "tsx working.mts",
+    "eval:answer": "tsx answer.mts",
     "smoke:desktop": "tsx desktop-smoke.mts"
   },
   "dependencies": {

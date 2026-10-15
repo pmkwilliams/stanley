@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 // Plain text extraction: importing scenarios.mts would pull in the whole app graph.
 const root = join(import.meta.dirname, '..')
-const scenarioFiles = ['scenarios.mts', 'web/scenarios.mts'].map((f) => readFileSync(join(import.meta.dirname, f), 'utf8')).join('\n')
+const scenarioFiles = ['scenarios.mts', 'web/scenarios.mts', 'answer/cases.mts'].map((f) => readFileSync(join(import.meta.dirname, f), 'utf8')).join('\n')
 const utterances = [...scenarioFiles.matchAll(/utterances: \[([^\]]*)\]/g)].flatMap((m) =>
   [...m[1]!.matchAll(/(['"])((?:(?!\1).)*)\1/g)].map((q) => q[2]!),
 )

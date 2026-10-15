@@ -59,6 +59,21 @@ export interface AgentConfig {
    * and how long things must be quiet before one's result is told.
    */
   background: { max: number; steps: number; quietMs: number }
+  /**
+   * Answering from the page with Jev alone (see answer.ts). `options`: passages per Jev call, cut
+   * no finer than `minWords` (with `clauses`, a short page into clauses), with at most `chars` of them per call (more goes in parallel calls);
+   * a page with more blocks is ranked coarse first, then its top
+   * `regions` passages finely. Passages within `keep` × the top one (and at least `floor`) form
+   * runs. It speaks when P(not here) is under `notHere`, the answer's mass reaches `speak`, and
+   * what it would say is at most `maxWords`. Before speaking, Jev's P(the passage, heard alone,
+   * tells the user what they asked) must reach `answers`, and P(it describes the time they asked
+   * about) must reach `when`. Both sit where no wrong answer in the eval gets through: declining
+   * only hands the turn to thinking, and a wrong answer is said out loud. An answer that is one
+   * table row is said as the value of the cell Jev picks, at `cell` or more; less, and it declines. Up to `compare` runners-up are checked for giving the
+   * same answer: always one with `agree` × the top run's mass (a rival), all when the top run is
+   * short of `speak`. Those that agree add their mass; a rival that doesn't makes it decline.
+   */
+  answer: { options: number; chars: number; minWords: number; clauses: boolean; regions: number; keep: number; floor: number; notHere: number; speak: number; answers: number; when: number; cell: number; agree: number; compare: number; maxWords: number }
 }
 
 export const defaultConfig: AgentConfig = {
@@ -85,6 +100,7 @@ export const defaultConfig: AgentConfig = {
   unsureWord: 0.5,
   working: { stop: 0.5 },
   background: { max: 3, steps: 40, quietMs: 400 },
+  answer: { options: 150, chars: 60_000, minWords: 4, clauses: true, regions: 3, keep: 0.3, floor: 0.02, notHere: 0.4, speak: 0.6, answers: 0.2, when: 0.15, cell: 0.7, agree: 0.5, compare: 3, maxWords: 45 },
 }
 
 /** How the agent is tuned for a decision model: config over `defaultConfig`, and lines added to what it is asked. */
