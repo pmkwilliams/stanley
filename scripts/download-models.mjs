@@ -1,4 +1,4 @@
-// Downloads the local speech models into ./models (gitignored).
+// Downloads the local speech models and the quick model into ./models (gitignored).
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -37,6 +37,25 @@ if (!existsSync(join(dir, kokoro))) {
   execFileSync('curl', ['-fL', '-o', archive, `https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/${kokoro}.tar.bz2`], { stdio: 'inherit' })
   execFileSync('tar', ['xjf', archive, '-C', dir], { stdio: 'inherit' })
   execFileSync('rm', [archive])
+}
+
+// The quick model, which tidies dictated words into fields: Gemma 4 E4B (Apache-2.0) on llama.cpp's server (MIT).
+if (process.platform === 'darwin' && process.arch === 'arm64') {
+  const build = 'b11642'
+  if (!existsSync(join(dir, 'llama.cpp', 'llama-server'))) {
+    console.log(`Downloading llama.cpp ${build} (~12 MB)…`)
+    const archive = join(dir, 'llama.cpp.tar.gz')
+    execFileSync('curl', ['-fL', '-o', archive, `https://github.com/ggml-org/llama.cpp/releases/download/${build}/llama-${build}-bin-macos-arm64.tar.gz`], { stdio: 'inherit' })
+    execFileSync('tar', ['xzf', archive, '-C', dir], { stdio: 'inherit' })
+    execFileSync('mv', [join(dir, `llama-${build}`), join(dir, 'llama.cpp')])
+    execFileSync('rm', [archive])
+  }
+  const gemma = 'gemma-4-E4B-it-Q4_K_M.gguf'
+  if (!existsSync(join(dir, gemma))) {
+    console.log('Downloading Gemma 4 E4B (Q4_K_M, ~5 GB)…')
+    execFileSync('curl', ['-fL', '-o', join(dir, `${gemma}.part`), `https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF/resolve/main/${gemma}`], { stdio: 'inherit' })
+    execFileSync('mv', [join(dir, `${gemma}.part`), join(dir, gemma)])
+  }
 }
 
 console.log(`Models ready in ${dir}`)

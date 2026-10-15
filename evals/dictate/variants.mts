@@ -1,4 +1,4 @@
-import { DICTATE_PROMPT, dictation } from '@stanley/agent'
+import { DICTATE_EXAMPLES, DICTATE_PROMPT, dictation } from '@stanley/agent'
 import type { DictateCase } from './cases.mts'
 import { input } from './input.mts'
 
@@ -21,7 +21,18 @@ export interface Variant {
   local?: Record<string, unknown>
 }
 
-/** The same rules as `DICTATE_PROMPT`, as steps a small model can follow one at a time. */
+/** The app's first prompt for the quick model, as rules for tidying: the base of the `shots` variants. */
+const RULES = `Stanley is a voice assistant that types into fields for the user. The user has said the words that go in the field named below, and you write exactly what the field should hold now.
+- Only the user's words for the field, without the request around them (what they asked Stanley to do with it, who it's for).
+- Tidied: no filler words or false starts, proper capitals and punctuation, and numbers, dates, times and amounts written the usual way.
+- When they corrected themselves, only the corrected version.
+- Never reworded, answered or added to: no greeting, sign-off or words of your own.
+- The whole text: when they asked to add to what the field already holds, that text and theirs together.
+- A word followed by (?) is one speech recognition was unsure of: write the word they most likely said.
+- If they haven't said yet what goes in it, write nothing.
+Write only the text, with no quotes around it.`
+
+/** The same rules as `RULES`, as steps a small model can follow one at a time. */
 const STEPS = `Stanley is a voice assistant that types into fields on the user's screen. From the end of the conversation, write what the field named below should hold now.
 
 1. Find the user's own words for this field. Leave out what they asked Stanley to do around them (to reply, send, add, search, write, call it something, tell someone) and who it is for.
@@ -143,8 +154,12 @@ const json = { response_format: { type: 'json_schema', json_schema: { name: 'fie
 
 export const variants: Record<string, Variant> = {
   prod: {
+    messages: (c) => [{ role: 'system', content: DICTATE_PROMPT }, ...DICTATE_EXAMPLES.flatMap((e): Message[] => [{ role: 'user', content: e.input }, { role: 'assistant', content: e.output }]), { role: 'user', content: input(c) }],
+    parse: parseNothing,
+  },
+  rules: {
     messages: (c) => [
-      { role: 'system', content: DICTATE_PROMPT },
+      { role: 'system', content: RULES },
       { role: 'user', content: input(c) },
     ],
   },
@@ -155,15 +170,15 @@ export const variants: Record<string, Variant> = {
     ],
   },
   shots: {
-    messages: (c) => [{ role: 'system', content: withNothing(DICTATE_PROMPT) }, ...shotMessages().map((m) => (m.role === 'assistant' && !m.content ? { ...m, content: NOTHING } : m)), { role: 'user', content: input(c) }],
+    messages: (c) => [{ role: 'system', content: withNothing(RULES) }, ...shotMessages().map((m) => (m.role === 'assistant' && !m.content ? { ...m, content: NOTHING } : m)), { role: 'user', content: input(c) }],
     parse: parseNothing,
   },
   shots2: {
-    messages: (c) => [{ role: 'system', content: withNothing(DICTATE_PROMPT) }, ...shotMessages([...SHOTS, ...MORE_SHOTS]).map((m) => (m.role === 'assistant' && !m.content ? { ...m, content: NOTHING } : m)), { role: 'user', content: input(c) }],
+    messages: (c) => [{ role: 'system', content: withNothing(RULES) }, ...shotMessages([...SHOTS, ...MORE_SHOTS]).map((m) => (m.role === 'assistant' && !m.content ? { ...m, content: NOTHING } : m)), { role: 'user', content: input(c) }],
     parse: parseNothing,
   },
   shots3: {
-    messages: (c) => [{ role: 'system', content: withNothing(DICTATE_PROMPT) }, ...shotMessages([...SHOTS, ...MORE_SHOTS, ...NAME_SHOTS]).map((m) => (m.role === 'assistant' && !m.content ? { ...m, content: NOTHING } : m)), { role: 'user', content: input(c) }],
+    messages: (c) => [{ role: 'system', content: withNothing(RULES) }, ...shotMessages([...SHOTS, ...MORE_SHOTS, ...NAME_SHOTS]).map((m) => (m.role === 'assistant' && !m.content ? { ...m, content: NOTHING } : m)), { role: 'user', content: input(c) }],
     parse: parseNothing,
   },
   'intent-shots3': {
@@ -186,7 +201,7 @@ export const variants: Record<string, Variant> = {
     parse: parseNothing,
   },
   'shots2-check': {
-    messages: (c) => [{ role: 'system', content: withNothing(DICTATE_PROMPT) }, ...shotMessages([...SHOTS, ...MORE_SHOTS]).map((m) => (m.role === 'assistant' && !m.content ? { ...m, content: NOTHING } : m)), { role: 'user', content: input(c) }],
+    messages: (c) => [{ role: 'system', content: withNothing(RULES) }, ...shotMessages([...SHOTS, ...MORE_SHOTS]).map((m) => (m.role === 'assistant' && !m.content ? { ...m, content: NOTHING } : m)), { role: 'user', content: input(c) }],
     parse: parseNothing,
     refine: (c, draft) => [
       { role: 'system', content: CHECK },

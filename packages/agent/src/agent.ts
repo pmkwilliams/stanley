@@ -30,7 +30,7 @@ import { describeStep, named, namedOptions, narrate } from './narrate'
 import { navigates, stepOptions, type OptionSet, type Target } from './options'
 import { chooseScreen, describeScreen, sameSides, screenQuestions, layoutText, sidesKey, type ScreenAsk, type ScreenChoice, type Sides } from './screen'
 import { JEV_SKILLS, NO_SKILLS, skillBody, skillChanges, type Skill, type SkillScan } from './skills'
-import { createThinker, dictation, DICTATE_PROMPT, DONE_CHECK, EARLY_GUESS, fileOutput, instructions, longDate, PartialTurn, goAheadNote, unsureNote, writeNote, type ActCall, type FileOutput, type PageOutput, type SearchOutput, type Thinker, type ThinkResult } from './think'
+import { createThinker, dictation, DICTATE_EXAMPLES, DICTATE_PROMPT, DONE_CHECK, EARLY_GUESS, fileOutput, instructions, longDate, PartialTurn, goAheadNote, unsureNote, writeNote, type ActCall, type FileOutput, type PageOutput, type SearchOutput, type Thinker, type ThinkResult } from './think'
 import { extendsWords, fullText, hasNewWords, letters, normalize, type TranscriptSnapshot } from './transcript'
 import { knownPages, sameUrl, shortUrl, type KnownPage, type WebTools } from './web'
 import type { PageDraft, Screen, StepResult, World } from './world'
@@ -1155,6 +1155,11 @@ export class Agent {
     return this.applyWrite(id, option, target, decision, result.text ? { source: 'unclear', text: '', say: result.text } : { source: 'missing', text: '', say: '' }, reply)
   }
 
+  /** Has the quick model read how to tidy dictated words ahead of time, under the name the user calls the assistant now. */
+  warmDictation(): void {
+    void this.thinker.warm?.(named(DICTATE_PROMPT, this.name()), DICTATE_EXAMPLES)
+  }
+
   /**
    * Jev is sure the user said the words for the field: the quick model tidies them out of the end
    * of the conversation, with no history or tools. Nothing yet goes the way of an empty write.
@@ -1172,7 +1177,7 @@ export class Agent {
     const started = performance.now()
     let typed: string
     try {
-      typed = await this.thinker.quick!(named(DICTATE_PROMPT, name), text, controller.signal)
+      typed = await this.thinker.quick!(named(DICTATE_PROMPT, name), text, controller.signal, DICTATE_EXAMPLES)
     } catch (err) {
       if (!controller.signal.aborted) throw err
       return this.stale(id, reply, 'writing')

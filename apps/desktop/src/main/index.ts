@@ -19,6 +19,7 @@ import { Drafts } from './drafts'
 import { filePath, SCHEME, serveFile, serveLib } from './folder-pages'
 import { WebviewTabs } from './page'
 import { Previewer } from './preview'
+import { startQuickModel } from './quick'
 import { Shell } from './shell'
 import { fileStore } from './store'
 
@@ -161,6 +162,8 @@ const thinker: Thinker = mock
       },
     }
   : createThinker()
+/** The quick model runs on this computer: its server starts now, as it takes a few seconds to load. */
+const quickModel = mock ? undefined : startQuickModel(join(root, 'models'))
 
 const sessionsDir = join(app.getPath('userData'), 'sessions')
 /**
@@ -307,6 +310,8 @@ function startSession() {
   refreshHotwords()
 }
 startSession()
+// The quick model reads how to tidy dictation as soon as it is up, so the first dictation is quick too.
+void quickModel?.then((stop) => stop && agent.warmDictation())
 
 /**
  * While Stanley talks, what the mic hears goes here first: Stanley's own voice is taken out, it
@@ -612,6 +617,8 @@ function backdrop(url: string, theme: 'light' | 'dark'): string {
  */
 function applySettings() {
   const { theme, name } = readSettings(store)
+  // Dictation's instructions say the assistant's name, so a new one is read ahead of time too.
+  void quickModel?.then((stop) => stop && agent.warmDictation())
   nativeTheme.themeSource = theme
   win?.setBackgroundColor(WINDOW_BG[theme])
   win?.setTitle(name)
@@ -819,6 +826,7 @@ app.whenReady().then(() => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll()
+  void quickModel?.then((stop) => stop?.())
   // What thinking hasn't seen yet goes into the session file too.
   agent.history.commit()
 })

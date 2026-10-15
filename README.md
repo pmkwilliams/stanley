@@ -11,7 +11,7 @@ See [docs/DESIGN.md](docs/DESIGN.md).
 
 ```sh
 pnpm install
-pnpm models          # Parakeet TDT 0.6B v2, Silero VAD, Smart Turn, Kokoro (~1 GB) into ./models
+pnpm models          # Parakeet TDT 0.6B v2, Silero VAD, Smart Turn, Kokoro (~1 GB), Gemma 4 E4B on llama.cpp (~5 GB) into ./models
 cp .env.example .env # AI_GATEWAY_API_KEY, PARALLEL_API_KEY
 pnpm dev
 ```

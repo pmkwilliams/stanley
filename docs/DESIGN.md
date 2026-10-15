@@ -31,7 +31,7 @@ Several models do the work, but it should read as one Stanley, in the trace and 
 
 - **Fast: Jev** (~330 ms). Decides turn-taking and takes clear, reversible steps, including while
   the user is still speaking: open an app, open an item, press play, tick a box.
-- **Slow: thinking** (GPT-6.1 Sol; GPT-6 Luna for single steps). Anything that needs words or judgement: what goes in a
+- **Slow: thinking** (GPT-6.1 Sol; Gemma 4 E4B on this computer tidies dictated words). Anything that needs words or judgement: what goes in a
   field, whether to press something that sends or deletes, answering, asking, and working out a
   request the fast part can't.
 
@@ -636,9 +636,11 @@ All via **Vercel AI Gateway** with the AI SDK (`ai`, pinned exactly), one `AI_GA
   `providerMetadata.typesafe.confidence[questionId]`. `packages/jev` normalizes each answer to
   `{ choice, probabilities, confidence }`: `decide` for several questions in one call, `choose` for
   one, plus a mock.
-- **Thinking**: GPT-6.1 Sol via gateway (GPT-6 Luna for a single write step) behind a
-  `Thinker` interface with one method, `run`: a tool loop with `act`, plus `search`, `fetch` and
-  `open_page` when the agent has them, or one step whose calls come back unrun (write).
+- **Thinking**: GPT-6.1 Sol via gateway behind a `Thinker` interface with `run`: a tool loop with
+  `act`, plus `search`, `fetch` and `open_page` when the agent has them, or one step whose calls
+  come back unrun (write). And `quick`: Gemma 4 E4B (Q4_K_M) on llama.cpp's server, which the app
+  starts, tidies dictated words into fields and puts task briefs in a sentence; GPT-6 Luna stands
+  in until it answers.
 - **Web**: Parallel Search and Extract APIs (`PARALLEL_API_KEY`), in `@stanley/app-web/parallel`:
   the agent's background search and fetch, and the Web app's page reader where it has no live page
   (tests and evals).

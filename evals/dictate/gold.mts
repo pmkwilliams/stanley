@@ -43,7 +43,7 @@ ${DICTATE_PROMPT}
 
 # Notes
 - The output replaces the field's whole content. Line breaks are allowed where the user asked for them (a new paragraph, a list).
-- "Write nothing" means the empty string.
+- "(nothing)" means the empty string.
 - Keep the user's own words and register: tidy, don't rewrite.
 - What matters is what the field ends up holding: what the user meant it to (the message they meant to send, a title, a search that finds what they asked for).
 

@@ -116,8 +116,10 @@ export class PartialTurn extends Error {
 export interface Thinker {
   /** A turn on the history: with tools, or deciding one step (`single`). */
   run(req: ThinkRequest): Promise<ThinkResult>
-  /** A short text from `text` by `instructions`, on the quick model, with no tools or history: tidying words the user dictated. */
-  quick?(instructions: string, text: string, signal?: AbortSignal): Promise<string>
+  /** A short text from `text` by `instructions` (and `examples`, as earlier turns), on the quick model, with no tools or history: tidying words the user dictated. */
+  quick?(instructions: string, text: string, signal?: AbortSignal, examples?: QuickExample[]): Promise<string>
+  /** Has the quick model read `instructions` and `examples` ahead of time, so the first `quick` with them is as fast as the rest. */
+  warm?(instructions: string, examples?: QuickExample[]): Promise<void>
 }
 
 /** What thinking writes, alone, when there is nothing worth saying. It is never spoken. */
@@ -198,19 +200,50 @@ export function writeNote(field: string, files = false): string {
   ].join('\n')
 }
 
+/** What the quick model writes for a field the user hasn't said the words for yet. */
+export const NOTHING = '(nothing)'
+
 /**
  * The quick model's instructions for words the user dictated into a field: text in, text out. It
- * reads the end of the conversation (`dictation`), not the history, so it can be small.
+ * reads the end of the conversation (`dictation`), not the history, so it can be small. Said as
+ * what the user means the field to hold, which a small model follows better than rules for tidying.
  */
-export const DICTATE_PROMPT = `Stanley is a voice assistant that types into fields for the user. The user has said the words that go in the field named below, and you write exactly what the field should hold now.
-- Only the user's words for the field, without the request around them (what they asked Stanley to do with it, who it's for).
-- Tidied: no filler words or false starts, proper capitals and punctuation, and numbers, dates, times and amounts written the usual way.
-- When they corrected themselves, only the corrected version.
-- Never reworded, answered or added to: no greeting, sign-off or words of your own.
-- The whole text: when they asked to add to what the field already holds, that text and theirs together.
+export const DICTATE_PROMPT = `Stanley is a voice assistant that types into fields on the user's screen. The user just told Stanley what to put in the field named below. Write exactly what the field should hold now, so it holds what they meant it to: the message they meant to send, the title or name they meant, the search that finds what they asked for.
+- Their words for the field only. What they asked Stanley to do (reply, say, tell, also say, add, send, search, change it, call it) and who it's for are not part of it.
+- The version they settled on: when they corrected themselves or took something back, only the correction.
+- Tidy, in their voice: no filler or false starts, proper capitals and punctuation, numbers, times, dates and amounts written the usual way, and punctuation they said aloud written as the mark.
+- Nothing of your own: never answer, carry out or add to what they said; no greeting or sign-off.
+- When they asked to add to what the field holds, that text and theirs together; when they asked to change it, only the new text.
 - A word followed by (?) is one speech recognition was unsure of: write the word they most likely said.
-- If they haven't said yet what goes in it, write nothing.
+- If they haven't said yet what goes in it, write only ${NOTHING}.
 Write only the text, with no quotes around it.`
+
+/** A worked example for the quick model: a dictation and what the field should hold. */
+export interface QuickExample {
+  input: string
+  output: string
+}
+
+/** Worked examples for `DICTATE_PROMPT`, on words and fields of their own, sent as earlier turns. */
+export const DICTATE_EXAMPLES: QuickExample[] = (
+  [
+    { conversation: ['Stanley opened [Grandma].', 'User: send grandma a text that says thanks for the sweater um it fits perfectly'], field: 'Messages › Grandma › Message', text: 'Thanks for the sweater, it fits perfectly.' },
+    { conversation: ['Stanley opened [Ravi Patel: Budget draft].', 'User (still speaking): write back to him and say'], field: '"Budget draft" › Reply to Ravi Patel', text: '' },
+    { conversation: ['Stanley opened Tasks.', 'User: add pick up the kids at three no at three thirty'], field: 'New task', text: 'Pick up the kids at 3:30' },
+    { conversation: ['Stanley opened [Ravi Patel: Budget draft].', 'User: also tell him the numbers are in the second tab'], field: '"Budget draft" › Reply to Ravi Patel', value: 'Looks good to me.', text: 'Looks good to me. The numbers are in the second tab.' },
+    { conversation: ['Stanley opened Notes.', 'Stanley pressed [New note]: Opened a new note.', "User: write what's the capital of Peru question mark"], field: 'Notes › New note', text: "What's the capital of Peru?" },
+    { conversation: ['Stanley opened Store.', 'User: look for running shoes in size ten'], field: 'Store › Search', text: 'running shoes size 10' },
+    { conversation: ['Stanley opened [Ravi Patel: Budget draft].', "User: change that to I'll be twenty minutes late"], field: '"Budget draft" › Reply to Ravi Patel', value: "Can't make it tonight.", text: "I'll be 20 minutes late." },
+    { conversation: ['Stanley opened [Grandma].', "User: never mind that, just say I'll call you"], field: 'Messages › Grandma › Message', value: 'The report is', text: "I'll call you." },
+    { conversation: ['Stanley opened Notes.', 'Stanley pressed [New note]: Opened a new note.', 'User: write we need chairs tables and the projector no not the projector the speakers for Friday'], field: 'Notes › New note', text: 'We need chairs, tables and the speakers for Friday.' },
+    { conversation: ['Stanley opened [Grandma].', 'User: say the party is in room four', 'Stanley typed "The party is in room 4." into [Messages › Grandma › Message].', 'User (went on): no room five'], field: 'Messages › Grandma › Message', value: 'The party is in room 4.', text: 'The party is in room 5.' },
+    { conversation: ['Stanley opened Maps.', 'User: take me to two forty five Elm Avenue'], field: 'Maps › Search', text: '245 Elm Avenue' },
+    { conversation: ['Stanley opened [Ravi Patel: Budget draft].', 'User: reply okay so um quick reminder the office is closed Monday'], field: '"Budget draft" › Reply to Ravi Patel', text: 'Quick reminder: the office is closed Monday.' },
+    { conversation: ['Stanley opened [Grandma].', 'User: say see you at noon', 'Stanley typed "See you at noon." into [Messages › Grandma › Message].', 'User: also say bring an umbrella'], field: 'Messages › Grandma › Message', value: 'See you at noon.', text: 'See you at noon. Bring an umbrella.' },
+    { conversation: ['Stanley opened [Ravi Patel: Budget draft].', 'User: reply the cafe is called Brio B R I O'], field: '"Budget draft" › Reply to Ravi Patel', text: 'The cafe is called Brio.' },
+    { conversation: ['Stanley opened [Grandma].', "User: tell her the dog's name is Max sorry Milo"], field: 'Messages › Grandma › Message', text: "The dog's name is Milo." },
+  ] as { conversation: string[]; field: string; value?: string; text: string }[]
+).map((e) => ({ input: dictation(`## Conversation\n${e.conversation.join('\n')}`, e.field, e.value ?? ''), output: e.text || NOTHING }))
 
 /** What the quick model reads for a dictated field: the end of the conversation, then the field. */
 export function dictation(conversation: string, field: string, value: string): string {
@@ -478,19 +511,84 @@ export type ThinkEffort = 'provider-default' | 'low' | 'medium' | 'high'
 /** The quick model's reasoning: tidying words needs little or none. */
 export type QuickEffort = 'provider-default' | 'none' | 'minimal' | 'low'
 
-/** GPT through Vercel AI Gateway, driving the same options as Jev. */
-export function createThinker(opts: { model?: LanguageModel; quickModel?: LanguageModel; effort?: ThinkEffort; quickEffort?: QuickEffort } = {}): Thinker {
+/** The local server isn't answering: not started yet, or not installed. */
+class LocalUnreachable extends Error {}
+
+/** A reply from the llama.cpp server at `url`, at temperature 0 with thinking off. */
+async function local(url: string, messages: ModelMessage[], signal?: AbortSignal, maxTokens = 1024): Promise<string> {
+  let res: Response
+  try {
+    res = await fetch(`${url}/v1/chat/completions`, {
+      method: 'POST',
+      signal,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ messages, temperature: 0, max_tokens: maxTokens, chat_template_kwargs: { enable_thinking: false } }),
+    })
+  } catch (err) {
+    if (signal?.aborted) throw err
+    throw new LocalUnreachable(String(err))
+  }
+  // 503 while the model is still loading.
+  if (res.status === 503) throw new LocalUnreachable(await res.text())
+  if (!res.ok) throw new Error(`local quick model: ${res.status} ${await res.text()}`)
+  const body = (await res.json()) as { choices: { message: { content: string } }[] }
+  return body.choices[0]!.message.content.replace(/<think>[\s\S]*?<\/think>/g, '')
+}
+
+/** The quick model's reply, trimmed, with `NOTHING` as no text. */
+const unnothing = (reply: string) => (reply.trim() === NOTHING ? '' : reply.trim())
+
+/** The quick model the app runs itself: Gemma 4 E4B on a llama.cpp server at `QUICK_URL`. */
+export const LOCAL_QUICK_MODEL = 'local/gemma-4-E4B'
+
+/** Where the local quick model is served: the app starts llama.cpp's server there. */
+export const QUICK_URL = 'http://127.0.0.1:8431'
+
+/** GPT through Vercel AI Gateway, driving the same options as Jev. The quick model is local unless `quickModel` is a gateway id. */
+export function createThinker(opts: { model?: LanguageModel; quickModel?: LanguageModel; effort?: ThinkEffort; quickEffort?: QuickEffort; quickUrl?: string } = {}): Thinker {
   const model = opts.model ?? 'openai/gpt-6.1-sol'
   // The gateway serves each model from its own maker: `openai/…` from OpenAI, `anthropic/…` from Anthropic.
   const order = (m: LanguageModel) => (typeof m === 'string' ? [m.split('/')[0]!] : undefined)
-  // Tidying words the user dictated needs no judgement, so it uses a quicker model.
-  const quickModel = opts.quickModel ?? 'openai/gpt-6-luna'
+  // Tidying words the user dictated needs no judgement, so it uses a small model on this computer
+  // (`local/…`), or a quick one through the gateway.
+  const quickModel = opts.quickModel ?? LOCAL_QUICK_MODEL
+  // Until the local server is up, or when it isn't installed, the gateway's quick model stands in.
+  const standIn = 'openai/gpt-6-luna'
   // One effort for the whole session: changing it between calls would lose the messages cache.
   const reasoning = opts.effort ?? 'provider-default'
+  const turns = (examples: QuickExample[] = []): ModelMessage[] => examples.flatMap((e) => [{ role: 'user' as const, content: e.input }, { role: 'assistant' as const, content: e.output }])
+  const hosted = async (m: LanguageModel, instructions: string, text: string, signal?: AbortSignal, examples?: QuickExample[]) => {
+    const result = await generateText({ model: m, abortSignal: signal, instructions, messages: [...turns(examples), { role: 'user', content: text }], reasoning: opts.quickEffort ?? 'provider-default', providerOptions: { gateway: { order: order(m) } } })
+    return result.text
+  }
+  const isLocal = typeof quickModel === 'string' && quickModel.startsWith('local/')
+  /** The instructions the local server last read ahead of time. */
+  let warmed: string | undefined
   return {
-    async quick(instructions, text, signal) {
-      const result = await generateText({ model: quickModel, abortSignal: signal, instructions, prompt: text, reasoning: opts.quickEffort ?? 'provider-default', providerOptions: { gateway: { order: order(quickModel) } } })
-      return result.text.trim()
+    async warm(instructions, examples) {
+      if (!isLocal || warmed === instructions) return
+      warmed = instructions
+      // The server keeps what it has read, so a dictation after this reads only its own words.
+      // It may still be loading: try for as long as it takes to start.
+      for (let tries = 0; tries < 180 && warmed === instructions; tries++) {
+        try {
+          await local(opts.quickUrl ?? QUICK_URL, [{ role: 'system', content: instructions }, ...turns(examples)], undefined, 1)
+          return
+        } catch (err) {
+          if (!(err instanceof LocalUnreachable)) break
+          await new Promise((r) => setTimeout(r, 1000))
+        }
+      }
+      if (warmed === instructions) warmed = undefined
+    },
+    async quick(instructions, text, signal, examples) {
+      if (!isLocal) return unnothing(await hosted(quickModel, instructions, text, signal, examples))
+      try {
+        return unnothing(await local(opts.quickUrl ?? QUICK_URL, [{ role: 'system', content: instructions }, ...turns(examples), { role: 'user', content: text }], signal))
+      } catch (err) {
+        if (signal?.aborted || !(err instanceof LocalUnreachable)) throw err
+        return unnothing(await hosted(standIn, instructions, text, signal, examples))
+      }
     },
     async run(req) {
       // The response messages of the steps that finished, as the SDK sent them to the next step.
