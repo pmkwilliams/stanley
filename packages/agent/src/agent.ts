@@ -255,7 +255,10 @@ export class Agent {
   private abort?: AbortController
   /** The call asking Jev what the screen shows when a task ends another way than a `done` tick. */
   private screenAbort?: AbortController
-  /** This task laid the screen out itself (`arrange the screen`, Full screen): it stays as it is when the task ends. */
+  /**
+   * This task's last word on the screen was its own (`arrange the screen`, Full screen, going
+   * home): it stays as it is when the task ends.
+   */
   private arranged = false
   /** Set while the thinking model owns the turn; aborted when the user says more that stops it (see `whileWorking`). */
   private thinking?: AbortController
@@ -1396,8 +1399,10 @@ export class Agent {
     // A page is recorded under the title it opened with, which the address alone doesn't give.
     if (meta.target.kind === 'page' && result.title) meta.target = { ...meta.target, title: result.title }
     save({ ...meta, summary: result.summary, observation: result.observation })
-    // Full screen lays the screen out as surely as arranging it: the end of the task leaves it.
+    // Full screen lays the screen out as surely as arranging it: the end of the task leaves it. Going
+    // somewhere after that (home, then Tasks) leaves the screen to the end of the task again.
     if (target.kind === 'element' && target.node.id.endsWith(FULLSCREEN)) this.arranged = true
+    else if (target.kind === 'app' || target.kind === 'page' || target.kind === 'back' || (target.kind === 'element' && target.node.kind === 'location')) this.arranged = false
     const nodeId = target.kind === 'element' ? target.node.id : undefined
     this.events.debug?.({ type: 'act', tickId, option, nodeId, args, ...result, latencyMs: performance.now() - started })
     return result

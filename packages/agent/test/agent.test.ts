@@ -2438,6 +2438,14 @@ describe('Agent screen layout', () => {
     expect(performed).toEqual(['arrange tasks'])
   })
 
+  it('lays the screen out when the task ends after going home and then somewhere else', async () => {
+    const { agent, performed } = setup(plan({ next: 'act', step: 'home screen' }, { next: 'act', step: 'open Tasks' }, { next: 'done', show: 'Tasks' }), { world: { sides: [['email']] } })
+    agent.utteranceStart()
+    spoke(agent, 'take me to my tasks')
+    await settle()
+    expect(performed).toEqual(['home', 'arrange ', 'open tasks', 'arrange tasks'])
+  })
+
   it('leaves the screen when new words came while the decision that finished the task was made', async () => {
     let release!: () => void
     const gate = new Promise<void>((r) => (release = r))
