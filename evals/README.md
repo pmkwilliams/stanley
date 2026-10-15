@@ -9,6 +9,7 @@
 | `pnpm eval:web <filter>` | The same agent on fixture websites in headless Chromium | Paid (Jev + Sonnet) |
 | `pnpm eval:web --live <filter>` | Read-only scenarios on real websites (they change, so not in the default set) | Paid (Jev + Sonnet) |
 | `pnpm eval:answer <filter>` | Answering from the page with Jev alone (`answer.ts`): right answers spoken, wrong ones never, on saved real pages | 1–4 Jev calls per case |
+| `pnpm eval:dictate --model <id>` | The quick model alone writing a field from what the user said (`dictate/cases.mts`; `--holdout` for cases kept out of tuning): passes when the field holds what the user meant, by checks and GPT-6.1 Sol as judge through Codex (`--judge`); latency and cost. `local/<label>` runs a llama.cpp server, `--variant` tries other prompts (`dictate/variants.mts`); `--report` compares saved runs | 1 call per case (judge on the Codex plan) |
 | `pnpm eval:working` | Whether words said while Stanley works stop it or wait for it to finish (`WORKING`) | 15 Jev calls |
 | `pnpm smoke:desktop` | Builds and launches the real app, types two utterances, screenshots both windows | A few paid calls |
 

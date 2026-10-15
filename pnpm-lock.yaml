@@ -159,6 +159,9 @@ importers:
       '@stanley/stt':
         specifier: workspace:*
         version: link:../packages/stt
+      ai:
+        specifier: 7.0.137
+        version: 7.0.137(zod@4.6.5)
     devDependencies:
       hyparquet:
         specifier: ^1.31.3

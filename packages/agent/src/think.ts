@@ -475,9 +475,11 @@ export function scriptedTurn(text: string, ...calls: ActCall[]): ThinkResult {
 }
 
 export type ThinkEffort = 'provider-default' | 'low' | 'medium' | 'high'
+/** The quick model's reasoning: tidying words needs little or none. */
+export type QuickEffort = 'provider-default' | 'none' | 'minimal' | 'low'
 
 /** GPT through Vercel AI Gateway, driving the same options as Jev. */
-export function createThinker(opts: { model?: LanguageModel; quickModel?: LanguageModel; effort?: ThinkEffort } = {}): Thinker {
+export function createThinker(opts: { model?: LanguageModel; quickModel?: LanguageModel; effort?: ThinkEffort; quickEffort?: QuickEffort } = {}): Thinker {
   const model = opts.model ?? 'openai/gpt-6.1-sol'
   // The gateway serves each model from its own maker: `openai/…` from OpenAI, `anthropic/…` from Anthropic.
   const order = (m: LanguageModel) => (typeof m === 'string' ? [m.split('/')[0]!] : undefined)
@@ -487,7 +489,7 @@ export function createThinker(opts: { model?: LanguageModel; quickModel?: Langua
   const reasoning = opts.effort ?? 'provider-default'
   return {
     async quick(instructions, text, signal) {
-      const result = await generateText({ model: quickModel, abortSignal: signal, instructions, prompt: text, providerOptions: { gateway: { order: order(quickModel) } } })
+      const result = await generateText({ model: quickModel, abortSignal: signal, instructions, prompt: text, reasoning: opts.quickEffort ?? 'provider-default', providerOptions: { gateway: { order: order(quickModel) } } })
       return result.text.trim()
     },
     async run(req) {

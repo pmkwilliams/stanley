@@ -1,7 +1,7 @@
-import { cpSync, existsSync, mkdtempSync } from 'node:fs'
+import { appendFileSync, cpSync, existsSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Agent, createThinker, deciderProfile, defaultConfig, type AgentConfig, type AgentDeps, type FileTools, type HeardWord, type ThinkEffort, type Thinker, type TickReport, type WebTools, type World } from '@stanley/agent'
+import { Agent, createThinker, deciderProfile, defaultConfig, type AgentConfig, type AgentDeps, type FileTools, type HeardWord, type QuickEffort, type ThinkEffort, type Thinker, type TickReport, type WebTools, type World } from '@stanley/agent'
 import { parallelWeb } from '@stanley/app-web/parallel'
 import { localFiles } from '@stanley/files'
 import { createDecisionClient, type DecisionClient } from '@stanley/jev'
@@ -57,7 +57,7 @@ export function loadEnv() {
  */
 export function select<T>(items: T[], name: (t: T) => string, command: string): T[] | null {
   const args = process.argv.slice(2)
-  const filters = args.filter((a, i) => !a.startsWith('-') && !/^--(runs|concurrency|jev-turns|word-ms|effort|quick-model|set)$/.test(args[i - 1] ?? ''))
+  const filters = args.filter((a, i) => !a.startsWith('-') && !/^--(runs|concurrency|jev-turns|word-ms|effort|quick-model|quick-effort|set)$/.test(args[i - 1] ?? ''))
   if (!filters.length && !args.includes('--all')) {
     console.log(`${items.length} available — each makes several paid Jev/thinking calls:`)
     for (const t of items) console.log(`  ${name(t)}`)
@@ -169,6 +169,8 @@ export async function drive(world: World, utterances: string[], speak: Speak, fi
         usage.dictating++
         usage.thinkMs.dictate.push(e.latencyMs)
         dictated.push(e.text)
+        // `STANLEY_DICTATE_DUMP=<file>` keeps what the quick model read and wrote, as cases for `eval:dictate`.
+        if (process.env.STANLEY_DICTATE_DUMP) appendFileSync(process.env.STANLEY_DICTATE_DUMP, JSON.stringify({ field: e.option, input: e.input, text: e.text, latencyMs: Math.round(e.latencyMs) }) + '\n')
       }
       if (e.type === 'think-start') modes.set(e.tickId, e.mode === 'write' ? 'write' : 'run')
       if (e.type === 'think-end' && !e.aborted) usage.thinkMs[modes.get(e.tickId) ?? 'run'].push(e.latencyMs)
@@ -228,7 +230,10 @@ function makeAgent(world: World, events: AgentDeps['events'], files?: FileTools)
   // `--quick-model <gateway id>`: the model that tidies dictated words into fields.
   const j = process.argv.indexOf('--quick-model')
   const quickModel = j === -1 ? undefined : process.argv[j + 1]
-  return new Agent({ world, jev: countedJev(createDecisionClient()), thinker: countedThinker(createThinker({ effort, quickModel })), web: key ? countedWeb(parallelWeb(key)) : undefined, files, events, config, jevNotes: profile.notes })
+  // `--quick-effort none|minimal|low`: the quick model's reasoning.
+  const k = process.argv.indexOf('--quick-effort')
+  const quickEffort = k === -1 ? undefined : (process.argv[k + 1] as QuickEffort)
+  return new Agent({ world, jev: countedJev(createDecisionClient()), thinker: countedThinker(createThinker({ effort, quickModel, quickEffort })), web: key ? countedWeb(parallelWeb(key)) : undefined, files, events, config, jevNotes: profile.notes })
 }
 
 export function overrides(config: AgentConfig): AgentConfig {
