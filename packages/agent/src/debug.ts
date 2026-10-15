@@ -55,6 +55,8 @@ export type AgentDebugEvent =
    * append-only), after the session's instructions. `handover` is why, for the debug window only.
    */
   | { type: 'think-start'; tickId: number; mode: 'run' | 'write' | 'confirm'; handover: string; option?: string; entries: number; cacheAt?: number }
+  /** The quick model tidied the user's dictated words for a field: what it read and what it wrote. */
+  | { type: 'dictate'; tickId: number; option: string; input: string; text: string; latencyMs: number }
   | { type: 'think-step'; tickId: number; option: string; text?: string; result: string }
   | { type: 'think-end'; tickId: number; text: string; steps: number; latencyMs: number; aborted: boolean; calls?: UnrunCall[]; usage?: ThinkUsage }
   | {

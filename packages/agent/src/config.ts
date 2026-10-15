@@ -18,6 +18,8 @@ export interface AgentConfig {
   earlyGuessDone: number
   /** `think` with a field step at least this sure is handled as writing that field (one call, not a tool loop). */
   writeStep: number
+  /** Jev's P(the user said the words) for a field at least this, and the quick model tidies their words into it; below, thinking writes it (or asks). */
+  dictated: number
   /** A skill step at least this sure is read whatever Jev says comes next, except `done`: reading only looks. */
   skillStep: number
   /** Judge each kind of button on a screen in the background when it first appears. */
@@ -87,6 +89,7 @@ export const defaultConfig: AgentConfig = {
   earlyGuessDone: 0.8,
   stepConfidence: 0.4,
   writeStep: 0.9,
+  dictated: 0.8,
   skillStep: 0.9,
   warmEffects: true,
   commits: 0.3,

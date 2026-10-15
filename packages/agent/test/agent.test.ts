@@ -55,6 +55,8 @@ interface Pick {
   stepConfidence?: number
   /** P(the user finished saying what the next part needs); default 0.9. */
   heard?: number
+  /** P(the user said the words for a field themselves); without it, Jev doesn't answer `words`. */
+  dictated?: number
 }
 type Script = (req: DecideRequest, call: number) => Pick | Promise<Pick>
 
@@ -68,13 +70,14 @@ function scripted(script: Script, effect: Effect = 'changes', working: Working =
     consentCalls: 0,
     heardWhileWorking: [] as string[],
     async decide(req: DecideRequest): Promise<MultiChoiceResult> {
-      const { next, step = 'home screen', nextConfidence = 0.9, stepConfidence = 0.9, heard = 0.9 } = await script(req, client.calls++)
+      const { next, step = 'home screen', nextConfidence = 0.9, stepConfidence = 0.9, heard = 0.9, dictated } = await script(req, client.calls++)
       if (!(step in req.questions.step!.options)) throw new Error(`"${step}" not in options: ${Object.keys(req.questions.step!.options).join(', ')}`)
       return {
         answers: {
           next: { choice: next, confidence: nextConfidence, probabilities: { [next]: nextConfidence } },
           step: { choice: step, confidence: stepConfidence, probabilities: { [step]: stepConfidence } },
           heard: { choice: heard >= 0.5 ? 'finished' : 'more', confidence: Math.max(heard, 1 - heard), probabilities: { finished: heard, more: 1 - heard } },
+          ...(dictated !== undefined && { words: { choice: dictated >= 0.5 ? 'user' : 'stanley', confidence: Math.max(dictated, 1 - dictated), probabilities: { user: dictated, stanley: 1 - dictated } } }),
         },
         latencyMs: 1,
       }
@@ -697,6 +700,42 @@ describe('Agent writing', () => {
     expect(performed).toEqual([])
     expect(debug.some((e) => e.type === 'think-start' && e.mode === 'write')).toBe(true)
     expect(debug.some((e) => e.type === 'think-end' && e.aborted)).toBe(true)
+  })
+})
+
+describe('Agent dictation', () => {
+  it("tidies the user's own words into a field with the quick model, not thinking", async () => {
+    const asked: string[] = []
+    const { agent, performed, thinker } = setup(plan({ next: 'act', step: 'Add a task', dictated: 0.95 }, { next: 'act', step: 'Add a task › press Enter' }, { next: 'done' }), {
+      thinker: { quick: async (_, text) => (asked.push(text), 'Buy eggs') },
+    })
+    agent.utteranceStart()
+    spoke(agent, 'add um buy eggs')
+    await settle()
+    expect(performed).toEqual(['tasks:title=Buy eggs', 'tasks:add', 'show'])
+    expect(thinker.writes).toHaveLength(0)
+    expect(asked[0]).toContain('add um buy eggs')
+    expect(asked[0]).toContain('[Add a task] is empty.')
+  })
+
+  it('has thinking write the field when Jev is unsure the words are the user\'s', async () => {
+    let quick = 0
+    const { agent, thinker } = setup(plan({ next: 'act', step: 'Add a task', dictated: 0.6 }, { next: 'done' }), { thinker: { quick: async () => (quick++, 'Buy eggs') } })
+    agent.utteranceStart()
+    agent.segment('add something for the weekend')
+    agent.utteranceEnd()
+    await settle()
+    expect(quick).toBe(0)
+    expect(thinker.writes).toHaveLength(1)
+  })
+
+  it('keeps listening when the user has not said the words yet', async () => {
+    const { agent, performed, statuses } = setup(plan({ next: 'act', step: 'Add a task', dictated: 0.9 }), { thinker: { quick: async () => '' } })
+    agent.utteranceStart()
+    agent.segment('add one called')
+    await settle()
+    expect(performed).toEqual([])
+    expect(statuses.at(-1)).toBe('listening')
   })
 })
 

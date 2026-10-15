@@ -116,7 +116,7 @@ export class PartialTurn extends Error {
 export interface Thinker {
   /** A turn on the history: with tools, or deciding one step (`single`). */
   run(req: ThinkRequest): Promise<ThinkResult>
-  /** A short text from `text` by `instructions`, on the quicker model, with no tools or history. */
+  /** A short text from `text` by `instructions`, on the quick model, with no tools or history: tidying words the user dictated. */
   quick?(instructions: string, text: string, signal?: AbortSignal): Promise<string>
 }
 
@@ -146,7 +146,7 @@ How to act:
 - Never send words you wrote yourself before the user has heard them: read them back word for word and ask whether to send.
 - Answer questions from what is on screen, from what you already found in the conversation, by looking it up, or from what you know, whichever is quickest to be right. Anything that changes over time (news, who holds an office, prices, scores, schedules) is looked up, not answered from memory.
 - What the user asked for may already be done, or partly: do only what is left, such as answering.
-- If the request is unclear, ask one short question instead of guessing.
+- If the request is unclear and a wrong guess would change something, ask one short question instead of guessing.
 - Do what the user asked for, then stop.`
 
 /** For sessions that can look things up. */
@@ -196,6 +196,25 @@ export function writeNote(field: string, files = false): string {
     `- When they haven't said yet what to write, or words marked (?) that matter make no sense here, don't call act: once they have finished, say what you need to ask.`,
     ...(files ? [`- When what they named isn't this field's (a list, a note or a document of theirs that isn't on screen), it may be one of their files: look there with bash before typing or asking.`] : []),
   ].join('\n')
+}
+
+/**
+ * The quick model's instructions for words the user dictated into a field: text in, text out. It
+ * reads the end of the conversation (`dictation`), not the history, so it can be small.
+ */
+export const DICTATE_PROMPT = `Stanley is a voice assistant that types into fields for the user. The user has said the words that go in the field named below, and you write exactly what the field should hold now.
+- Only the user's words for the field, without the request around them (what they asked Stanley to do with it, who it's for).
+- Tidied: no filler words or false starts, proper capitals and punctuation, and numbers, dates, times and amounts written the usual way.
+- When they corrected themselves, only the corrected version.
+- Never reworded, answered or added to: no greeting, sign-off or words of your own.
+- The whole text: when they asked to add to what the field already holds, that text and theirs together.
+- A word followed by (?) is one speech recognition was unsure of: write the word they most likely said.
+- If they haven't said yet what goes in it, write nothing.
+Write only the text, with no quotes around it.`
+
+/** What the quick model reads for a dictated field: the end of the conversation, then the field. */
+export function dictation(conversation: string, field: string, value: string): string {
+  return `${conversation}\n\n## Field\n[${field}]${value ? ` now holds: "${value}"` : ' is empty.'}`
 }
 
 /** What thinking is told when the fast part was unsure the task is done. */
@@ -458,17 +477,17 @@ export function scriptedTurn(text: string, ...calls: ActCall[]): ThinkResult {
 export type ThinkEffort = 'provider-default' | 'low' | 'medium' | 'high'
 
 /** GPT through Vercel AI Gateway, driving the same options as Jev. */
-export function createThinker(opts: { model?: LanguageModel; singleModel?: LanguageModel; effort?: ThinkEffort } = {}): Thinker {
+export function createThinker(opts: { model?: LanguageModel; quickModel?: LanguageModel; effort?: ThinkEffort } = {}): Thinker {
   const model = opts.model ?? 'openai/gpt-6.1-sol'
   // The gateway serves each model from its own maker: `openai/…` from OpenAI, `anthropic/…` from Anthropic.
   const order = (m: LanguageModel) => (typeof m === 'string' ? [m.split('/')[0]!] : undefined)
-  // Deciding one step (typing a field, pressing a button that commits) uses a quicker model.
-  const singleModel = opts.singleModel ?? 'openai/gpt-6-luna'
+  // Tidying words the user dictated needs no judgement, so it uses a quicker model.
+  const quickModel = opts.quickModel ?? 'openai/gpt-6-luna'
   // One effort for the whole session: changing it between calls would lose the messages cache.
   const reasoning = opts.effort ?? 'provider-default'
   return {
     async quick(instructions, text, signal) {
-      const result = await generateText({ model: singleModel, abortSignal: signal, instructions, prompt: text, providerOptions: { gateway: { order: order(singleModel) } } })
+      const result = await generateText({ model: quickModel, abortSignal: signal, instructions, prompt: text, providerOptions: { gateway: { order: order(quickModel) } } })
       return result.text.trim()
     },
     async run(req) {
@@ -487,7 +506,7 @@ export function createThinker(opts: { model?: LanguageModel; singleModel?: Langu
       }
       try {
         const result = streamText({
-          model: req.single ? singleModel : model,
+          model,
           abortSignal: req.signal,
           instructions: { role: 'system', content: req.instructions, providerOptions: CACHE },
           messages: req.messages,
@@ -495,7 +514,7 @@ export function createThinker(opts: { model?: LanguageModel; singleModel?: Langu
           toolChoice: 'auto',
           reasoning,
           stopWhen: stepCountIs(req.single ? SINGLE_STEPS : req.maxSteps),
-          providerOptions: { gateway: { order: order(req.single ? singleModel : model) } },
+          providerOptions: { gateway: { order: order(model) } },
           // Read the cache where the previous call ended, and write it at the end of this step's input.
           prepareStep: ({ initialMessages, responseMessages }) => {
             for (const message of req.inbox?.() ?? []) arrived.push({ at: responseMessages.length, message })

@@ -120,7 +120,7 @@ describe('createThinker', () => {
     const spoken: string[] = []
     let acted = false
     const m = model([[...say('Typing it.'), call('w1', { option: 'Add a task', text: 'Eggs', wrote: 'user' }), finish('tool-calls')]])
-    const result = await createThinker({ model: m, singleModel: m }).run(request({ single: { kind: 'write', option: 'Add a task' }, onText: (d) => spoken.push(d), act: async () => ((acted = true), '') }))
+    const result = await createThinker({ model: m }).run(request({ single: { kind: 'write', option: 'Add a task' }, onText: (d) => spoken.push(d), act: async () => ((acted = true), '') }))
     expect(acted).toBe(false)
     expect(spoken).toEqual([])
     expect(result.text).toBe('Typing it.')
@@ -133,7 +133,7 @@ describe('createThinker', () => {
     const ran: string[] = []
     const bash = { type: 'tool-call', toolCallId: 'b1', toolName: 'bash', input: JSON.stringify({ command: 'cat .agents/skills/email-style/SKILL.md' }) } as Part
     const m = model([[bash, finish('tool-calls')], [call('w1', { option: 'Reply', text: 'sounds good — pat', wrote: 'stanley' }), finish('tool-calls')]])
-    const result = await createThinker({ model: m, singleModel: m }).run(
+    const result = await createThinker({ model: m }).run(
       request({ single: { kind: 'write', option: 'Reply' }, bash: async (command) => (ran.push(command), 'All lowercase.'), act: async () => '' }),
     )
     expect(ran).toEqual(['cat .agents/skills/email-style/SKILL.md'])

@@ -29,6 +29,8 @@ export const usage = {
   jevMs: [] as number[],
   thinking: 0,
   writing: 0,
+  /** Dictated words the quick model tidied into a field. */
+  dictating: 0,
   /** Thinking's input tokens, all calls and steps together, and how many of them were read from the cache. */
   thinkingInputTokens: 0,
   thinkingCachedTokens: 0,
@@ -40,7 +42,7 @@ export const usage = {
   searches: 0,
   reads: 0,
   /** How long thinking calls took, by kind. */
-  thinkMs: { run: [] as number[], write: [] as number[] },
+  thinkMs: { run: [] as number[], write: [] as number[], dictate: [] as number[] },
 }
 
 export function loadEnv() {
@@ -55,7 +57,7 @@ export function loadEnv() {
  */
 export function select<T>(items: T[], name: (t: T) => string, command: string): T[] | null {
   const args = process.argv.slice(2)
-  const filters = args.filter((a, i) => !a.startsWith('-') && !/^--(runs|concurrency|jev-turns|word-ms|effort|single-model|set)$/.test(args[i - 1] ?? ''))
+  const filters = args.filter((a, i) => !a.startsWith('-') && !/^--(runs|concurrency|jev-turns|word-ms|effort|quick-model|set)$/.test(args[i - 1] ?? ''))
   if (!filters.length && !args.includes('--all')) {
     console.log(`${items.length} available — each makes several paid Jev/thinking calls:`)
     for (const t of items) console.log(`  ${name(t)}`)
@@ -67,9 +69,9 @@ export function select<T>(items: T[], name: (t: T) => string, command: string): 
 
 export function printUsage() {
   const ratio = usage.thinkingInputTokens ? `${Math.round((usage.thinkingCachedTokens / usage.thinkingInputTokens) * 100)}%` : '—'
-  console.log(`Paid calls: ${usage.jev} ${process.env.STANLEY_DECIDER ?? 'jev'} (${usage.jevInputTokens.toLocaleString()} input tokens, p50 ${median(usage.jevMs)}s), ${usage.thinking} thinking turns, ${usage.writing} writes (${usage.singleFallbacks} handed over to a whole turn) (thinking: ${usage.thinkingInputTokens.toLocaleString()} input tokens, ${ratio} read from cache, largest call ${usage.largestThinkingInput.toLocaleString()}), ${usage.searches} searches, ${usage.reads} page reads (Parallel)`)
+  console.log(`Paid calls: ${usage.jev} ${process.env.STANLEY_DECIDER ?? 'jev'} (${usage.jevInputTokens.toLocaleString()} input tokens, p50 ${median(usage.jevMs)}s), ${usage.thinking} thinking turns, ${usage.writing} writes, ${usage.dictating} dictations (${usage.singleFallbacks} handed over to a whole turn) (thinking: ${usage.thinkingInputTokens.toLocaleString()} input tokens, ${ratio} read from cache, largest call ${usage.largestThinkingInput.toLocaleString()}), ${usage.searches} searches, ${usage.reads} page reads (Parallel)`)
   const t = usage.thinkMs
-  console.log(`Thinking latency p50: run ${median(t.run)}s (${t.run.length}), write ${median(t.write)}s (${t.write.length})`)
+  console.log(`Thinking latency p50: run ${median(t.run)}s (${t.run.length}), write ${median(t.write)}s (${t.write.length}), dictate ${median(t.dictate)}s (${t.dictate.length})`)
   for (const f of usage.fallbacks) console.log(`  handed over: ${f}`)
 }
 
@@ -78,6 +80,8 @@ export interface ScenarioResult {
   failures: string[]
   ticks: TickReport[]
   said: string[]
+  /** What the quick model tidied into fields, in order. */
+  dictated: string[]
   /** Per utterance: ms from the user's last word until the agent went quiet. */
   settleMs: number[]
   /** Per utterance: ms from the user's last word until the agent ended their turn. */
@@ -152,12 +156,19 @@ export async function drive(world: World, utterances: string[], speak: Speak, fi
   const stepsAt: number[] = []
   const thinking = { inputTokens: 0, cachedTokens: 0, largestInput: 0 }
   const modes = new Map<number, 'run' | 'write'>()
+  /** What the quick model tidied into fields. */
+  const dictated: string[] = []
   const agent = makeAgent(world, {
     debug: (e) => {
       if (e.type === 'act' && !e.summary?.startsWith('ran ')) stepsAt.push(Date.now())
       if (e.type === 'think-start' && e.mode === 'run' && /^asked to type/.test(e.handover)) {
         usage.singleFallbacks++
         usage.fallbacks.push(e.handover)
+      }
+      if (e.type === 'dictate') {
+        usage.dictating++
+        usage.thinkMs.dictate.push(e.latencyMs)
+        dictated.push(e.text)
       }
       if (e.type === 'think-start') modes.set(e.tickId, e.mode === 'write' ? 'write' : 'run')
       if (e.type === 'think-end' && !e.aborted) usage.thinkMs[modes.get(e.tickId) ?? 'run'].push(e.latencyMs)
@@ -200,7 +211,7 @@ export async function drive(world: World, utterances: string[], speak: Speak, fi
     firstStepMs.push(mine.length ? mine[0]! - delivery.lastWordAt : null)
     lastStepMs.push(mine.length ? mine.at(-1)! - delivery.lastWordAt : null)
   }
-  return { agent, turnFailures, result: { ticks, said, settleMs, endMs, firstStepMs, lastStepMs, cutIns, trace: await agent.context(), thinking } }
+  return { agent, turnFailures, result: { ticks, said, dictated, settleMs, endMs, firstStepMs, lastStepMs, cutIns, trace: await agent.context(), thinking } }
 }
 
 function makeAgent(world: World, events: AgentDeps['events'], files?: FileTools): Agent {
@@ -214,10 +225,10 @@ function makeAgent(world: World, events: AgentDeps['events'], files?: FileTools)
   // `--effort low|medium|high`: thinking's effort, to compare speed and results.
   const i = process.argv.indexOf('--effort')
   const effort = i === -1 ? undefined : (process.argv[i + 1] as ThinkEffort)
-  // `--single-model <gateway id>`: the model for single-step writes.
-  const j = process.argv.indexOf('--single-model')
-  const singleModel = j === -1 ? undefined : process.argv[j + 1]
-  return new Agent({ world, jev: countedJev(createDecisionClient()), thinker: countedThinker(createThinker({ effort, singleModel })), web: key ? countedWeb(parallelWeb(key)) : undefined, files, events, config, jevNotes: profile.notes })
+  // `--quick-model <gateway id>`: the model that tidies dictated words into fields.
+  const j = process.argv.indexOf('--quick-model')
+  const quickModel = j === -1 ? undefined : process.argv[j + 1]
+  return new Agent({ world, jev: countedJev(createDecisionClient()), thinker: countedThinker(createThinker({ effort, quickModel })), web: key ? countedWeb(parallelWeb(key)) : undefined, files, events, config, jevNotes: profile.notes })
 }
 
 export function overrides(config: AgentConfig): AgentConfig {
@@ -267,8 +278,10 @@ export function report(label: string, result: ScenarioResult) {
     const next = t.next ? Object.entries(t.next.probabilities).sort(([, a], [, b]) => b - a).slice(0, 2).map(([k, p]) => `${k} ${p.toFixed(2)}`).join(' ') : '—'
     const step = t.step ? `${t.step.choice} ${t.step.confidence.toFixed(2)}` : '—'
     const runnersUp = t.step?.top.filter((o) => o.option !== t.step!.choice).slice(0, 2).map((o) => `${o.option} ${o.p.toFixed(2)}`).join(', ')
-    console.log(`   ${t.outcome.padEnd(15)} → ${t.effective.padEnd(10)} next: ${next.padEnd(22)} step: ${step}${runnersUp ? `  | ${runnersUp}` : ''}${t.detail ? ` (${t.detail})` : ''}`)
+    const words = t.dictated !== undefined && t.effective === t.step?.choice ? `  words: user ${t.dictated.toFixed(2)}` : ''
+    console.log(`   ${t.outcome.padEnd(15)} → ${t.effective.padEnd(10)} next: ${next.padEnd(22)} step: ${step}${runnersUp ? `  | ${runnersUp}` : ''}${words}${t.detail ? ` (${t.detail})` : ''}`)
   }
+  for (const text of result.dictated) console.log(`   dictated: "${text}"`)
   for (const text of result.said) console.log(`   said: "${text}"`)
   const secs = (ms: (number | null)[]) => ms.map((m) => (m === null ? '—' : (m / 1000).toFixed(1))).join(', ')
   console.log(`   after the last word: settle ${secs(result.settleMs)}s, first step ${secs(result.firstStepMs)}s, last step ${secs(result.lastStepMs)}s`)
@@ -361,6 +374,7 @@ function countedThinker(thinker: Thinker): Thinker {
       usage.largestThinkingInput = Math.max(usage.largestThinkingInput, result.lastInputTokens ?? 0)
       return result
     },
+    ...(thinker.quick && { quick: thinker.quick.bind(thinker) }),
   }
 }
 

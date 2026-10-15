@@ -29,7 +29,7 @@ import { jevMemory, MEMORY_PATH } from './memory'
 import { describeStep, named, namedOptions, narrate } from './narrate'
 import { navigates, stepOptions, type OptionSet, type Target } from './options'
 import { JEV_SKILLS, NO_SKILLS, skillBody, skillChanges, type Skill, type SkillScan } from './skills'
-import { createThinker, DONE_CHECK, EARLY_GUESS, fileOutput, instructions, longDate, PartialTurn, goAheadNote, unsureNote, writeNote, type ActCall, type FileOutput, type PageOutput, type SearchOutput, type Thinker, type ThinkResult } from './think'
+import { createThinker, dictation, DICTATE_PROMPT, DONE_CHECK, EARLY_GUESS, fileOutput, instructions, longDate, PartialTurn, goAheadNote, unsureNote, writeNote, type ActCall, type FileOutput, type PageOutput, type SearchOutput, type Thinker, type ThinkResult } from './think'
 import { extendsWords, fullText, hasNewWords, letters, normalize, type TranscriptSnapshot } from './transcript'
 import { knownPages, sameUrl, shortUrl, type KnownPage, type WebTools } from './web'
 import type { PageDraft, Screen, StepResult, World } from './world'
@@ -45,6 +45,8 @@ export interface TickReport {
   effective: string
   /** Jev's P(the user finished saying what the next part needs). */
   heard?: number
+  /** Jev's P(the user said the words for a field themselves), when the step was a field. */
+  dictated?: number
   latencyMs: number
   outcome: TickOutcome
   detail?: string
@@ -128,7 +130,7 @@ export interface AgentDeps {
 }
 
 export const SYSTEM_PROMPT = `# Stanley
-Stanley is a voice assistant that operates apps and websites on the user's computer. Each time, you answer questions about the conversation below: what Stanley should do now, which step on the screen it would take, and whether the user has finished saying what that needs.
+Stanley is a voice assistant that operates apps and websites on the user's computer. Each time, you answer questions about the conversation below: what Stanley should do now, which step on the screen it would take, whether the user has finished saying what that needs, and, for a field, whose words go in it.
 
 What to do now:
 - "listen" while the user is still saying what they want and it isn't clear yet what to do.
@@ -166,6 +168,14 @@ export const HEARD: Record<Heard, string> = {
   more: 'The user is partway through: the words stop before something the request needs (what to call it, what to write, who or which one), or trail off on a word like "called", "saying", "to", "and", "that" or "um".',
 }
 export const HEARD_INSTRUCTIONS = 'Has the user finished saying what the next part needs, or are words still coming that it depends on?'
+type Words = 'user' | 'stanley'
+
+/** Whose words go in a field: the user's are tidied into it by a quick model, Stanley's are written by thinking. */
+export const WORDS: Record<Words, string> = {
+  user: 'The user said the words that go in it: what to write after "saying", "called", "with" and the like, or a value they named, such as a search, a name, a place, a number or a date.',
+  stanley: "Stanley has to come up with the words: the user only described what to write (a tone, an idea, a gist), or hasn't said yet what goes in it.",
+}
+export const WORDS_INSTRUCTIONS = 'If Stanley types into a field next, whose words go in it?'
 const withNote = (instructions: string, note?: string) => (note ? `${instructions} ${note}` : instructions)
 
 export const STEP_INSTRUCTIONS =
@@ -721,6 +731,7 @@ export class Agent {
         next: { instructions: named(withNote(NEXT_INSTRUCTIONS, this.jevNotes?.next), name), options: namedOptions(NEXT, name) },
         step: { instructions: named(withNote(STEP_INSTRUCTIONS, this.jevNotes?.step), name), options: options.criteria },
         heard: { instructions: named(HEARD_INSTRUCTIONS, name), options: namedOptions(HEARD, name) },
+        words: { instructions: named(WORDS_INSTRUCTIONS, name), options: namedOptions(WORDS, name) },
       }
       this.events.debug?.({
         type: 'tick-start',
@@ -978,9 +989,11 @@ export class Agent {
       return option
     }
 
-    // Words are thinking's: it knows whether they are the user's or its own.
+    // The user's own words are tidied into the field by the quick model; anything else is thinking's to write or ask.
     if (target.kind === 'element' && target.node.kind === 'input') {
       this.report(id, d, option, 'executed')
+      const dictated = dictatedOf(d)
+      if (this.thinker.quick && dictated !== null && dictated >= c.dictated) return this.dictate(id, option, target, decision)
       return this.write(id, option, target, decision)
     }
 
@@ -1058,6 +1071,35 @@ export class Agent {
     }
     // Text without a call asks; neither means nothing to type yet.
     return this.applyWrite(id, option, target, decision, result.text ? { source: 'unclear', text: '', say: result.text } : { source: 'missing', text: '', say: '' }, reply)
+  }
+
+  /**
+   * Jev is sure the user said the words for the field: the quick model tidies them out of the end
+   * of the conversation, with no history or tools. Nothing yet goes the way of an empty write.
+   */
+  private async dictate(id: number, option: string, target: Target, decision: DecisionMeta): Promise<string> {
+    this.events.status?.('writing')
+    const reply = this.begin()
+    const name = this.name()
+    const value = target.kind === 'element' ? (target.node.value ?? '') : ''
+    const text = dictation(narrate(this.view(), null, this.live(), DICTATION_TURNS, name), option, value)
+    // Like a write, more words from the user drop it at once: it hinges on exactly their words.
+    const controller = new AbortController()
+    this.thinking = controller
+    this.thinkingMode = 'write'
+    const started = performance.now()
+    let typed: string
+    try {
+      typed = await this.thinker.quick!(named(DICTATE_PROMPT, name), text, controller.signal)
+    } catch (err) {
+      if (!controller.signal.aborted) throw err
+      return this.stale(id, reply, 'writing')
+    } finally {
+      this.thinking = undefined
+    }
+    typed = typed.trim().replace(/^["“](.*)["”]$/s, '$1')
+    this.events.debug?.({ type: 'dictate', tickId: id, option, input: text, text: typed, latencyMs: performance.now() - started })
+    return this.applyWrite(id, option, target, decision, typed ? { source: 'user', text: typed, say: '' } : { source: 'missing', text: '', say: '' }, reply)
   }
 
   /**
@@ -1947,9 +1989,11 @@ export class Agent {
     const step = d?.answers.step
     this.outcome = { outcome, detail }
     const heard = d ? heardOf(d) : null
+    const dictated = d ? dictatedOf(d) : null
     this.events.tick?.({
       id,
       ...(heard !== null && { heard }),
+      ...(dictated !== null && { dictated }),
       next: d?.answers.next ? { ...brief(d.answers.next)!, probabilities: d.answers.next.probabilities } : null,
       step: step
         ? {
@@ -1988,6 +2032,16 @@ const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as JSONValue
 function screenText(screen: Screen, options: OptionSet): string {
   const where = screen.visible ? 'in front of the user' : 'in the background'
   return `<screen title="${screen.title}" where="${where}">\n${screen.markdown}\n</screen>\n<options>\n${optionList(options)}\n</options>`
+}
+
+/** How many of the user's turns the quick model reads for a dictated field. */
+const DICTATION_TURNS = 3
+
+/** P(the user said the words) from Jev's `words` answer, or null when the decision didn't include it. */
+function dictatedOf(d: MultiChoiceResult): number | null {
+  const words = d.answers.words
+  if (!words) return null
+  return words.probabilities.user ?? (words.choice === 'user' ? words.confidence : 1 - words.confidence)
 }
 
 /** P(finished) from Jev's `heard` answer, or null when the decision didn't include it. */

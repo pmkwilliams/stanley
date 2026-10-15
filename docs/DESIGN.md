@@ -85,6 +85,8 @@ One Jev call per tick, with three questions about the same state:
 2. **step**: which element, app, `back` or `home` the step would be.
 3. **heard**: has the user finished saying what the next part needs (`finished`), or are words
    still coming that it depends on (`more`)? The words half of turn-taking (see **Turn-taking**).
+4. **words**: if the step types into a field, whose words go in it: the user's (dictated, or a
+   value they named) or Stanley's (described as a tone or gist, or not said yet).
 
 Splitting them keeps the step's probability from being spread across the turn-taking options, and
 the turn-taking decision from being split across dozens of near-identical elements (a replay of real
@@ -94,7 +96,7 @@ decisions showed the old single question giving 50% to an option whose route hel
 | --- | --- |
 | `act` on a link, app, `back`, `home` | Runs at once, even mid-word (navigation is cheap to undo) |
 | `act` on a button | Runs once the user finishes the thought; if it **commits** (see **Effects**), once their turn ends and Jev is sure the user asked for it (`consent`), else thinking gets the go-ahead |
-| `act` on a field | At any pause thinking writes what goes in it (one call), then the fast part carries on. The user's own words go in at once (live dictation, retyped as they go on); words Stanley composed wait for the thought to finish |
+| `act` on a field | At any pause, with `words` at least 0.8 the user's, a quick model tidies their words out of the last few turns (no history or tools) and they go in at once (live dictation, retyped as they go on). Otherwise thinking writes what goes in it (one call) and words Stanley composed wait for the thought to finish. Then the fast part carries on |
 | `think` with a field step ≥ 0.9 | Handled as writing that field: one call instead of a tool loop |
 | Anything but `done`, with a `use skill` step ≥ 0.9 | The skill is read at once, even mid-word (it only reads); the next tick decides with it in view |
 | `act`, unsure of `act` or of the step | Listens while the user speaks; after they finish, thinking takes the turn |
@@ -189,7 +191,7 @@ continues the same history: the screen goes in as an observation (`<screen>` and
 what it did is appended exactly as it was sent: reasoning, tool calls, and the screens its steps
 returned. Two ways in, both with the same tools and `toolChoice: 'auto'`:
 
-- **write** (one step): Jev chose a field. The observation ends with a note naming it. A call to
+- **write** (one step): Jev chose a field, and isn't sure the words are the user's own. The observation ends with a note naming it. A call to
   `act` on it is the decision: what to type, and whose words they are (`wrote`: `user` when said
   by the user or following directly from the request, like a search query or a city; `stanley`
   when written from a gist or a tone). Text without a call asks the user; neither means nothing to
@@ -333,6 +335,7 @@ count grew, or a segment finalized.
 | Oscillation: same step from the same screen N times in the last M steps → stop | 3 in 6 |
 | Stale navigation, or a stale button that doesn't commit when the words only grew, still runs at step confidence ≥ | 0.8 |
 | `think` with a field step at least this sure is handled as writing | 0.9 |
+| P(`words` = user) at least this, and the quick model tidies the user's words into the field (`dictated`) | 0.8 |
 | Elements and known pages offered per tick / to thinking | 150 / 300 |
 | Thinking tool steps | 10 |
 | User turns Jev reads | 50 |
