@@ -54,6 +54,12 @@
     if (snapshot) setTheme(snapshot.theme)
   })
 
+  /**
+   * How loud apps' own sound may be: a quarter while Stanley talks or the user speaks. The utterance
+   * holds it down between words, so music doesn't pump up and down with each pause.
+   */
+  const appVolume = $derived(snapshot?.talking || snapshot?.speaking || snapshot?.utteranceOpen ? 0.25 : 1)
+
   const visible = $derived(snapshot?.layout.visible ?? null)
   /** The visible app fills the screen, over the status bar but under the captions. */
   const fullscreen = $derived(!!snapshot?.layout.fullscreen)
@@ -120,7 +126,7 @@
 {#if snapshot}
   {#each Object.entries(backgrounds) as [appId, Background] (appId)}
     {#if snapshot.surfaces[appId] !== undefined}
-      <Background data={snapshot.surfaces[appId]} perform={(nodeId: string, args?: { text?: string }) => window.stanley.perform(appId, nodeId, args)} volume={snapshot.talking ? 0.25 : 1} agentName={snapshot.name} />
+      <Background data={snapshot.surfaces[appId]} perform={(nodeId: string, args?: { text?: string }) => window.stanley.perform(appId, nodeId, args)} volume={appVolume} agentName={snapshot.name} />
     {/if}
   {/each}
 {/if}

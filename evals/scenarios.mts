@@ -458,7 +458,7 @@ export const scenarios: Scenario[] = [
     // A skill the user wrote: read as soon as it matches, then followed step by step by Jev alone.
     name: 'skill-routine',
     utterances: ['time for a break'],
-    checks: [readSkill('break-time'), playing(/^Deep Blue$/), fastPath, saidNothing],
+    checks: [readSkill('break-time'), playing(/^Umbrella Season$/), fastPath, saidNothing],
   },
   {
     // Know-how: how the user writes changes what Stanley composes for them.

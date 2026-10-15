@@ -168,7 +168,7 @@ export interface AppUiProps<S> {
   /** Named `data`, not `state`, to avoid clashing with the `$state` rune. */
   data: S
   perform: (nodeId: string, args?: ActionArgs) => void
-  /** How loud the app's own sound may be, 0–1: lowered while the assistant talks. */
+  /** How loud the app's own sound may be, 0–1: lowered while the assistant talks or the user speaks. */
   volume?: number
   /** What the user calls the assistant. Defaults to `DEFAULT_AGENT_NAME`. */
   agentName?: string

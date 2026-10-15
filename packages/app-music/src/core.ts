@@ -1,21 +1,18 @@
 import { defineApp, type AgentNode } from '@stanley/app-sdk'
+import { playlist } from './playlist'
 
 export interface Track {
-  /** `j<jamendo id>` or `s<soundcloud id>`. */
+  /** `s<soundcloud id>`. */
   id: string
   title: string
   artist: string
   durationSec: number
-  /** How it plays: an MP3 in an `<audio>` element, or SoundCloud's embedded player. */
-  source: 'jamendo' | 'soundcloud'
-  /** For Jamendo, the MP3's URL; for SoundCloud, the track's API URL, which its player loads. */
+  /** The track's API URL, which SoundCloud's embedded player loads. */
   audio: string
-  /** Cover image URL. Until it loads (or if it fails) the UI draws a generated cover. */
+  /** Cover image URL, or empty. Until it loads (or if it fails, or there is none) the UI draws a generated cover. */
   image: string
   album: string
-  /** Creative Commons licence URL, on Jamendo. SoundCloud tracks are the uploader's, all rights reserved. */
-  license?: string
-  /** The track's page on Jamendo or SoundCloud. */
+  /** The track's page on SoundCloud. */
   url: string
 }
 
@@ -27,60 +24,12 @@ export interface MusicState {
   playing: boolean
 }
 
-/** A Creative Commons track on Jamendo. Its stream and cover need no API key. */
-const jamendo = (id: number, album: number, title: string, artist: string, albumName: string, durationSec: number, license: string): Track => ({
-  id: `j${id}`,
-  title,
-  artist,
-  durationSec,
-  source: 'jamendo',
-  audio: `https://prod-1.storage.jamendo.com/?trackid=${id}&format=mp32`,
-  image: `https://usercontent.jamendo.com?type=album&id=${album}&width=300&trackid=${id}`,
-  album: albumName,
-  license: `http://creativecommons.org/licenses/${license}/`,
-  url: `https://www.jamendo.com/track/${id}`,
-})
-
-/**
- * A track on SoundCloud, played through its embedded player (the widget), which needs no API key.
- * Only tracks whose uploader allows embedding everywhere, and that stream in full, belong here.
- */
-const soundcloud = (id: number, path: string, artwork: string, title: string, artist: string, albumName: string, durationSec: number): Track => ({
-  id: `s${id}`,
-  title,
-  artist,
-  durationSec,
-  source: 'soundcloud',
-  audio: `https://api.soundcloud.com/tracks/${id}`,
-  image: `https://i1.sndcdn.com/artworks-${artwork}-t500x500.jpg`,
-  album: albumName,
-  url: `https://soundcloud.com/${path}`,
-})
-
-/** The playlist: a dozen distinctive Creative Commons tracks, one per style, then a few from SoundCloud. */
-export const playlist: Track[] = [
-  jamendo(81740, 7505, 'Sad Robot', 'Pornophonique', '8-bit Lagerfeuer', 312, 'by-nc-nd/3.0'),
-  jamendo(391002, 49216, 'Balrog Boogie', 'Diablo Swing Orchestra', "The Butcher's Ballroom", 233, 'by-nc-nd/3.0'),
-  jamendo(1135700, 136365, 'Falcon 69', 'The Easton Ellises', 'Nightwavs', 224, 'by-nc-sa/3.0'),
-  jamendo(30058, 3798, 'Making Me Nervous', 'Brad Sucks', "I Don't Know What I'm Doing", 159, 'by-nc-sa/3.0'),
-  jamendo(885167, 104082, 'Swinging Shapes', 'Revolution Void', 'Like a Secret Dream', 304, 'by-nc-nd/3.0'),
-  jamendo(1240697, 148689, 'Coffee', 'Professor Kliq', '28 Days With The OP-1', 196, 'by-nc-sa/3.0'),
-  jamendo(26736, 3661, "Struttin'", 'Tryad', 'Listen', 242, 'by-sa/3.0'),
-  jamendo(576435, 66456, 'A Dive Bar off Main Street', 'Monk Turner', 'Coordinates', 227, 'by-nc-nd/3.0'),
-  jamendo(162041, 23755, 'Good to Go', 'Josh Woodward', 'The Simple Life', 189, 'by/3.0'),
-  jamendo(29862, 3777, 'Deep Blue', 'Antony Raijekov', 'Jazz U', 202, 'by-nc-nd/3.0'),
-  jamendo(868293, 101801, 'Eleven 11', 'Kellee Maize', 'Integration', 238, 'by-sa/3.0'),
-  jamendo(1687406, 187872, 'Unframed Toaster', 'Ehma', 'Framed by Frames', 165, 'by/3.0'),
-  soundcloud(293, 'forss/flickermood', '000067273316-smsiqx', 'Flickermood', 'Forss', 'Soulhack', 214),
-  soundcloud(291313240, 'bonobo/kerala', 'nd5do3eR82sw-0', 'Kerala', 'Bonobo', 'Migration', 238),
-  soundcloud(298851207, 'tycho/awake', 'VEsr8icpGzsm-0', 'Awake', 'Tycho', 'Awake', 284),
-  soundcloud(341471474, 'odesza/a-moment-apart', 'nU2mhziz3vmX-0', 'A Moment Apart', 'ODESZA', 'A Moment Apart', 234),
-]
+export { playlist }
 
 /** The song list's section title. */
 export const LIST_TITLE = 'Playlist'
 /** Shown under the list, crediting where the tracks come from. */
-export const CREDIT = 'Music from Jamendo and SoundCloud'
+export const CREDIT = 'Music from SoundCloud'
 
 /** The track in the hero and the status bar. */
 export const nowPlaying = (s: Pick<MusicState, 'tracks' | 'currentId'>): Track | undefined => s.tracks.find((t) => t.id === s.currentId)

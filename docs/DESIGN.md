@@ -570,7 +570,8 @@ Without the model, what it says is only shown.
   the latest sentence end. Kokoro reads more naturally with more at once, and there are fewer seams.
 - **Played in the renderer** through Web Audio, so Chromium's echo cancellation on the mic hears it.
   The player reports each piece's start and end; main knows how much is queued and how much of a
-  reply has been said, to the word. Music plays at a quarter of its volume while Stanley talks.
+  reply has been said, to the word. Music plays at a quarter of its volume while Stanley talks or
+  the user speaks (from the VAD hearing them to the end of the utterance).
 - **What was heard is what was said.** When a reply is stopped, the conversation keeps only the
   words played (`cut`): "Stanley started to say: "…" but the user cut in."
 
@@ -639,7 +640,7 @@ All via **Vercel AI Gateway** with the AI SDK (`ai`, pinned exactly), one `AI_GA
 | Tasks | seeded, in-memory | "Add a task" box (Enter adds); each task row has a checkbox and Delete |
 | Email | seeded, in-memory | Inbox / Sent tabs, the inbox list, an open email with Mark unread / Archive / Delete, a reply box and Send reply |
 | Weather | Open-Meteo | "Search a city" box (Enter looks up), current conditions, one button per day |
-| Music | a hard-coded 16-track playlist (12 streamed from Jamendo, 4 played through SoundCloud's embedded player) | Previous / Play / Next / Volume buttons, one button per track |
+| Music | a hard-coded 12-track playlist, mostly lo-fi from a SoundCloud set, played through SoundCloud's embedded player | Previous / Play / Next / Volume buttons, one button per track |
 | Lights | your Philips Hue Bridge | Rooms and zones, each a row with a switch, and "Turn all off"; a room has its switch, a Brightness slider (a field taking a percentage), scene buttons, color swatches and a switch per light |
 | Web | a live webview | The page's own elements and text (see **Websites**). Not in the agent's app list, since it shows nothing on its own; known pages open in it, the ones it opened included |
 
