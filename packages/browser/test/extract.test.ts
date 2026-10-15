@@ -54,6 +54,21 @@ describe.skipIf(!executablePath)('page extraction', () => {
     expect(names.filter((n) => n.startsWith('Home'))).toEqual(['Home', 'Home (2)'])
   })
 
+  it('reads a data table row with its column headers, and a layout table as it is', async () => {
+    const { screen } = await screenOf(`
+      <table>
+        <thead><tr><td></td><th>Apply online</th><th>Apply by paper form</th></tr></thead>
+        <tbody><tr><th scope="row">Adult passport</th><td>$102</td><td>$115.50</td></tr></tbody>
+      </table>
+      <table><tr><th style="text-transform: uppercase">Day</th><th></th><th>Hours</th></tr><tr><td>Friday</td><td></td><td><div><a href="#fri">10 am-9 pm</a></div></td></tr></table>
+      <table><tr><td>Blue mug</td><td>x 2</td></tr></table>
+      <table><tr><th colspan="2">George Washington</th></tr><tr><th>Born</th><td>February 22, 1732</td></tr></table>`)
+    expect(screen.markdown).toContain('Adult passport; Apply online: $102; Apply by paper form: $115.50')
+    expect(screen.markdown).toContain('Day: Friday; Hours: 10 am-9 pm')
+    expect(screen.markdown).toContain('Blue mug x 2')
+    expect(screen.markdown).toContain('Born February 22, 1732')
+  })
+
   it('reads switch state, field values, and offers Enter on a filled single-line field', async () => {
     const { screen } = await screenOf(`
       <span id="l">Dark mode</span><div role="switch" aria-checked="true" aria-labelledby="l" tabindex="0"></div>

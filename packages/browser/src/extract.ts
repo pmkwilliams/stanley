@@ -173,6 +173,23 @@ export const EXTRACT = String.raw`(function (opts) {
   // From the main content when the page marks it, and from the scroll position on, as a person reads.
   var lines = []
   var line = ''
+  // A row's column headers by column, or null: no header row (a layout table or an infobox), or the row is one.
+  // The header row is the last in <thead>, else a first row of only <th> cells.
+  function columnHeads(tr) {
+    var table = tr.closest('table')
+    if (!table || !table.rows.length) return null
+    var head = table.tHead && table.tHead.rows.length ? table.tHead.rows[table.tHead.rows.length - 1] : null
+    if (!head) {
+      var first = table.rows[0]
+      head = first.cells.length && Array.prototype.every.call(first.cells, function (c) { return c.tagName === 'TH' }) ? first : null
+    }
+    if (!head || head === tr || (table.tHead && table.tHead.contains(tr))) return null
+    var out = []
+    // As written, not as styled: a header in small caps reads "Hours", not "HOURS".
+    Array.prototype.forEach.call(head.cells, function (c) { for (var k = 0; k < (c.colSpan || 1); k++) out.push(clean(c.textContent)) })
+    // One cell across the table is its title (an infobox), not column headers.
+    return head.cells.length > 1 && out.filter(Boolean).length > 1 ? out : null
+  }
   var BLOCK = /^(P|DIV|LI|TR|H[1-6]|SECTION|ARTICLE|HEADER|FOOTER|NAV|ASIDE|MAIN|FORM|FIELDSET|UL|OL|TABLE|BLOCKQUOTE|PRE|DL|DT|DD|FIGURE|FIGCAPTION|DIALOG|BR|HR)$/
   function flush() { var t = clean(line); if (t) lines.push(t); line = '' }
   function visit(c) {
@@ -187,6 +204,23 @@ export const EXTRACT = String.raw`(function (opts) {
       // A link reads in full in the text, even when its option name is shortened.
       else if (r === 'link') { var lt = textOf(el); line += ' ' + (lt ? (lt.length > 400 ? lt.slice(0, 399) + '…' : lt) : nm) }
       else if (nm) { var st2 = stateOf(el); line += ' [' + nm + (st2 ? ': ' + st2 : '') + ']' }
+      return
+    }
+    // A data table's row reads its cells with their column headers, as a screen reader does:
+    // "Apply online; Cash: No" rather than "Apply online Yes No No".
+    var heads = el.tagName === 'TR' ? columnHeads(el) : null
+    // Blocks inside a cell don't break the row's line; empty and hidden cells are left out.
+    if (heads) {
+      flush()
+      var parts = []
+      for (var i = 0, col = 0; i < el.cells.length; col += el.cells[i].colSpan || 1, i++) {
+        var cell = el.cells[i], head = heads[col], mark = lines.length
+        children(cell, false)
+        flush()
+        var t = clean(lines.splice(mark).join(' '))
+        if (t) parts.push(head && cell.tagName !== 'TH' && head !== t ? head + ': ' + t : t)
+      }
+      if (parts.length) lines.push(parts.join('; '))
       return
     }
     var block = BLOCK.test(el.tagName)
