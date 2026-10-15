@@ -61,10 +61,11 @@ type Script = (req: DecideRequest, call: number) => Pick | Promise<Pick>
 /** Jev's judgement of words said while thinking works, by the words: P(stop), P(hold), P(elsewhere). */
 type Working = (heard: string) => Partial<Record<'stop' | 'hold' | 'elsewhere', number>>
 
-function scripted(script: Script, effect: Effect = 'changes', working: Working = () => ({ stop: 1 })): DecisionClient & { calls: number; effectCalls: number; heardWhileWorking: string[] } {
+function scripted(script: Script, effect: Effect = 'changes', working: Working = () => ({ stop: 1 }), asked = 1): DecisionClient & { calls: number; effectCalls: number; consentCalls: number; heardWhileWorking: string[] } {
   const client = {
     calls: 0,
     effectCalls: 0,
+    consentCalls: 0,
     heardWhileWorking: [] as string[],
     async decide(req: DecideRequest): Promise<MultiChoiceResult> {
       const { next, step = 'home screen', nextConfidence = 0.9, stepConfidence = 0.9, heard = 0.9 } = await script(req, client.calls++)
@@ -86,6 +87,11 @@ function scripted(script: Script, effect: Effect = 'changes', working: Working =
         const choice = Object.entries(probabilities).sort(([, a], [, b]) => b - a)[0]![0]
         return { choice, probabilities, confidence: probabilities[choice as 'stop'], latencyMs: 1 }
       }
+      if ('asked' in req.options) {
+        client.consentCalls++
+        const choice = asked >= 0.5 ? 'asked' : 'not asked'
+        return { choice, probabilities: { asked, 'not asked': 1 - asked }, confidence: Math.max(asked, 1 - asked), latencyMs: 1 }
+      }
       client.effectCalls++
       return { choice: effect, probabilities: { [effect]: 1 }, confidence: 1, latencyMs: 1 }
     },
@@ -100,25 +106,22 @@ interface Writing {
   say: string
 }
 
-/** Thinking stand-ins: a full turn, and the single-step turns on a field and on a button that commits. */
+/** Thinking stand-ins: a full turn, and the single-step turn on a field. */
 interface FakeThinking {
   run?: (req: ThinkRequest) => Promise<{ text: string } | ThinkResult>
-  /** Any single-step turn, as it comes back: before `write` and `confirm`. */
+  /** Any single-step turn, as it comes back: before `write`. */
   single?: (req: ThinkRequest) => Promise<ThinkResult>
   write?: (req: ThinkRequest) => Promise<Writing>
-  confirm?: (req: ThinkRequest) => Promise<{ press: boolean; say: string }>
   quick?: Thinker['quick']
 }
 
-/** Types what the user said, presses when asked, and otherwise says nothing and does nothing. Tests override parts. */
-function fakeThinker(over: FakeThinking = {}): Thinker & { runs: ThinkRequest[]; writes: ThinkRequest[]; confirms: ThinkRequest[] } {
+/** Types what the user said, and otherwise says nothing and does nothing. Tests override parts. */
+function fakeThinker(over: FakeThinking = {}): Thinker & { runs: ThinkRequest[]; writes: ThinkRequest[] } {
   const runs: ThinkRequest[] = []
   const writes: ThinkRequest[] = []
-  const confirms: ThinkRequest[] = []
   return {
     runs,
     writes,
-    confirms,
     ...(over.quick && { quick: over.quick }),
     async run(req) {
       const option = req.single?.option ?? ''
@@ -128,11 +131,6 @@ function fakeThinker(over: FakeThinking = {}): Thinker & { runs: ThinkRequest[];
         const w = await (over.write ?? (async () => ({ source: 'user', text: 'Buy eggs', say: '' }) as Writing))(req)
         if (w.source === 'user' || w.source === 'stanley') return scriptedTurn(w.say, { option, text: w.text, wrote: w.source })
         return scriptedTurn(w.source === 'unclear' ? w.say : '')
-      }
-      if (req.single?.kind === 'confirm') {
-        confirms.push(req)
-        const c = await (over.confirm ?? (async () => ({ press: true, say: '' })))(req)
-        return c.press ? scriptedTurn('', { option }) : scriptedTurn(c.say)
       }
       runs.push(req)
       const result = await (over.run ?? (async () => ({ text: '' })))(req)
@@ -160,9 +158,9 @@ const say = (agent: Agent, text: string) => {
   agent.partial(text)
 }
 
-function setup(script: Script, opts: { world?: Parameters<typeof fakeWorld>[0]; thinker?: FakeThinking; effect?: Effect; working?: Working; deps?: Partial<AgentDeps>; events?: Partial<AgentDeps['events']> } = {}) {
+function setup(script: Script, opts: { world?: Parameters<typeof fakeWorld>[0]; thinker?: FakeThinking; effect?: Effect; working?: Working; asked?: number; deps?: Partial<AgentDeps>; events?: Partial<AgentDeps['events']> } = {}) {
   const { world, performed } = fakeWorld(opts.world)
-  const jev = scripted(script, opts.effect, opts.working)
+  const jev = scripted(script, opts.effect, opts.working, opts.asked)
   const thinker = fakeThinker(opts.thinker)
   const ticks: TickReport[] = []
   const statuses: AgentStatus[] = []
@@ -744,10 +742,13 @@ describe('Agent and misheard words', () => {
     expect(said).toEqual(['Done: "Pay the Okonkwo invoice"'])
   })
 
-  it('reads back the words before pressing something that commits, when some were unsure', async () => {
+  it('has thinking read back the words before pressing something that commits, when some were unsure', async () => {
     const { agent, performed, said, thinker } = setup(plan({ next: 'act', step: 'Add a task' }, { next: 'act', step: 'Delete' }), {
       effect: 'commits',
-      thinker: { write: async () => ({ source: 'user', text: "I'm in, see you Friday", say: '' }) },
+      thinker: {
+        write: async () => ({ source: 'user', text: "I'm in, see you Friday", say: '' }),
+        run: async (req) => ({ text: observation(req).includes('"I\'m in, see you Friday"') ? 'I heard "see you Friday". Send it?' : '' }),
+      },
     })
     agent.utteranceStart()
     agent.segment("reply I'm in see you fry day", [
@@ -758,8 +759,8 @@ describe('Agent and misheard words', () => {
     agent.utteranceEnd()
     await settle()
     expect(performed).not.toContain('tasks:delete')
-    expect(thinker.confirms).toHaveLength(0)
-    expect(said).toEqual(['I heard: "I\'m in, see you Friday". Should I go ahead?'])
+    expect(thinker.runs).toHaveLength(1)
+    expect(said).toEqual(['I heard "see you Friday". Send it?'])
   })
 
   it('does not echo a value it only typed, or a single word', async () => {
@@ -785,35 +786,29 @@ describe('Agent buttons that commit', () => {
     expect(jev.effectCalls).toBe(3)
   })
 
-  it('asks thinking before pressing a button that commits, and presses it when the user asked', async () => {
-    let asked = ''
-    const { agent, performed } = setup(plan({ next: 'act', step: 'Delete' }, { next: 'done' }), {
-      effect: 'commits',
-      thinker: {
-        confirm: async (req) => {
-          asked = `${req.single!.option} | ${req.messages[0]!.content}`
-          return { press: true, say: '' }
-        },
-      },
-    })
+  it('presses a button that commits when Jev is sure the user asked for it, without thinking', async () => {
+    const { agent, performed, thinker, jev } = setup(plan({ next: 'act', step: 'Delete' }, { next: 'done' }), { effect: 'commits' })
     agent.utteranceStart()
     agent.segment('delete it')
     agent.utteranceEnd()
     await settle()
-    expect(asked).toBe('Delete | delete it')
+    expect(jev.consentCalls).toBe(1)
     expect(performed).toEqual(['tasks:delete', 'show'])
+    expect(thinker.runs).toHaveLength(0)
   })
 
-  it('says what is ready instead when the user has not asked for it', async () => {
-    const { agent, performed, said, statuses } = setup(plan({ next: 'act', step: 'Delete' }), {
+  it('hands a button that commits to thinking when Jev is unsure the user asked for it', async () => {
+    const { agent, performed, said, statuses, thinker } = setup(plan({ next: 'act', step: 'Delete' }), {
       effect: 'commits',
-      thinker: { confirm: async () => ({ press: false, say: 'Should I delete it?' }) },
+      asked: 0.4,
+      thinker: { run: async (req) => ({ text: observation(req).includes('[Delete]') ? 'Should I delete it?' : '' }) },
     })
     agent.utteranceStart()
     agent.segment('tidy up')
     agent.utteranceEnd()
     await settle()
     expect(performed).toEqual(['show'])
+    expect(thinker.runs).toHaveLength(1)
     expect(said).toEqual(['Should I delete it?'])
     expect(statuses.at(-1)).toBe('done')
   })
@@ -1081,7 +1076,11 @@ describe('Agent turn-taking', () => {
   it('reads back unsure words said after a task ended, even when they rejoin its utterance', async () => {
     const { agent, performed, said } = setup(
       (req, i) => (i === 0 ? { next: 'act', step: 'open Email' } : i === 1 ? { next: 'done' } : req.state.includes('fry') ? (performed.some((p) => p.startsWith('tasks:title')) ? { next: 'act', step: 'Delete' } : { next: 'act', step: 'Add a task' }) : { next: 'listen' }),
-      { effect: 'commits', thinker: { write: async () => ({ source: 'user', text: "I'm in, see you Friday", say: '' }) }, deps: { config: quick } },
+      {
+        effect: 'commits',
+        thinker: { write: async () => ({ source: 'user', text: "I'm in, see you Friday", say: '' }), run: async (req) => ({ text: /unsure/.test(observation(req)) ? 'Did you say Friday?' : '' }) },
+        deps: { config: quick },
+      },
     )
     agent.utteranceStart()
     spoke(agent, 'open my email')
@@ -1097,7 +1096,7 @@ describe('Agent turn-taking', () => {
     ])
     await new Promise((r) => setTimeout(r, 300))
     expect(performed).not.toContain('tasks:delete')
-    expect(said).toContain('I heard: "I\'m in, see you Friday". Should I go ahead?')
+    expect(said).toContain('Did you say Friday?')
   })
 
   it('never ends the turn while the user is speaking', async () => {

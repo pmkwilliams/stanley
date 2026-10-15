@@ -22,7 +22,7 @@ export type TickReason = 'words' | 'action' | 'end' | 'pause'
 /** What `request()` did with a tick request. Everything but `tick` means no Jev call. */
 export type RequestResult = 'tick' | 'deferred' | 'no-new-words' | 'halted' | 'nothing-to-re-ask' | 'held' | 'released'
 
-export type GateRule = 'stale' | 'act-confidence' | 'done-confidence' | 'step-confidence' | 'mid-speech' | 'thought-open' | 'turn-open' | 'early-guess' | 'unsure-words' | 'listen-ended' | 'oscillation' | 'step-cap' | 'ran-calls' | 'only-navigated' | 'skill'
+export type GateRule = 'stale' | 'act-confidence' | 'done-confidence' | 'step-confidence' | 'mid-speech' | 'thought-open' | 'turn-open' | 'early-guess' | 'unsure-words' | 'listen-ended' | 'oscillation' | 'step-cap' | 'ran-calls' | 'only-navigated' | 'skill' | 'consent'
 
 /**
  * Structured trace of the loop, for the debug window. Carries everything needed
@@ -45,11 +45,13 @@ export type AgentDebugEvent =
     }
   | { type: 'decision'; tickId: number; result: MultiChoiceResult; stale: boolean; endedDuringCall: boolean }
   | { type: 'gate'; tickId: number; rule: GateRule; detail: string }
+  /** Jev's answer to whether the user asked for what pressing a button that commits does, before it runs. */
+  | { type: 'consent'; tickId: number; option: string; probabilities: Record<string, number>; latencyMs: number }
   /** What pressing a button does, judged before it runs. */
   | ({ type: 'effect'; tickId: number; option: string; latencyMs: number } & EffectVerdict)
   /**
-   * The turn went to thinking. `run` is a turn with tools; `write` and `confirm` decide one step
-   * Jev chose (`option`). Its exact input is the first `entries` of the history (the history is
+   * The turn went to thinking. `run` is a turn with tools; `write` decides one step Jev chose
+   * (`option`), as `confirm` did in older sessions. Its exact input is the first `entries` of the history (the history is
    * append-only), after the session's instructions. `handover` is why, for the debug window only.
    */
   | { type: 'think-start'; tickId: number; mode: 'run' | 'write' | 'confirm'; handover: string; option?: string; entries: number; cacheAt?: number }

@@ -53,6 +53,19 @@ export function createEffectJudge(jev: DecisionClient, commits = 0.3): EffectJud
   }
 }
 
+/** Whether the user asked for what pressing a button that commits does: Jev's go-ahead, asked only then. */
+export type Consent = 'asked' | 'not asked'
+
+export const CONSENT: Record<Consent, string> = {
+  asked: 'The user asked for what pressing it does: to send it (asking to reply, message or post with words they gave is asking to send them), or to post, pay, buy, book or delete it. Any words Stanley wrote itself, the user has heard and said to go ahead with.',
+  'not asked': "The user didn't ask for that yet: they asked to draft, write or get something ready, only described what they want, haven't said, or haven't heard words Stanley wrote itself and said to go ahead.",
+}
+
+export const consentInstructions = (option: string) => `Stanley is about to press [${option}]. Did the user ask for what it does?`
+
+export const CONSENT_PROMPT = `# Stanley
+Stanley is a voice assistant that operates apps and websites on the user's computer. It is about to press a button that can't be taken back: it sends, posts, pays, buys, books or deletes something. It presses it only when the user asked for what it does, and otherwise gets their go-ahead first.`
+
 export function describeEffect(effect: Effect): string {
   return effect === 'commits' ? 'sends, deletes or otherwise commits something' : effect === 'changes' ? "changes the user's data" : 'only looks'
 }

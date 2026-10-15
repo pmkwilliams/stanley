@@ -5,7 +5,7 @@ import { defaultConfig, type AgentConfig, type DeciderProfile } from './config'
 import type { AgentDebugEvent, GateRule, RequestResult, TickReason } from './debug'
 import { Background, describe, GIST_PROMPT, TASK_DONE, TASK_EFFORT, TASK_MODEL, taskInstructions, type BackgroundTask, type TaskRecord } from './background'
 import { WORKING, WORKING_INSTRUCTIONS, WORKING_PROMPT } from './barge'
-import { createEffectJudge, type EffectJudge, type EffectVerdict } from './effects'
+import { CONSENT, CONSENT_PROMPT, consentInstructions, createEffectJudge, type EffectJudge, type EffectVerdict } from './effects'
 import { bashText, editText, JEV_FILES, knownFiles, listCommand, pageResized, PAGE_SIZE, pageSizeText, readCommand, topFiles, type BashResult, type FileMeta, type FileTools, type KnownFile, type PageSize } from './files'
 import {
   Conversation,
@@ -29,7 +29,7 @@ import { jevMemory, MEMORY_PATH } from './memory'
 import { describeStep, named, namedOptions, narrate } from './narrate'
 import { navigates, stepOptions, type OptionSet, type Target } from './options'
 import { JEV_SKILLS, NO_SKILLS, skillBody, skillChanges, type Skill, type SkillScan } from './skills'
-import { confirmNote, createThinker, DONE_CHECK, EARLY_GUESS, fileOutput, instructions, longDate, PartialTurn, writeNote, type ActCall, type FileOutput, type PageOutput, type SearchOutput, type Thinker, type ThinkResult } from './think'
+import { createThinker, DONE_CHECK, EARLY_GUESS, fileOutput, instructions, longDate, PartialTurn, goAheadNote, unsureNote, writeNote, type ActCall, type FileOutput, type PageOutput, type SearchOutput, type Thinker, type ThinkResult } from './think'
 import { extendsWords, fullText, hasNewWords, letters, normalize, type TranscriptSnapshot } from './transcript'
 import { knownPages, sameUrl, shortUrl, type KnownPage, type WebTools } from './web'
 import type { PageDraft, Screen, StepResult, World } from './world'
@@ -244,8 +244,8 @@ export class Agent {
   private abort?: AbortController
   /** Set while the thinking model owns the turn; aborted when the user says more that stops it (see `whileWorking`). */
   private thinking?: AbortController
-  /** What kind of thinking turn it is: a whole turn (`run`), or one step it decides (`write`, `confirm`). */
-  private thinkingMode: 'run' | 'write' | 'confirm' = 'run'
+  /** What kind of thinking turn it is: a whole turn (`run`), or the one step that writes a field (`write`). */
+  private thinkingMode: 'run' | 'write' = 'run'
   /** What thinking is doing right now, for judging words said while it works. */
   private doing = ''
   /** Jev judging words said while a thinking turn works; `again` when more came while it was asked. */
@@ -984,15 +984,32 @@ export class Agent {
       return this.write(id, option, target, decision)
     }
 
-    // Consent is a judgement about the conversation, so a button that commits goes to thinking.
+    // Sending, deleting or paying can't be taken back, so it waits for the whole turn, and runs only
+    // when Jev, asked just that, is sure the user asked for it. Otherwise thinking gets the go-ahead.
     if (effect === 'commits') {
-      // Sending, deleting or paying can't be taken back, so it waits for the whole turn.
       if (!this.utteranceEnded) {
         this.report(id, d, option, 'gated')
         return this.hold(id, 'turn', 'turn-open', `"${option}" commits, so it waits until the user's turn ends`, () => this.handle(id, d, options, screen, this.utteranceEnded, false, changed))
       }
-      this.report(id, d, option, 'executed')
-      return this.confirm(id, option, target, decision)
+      // What it would send holds the user's words, and speech recognition wasn't sure of some of
+      // them: nothing that can't be taken back goes out until they have heard them.
+      const unsureWords = this.unsureDictation()
+      if (unsureWords) {
+        this.report(id, d, 'think', 'gated')
+        this.gate(id, 'unsure-words', `the user's words for it were partly unsure (?): thinking reads them back before "${option}" is pressed`)
+        return this.think(id, `[${option}] would send words that were partly unsure`, unsureNote(option, unsureWords))
+      }
+      const asked = await this.consent(id, option)
+      if (changed()) {
+        this.gate(id, 'stale', 'new words arrived while asking whether the user asked for it')
+        this.report(id, d, 'stale', 'stale-discarded')
+        return 'stale'
+      }
+      if (asked < c.consent) {
+        this.report(id, d, 'think', 'gated')
+        this.gate(id, 'consent', `P(the user asked for "${option}") ${asked.toFixed(2)} < consent ${c.consent} → think`)
+        return this.think(id, `[${option}] can't be taken back, and Jev wasn't sure the user asked for it`, goAheadNote(option))
+      }
     }
 
     this.report(id, d, option, 'executed')
@@ -1018,8 +1035,8 @@ export class Agent {
 
   /**
    * Jev chose a field: thinking decides what goes in it, in one step, and whose words they are.
-   * Then Jev carries on (Enter, Send, done). If what comes next commits, `confirm` sees whether
-   * the words were Stanley's own and reads them back before sending.
+   * Then Jev carries on (Enter, Send, done). Words Stanley wrote itself are read back, which ends
+   * the task, so nothing sends them before the user has heard them.
    */
   private async write(id: number, option: string, target: Target, decision: DecisionMeta): Promise<string> {
     this.events.status?.('writing')
@@ -1102,45 +1119,6 @@ export class Agent {
   }
 
   /**
-   * Jev chose a button that commits. Consent is a judgement about the conversation, so thinking
-   * makes it, in one step: press now (then Jev carries on), or say what is ready and ask.
-   */
-  private async confirm(id: number, option: string, target: Target, decision: DecisionMeta): Promise<string> {
-    // What it would send holds the user's words, and speech recognition wasn't sure of some of
-    // them: nothing that can't be taken back goes out until they have heard it.
-    const unsure = this.unsureDictation()
-    if (unsure) {
-      this.gate(id, 'unsure-words', `the user's words for it were partly unsure (?): reading them back before pressing "${option}"`)
-      this.say(`I heard: "${unsure}". Should I go ahead?`)
-      await this.finishTask('done')
-      return 'asked'
-    }
-    this.events.status?.('thinking')
-    const reply = this.begin()
-    const turn = await this.thinkOn(id, 'confirm', `[${option}] may commit something, so thinking gives the go-ahead`, reply, { kind: 'confirm', option })
-    if (!turn) return this.stale(id, reply, 'confirming')
-    const { result, options } = turn
-    const call = result.calls.find((c) => c.tool === 'act')
-    if (call && resolveOption(options, String(call.input.option)) === option && result.calls.length === 1) {
-      this.finish(reply, '')
-      this.events.status?.('acting')
-      await this.attempt(id, option, target, {}, 'thinking', { apply: call.toolCallId }, decision)
-      this.request('action')
-      return option
-    }
-    for (const c of result.calls) this.history.dropCall(c.toolCallId)
-    const ran = result.calls.length ? await this.runCalls(id, result, reply) : null
-    if (ran) return ran
-    if (!result.calls.length && result.text) {
-      this.finish(reply, result.text)
-      await this.finishTask('done')
-      return 'asked'
-    }
-    // Another option, a lookup, or no answer at all: that needs a whole turn.
-    return this.think(id, `asked whether to press [${option}], thinking ${result.calls.length ? `chose ${result.calls.map((c) => `${c.tool} ${JSON.stringify(c.input)}`).join(', ')}` : 'neither pressed nor asked'}`)
-  }
-
-  /**
    * A single step that thinking answered with several (tick this, then type that): they run in
    * order, as thinking's own, instead of a whole turn deciding them again. Only `act` calls on
    * options still on screen, typing only the user's own words, and nothing that commits before the
@@ -1205,6 +1183,17 @@ export class Agent {
       kinds.add(kind)
       this.effects.judge({ option, node: target.node, appId, screen: text }).catch(() => {})
     }
+  }
+
+  /** Jev's P(the user asked for what pressing a button that commits does), from the conversation and the screen as it is now. */
+  private async consent(id: number, option: string): Promise<number> {
+    const started = performance.now()
+    const name = this.name()
+    const screen = await this.world.screen()
+    const state = `${named(CONSENT_PROMPT, name)}\n\n${narrate(this.view(), screen, this.live(), this.config.jevTurns, name)}`
+    const result = await this.jev.choose({ state, instructions: named(consentInstructions(option), name), options: namedOptions(CONSENT, name) })
+    this.events.debug?.({ type: 'consent', tickId: id, option, probabilities: result.probabilities, latencyMs: performance.now() - started })
+    return result.probabilities.asked ?? 0
   }
 
   private async judge(id: number, option: string, node: AgentNode, screen: Screen): Promise<EffectVerdict> {
@@ -1315,15 +1304,15 @@ export class Agent {
    */
   private async thinkOn(
     id: number,
-    mode: 'run' | 'write' | 'confirm',
+    mode: 'run' | 'write',
     handover: string,
     reply: Reply,
-    single?: { kind: 'write' | 'confirm'; option: string },
+    single?: { kind: 'write'; option: string },
     note?: string,
   ): Promise<{ result: ThinkResult; options: OptionSet; steps: number } | null> {
     const screen = await this.world.screen()
     const options = this.options(screen, this.config.thinkingElements)
-    const next = single ? (single.kind === 'write' ? writeNote(single.option, !!this.files) : confirmNote(single.option)) : note
+    const next = single ? writeNote(single.option, !!this.files) : note
     const news = await this.skillNews()
     await this.memoryReady
     const files = await this.topFiles()

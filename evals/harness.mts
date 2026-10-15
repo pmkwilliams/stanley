@@ -29,19 +29,18 @@ export const usage = {
   jevMs: [] as number[],
   thinking: 0,
   writing: 0,
-  confirming: 0,
   /** Thinking's input tokens, all calls and steps together, and how many of them were read from the cache. */
   thinkingInputTokens: 0,
   thinkingCachedTokens: 0,
   /** The largest input one thinking call (one step) was sent. */
   largestThinkingInput: 0,
-  /** Writes and confirms that chose something else, and so handed over to a whole turn, and what they chose. */
+  /** Writes that chose something else, and so handed over to a whole turn, and what they chose. */
   singleFallbacks: 0,
   fallbacks: [] as string[],
   searches: 0,
   reads: 0,
   /** How long thinking calls took, by kind. */
-  thinkMs: { run: [] as number[], write: [] as number[], confirm: [] as number[] },
+  thinkMs: { run: [] as number[], write: [] as number[] },
 }
 
 export function loadEnv() {
@@ -68,9 +67,9 @@ export function select<T>(items: T[], name: (t: T) => string, command: string): 
 
 export function printUsage() {
   const ratio = usage.thinkingInputTokens ? `${Math.round((usage.thinkingCachedTokens / usage.thinkingInputTokens) * 100)}%` : '—'
-  console.log(`Paid calls: ${usage.jev} ${process.env.STANLEY_DECIDER ?? 'jev'} (${usage.jevInputTokens.toLocaleString()} input tokens, p50 ${median(usage.jevMs)}s), ${usage.thinking} thinking turns, ${usage.writing} writes, ${usage.confirming} confirms (${usage.singleFallbacks} handed over to a whole turn) (thinking: ${usage.thinkingInputTokens.toLocaleString()} input tokens, ${ratio} read from cache, largest call ${usage.largestThinkingInput.toLocaleString()}), ${usage.searches} searches, ${usage.reads} page reads (Parallel)`)
+  console.log(`Paid calls: ${usage.jev} ${process.env.STANLEY_DECIDER ?? 'jev'} (${usage.jevInputTokens.toLocaleString()} input tokens, p50 ${median(usage.jevMs)}s), ${usage.thinking} thinking turns, ${usage.writing} writes (${usage.singleFallbacks} handed over to a whole turn) (thinking: ${usage.thinkingInputTokens.toLocaleString()} input tokens, ${ratio} read from cache, largest call ${usage.largestThinkingInput.toLocaleString()}), ${usage.searches} searches, ${usage.reads} page reads (Parallel)`)
   const t = usage.thinkMs
-  console.log(`Thinking latency p50: run ${median(t.run)}s (${t.run.length}), write ${median(t.write)}s (${t.write.length}), confirm ${median(t.confirm)}s (${t.confirm.length})`)
+  console.log(`Thinking latency p50: run ${median(t.run)}s (${t.run.length}), write ${median(t.write)}s (${t.write.length})`)
   for (const f of usage.fallbacks) console.log(`  handed over: ${f}`)
 }
 
@@ -152,15 +151,15 @@ export async function drive(world: World, utterances: string[], speak: Speak, fi
   /** When each step on the screen ran (not Jev's background file reads). */
   const stepsAt: number[] = []
   const thinking = { inputTokens: 0, cachedTokens: 0, largestInput: 0 }
-  const modes = new Map<number, 'run' | 'write' | 'confirm'>()
+  const modes = new Map<number, 'run' | 'write'>()
   const agent = makeAgent(world, {
     debug: (e) => {
       if (e.type === 'act' && !e.summary?.startsWith('ran ')) stepsAt.push(Date.now())
-      if (e.type === 'think-start' && e.mode === 'run' && /^asked (to type|whether to press)/.test(e.handover)) {
+      if (e.type === 'think-start' && e.mode === 'run' && /^asked to type/.test(e.handover)) {
         usage.singleFallbacks++
         usage.fallbacks.push(e.handover)
       }
-      if (e.type === 'think-start') modes.set(e.tickId, e.mode)
+      if (e.type === 'think-start') modes.set(e.tickId, e.mode === 'write' ? 'write' : 'run')
       if (e.type === 'think-end' && !e.aborted) usage.thinkMs[modes.get(e.tickId) ?? 'run'].push(e.latencyMs)
       if (e.type !== 'think-end' || !e.usage) return
       thinking.inputTokens += e.usage.inputTokens ?? 0
@@ -215,7 +214,7 @@ function makeAgent(world: World, events: AgentDeps['events'], files?: FileTools)
   // `--effort low|medium|high`: thinking's effort, to compare speed and results.
   const i = process.argv.indexOf('--effort')
   const effort = i === -1 ? undefined : (process.argv[i + 1] as ThinkEffort)
-  // `--single-model <gateway id>`: the model for single-step writes and confirms.
+  // `--single-model <gateway id>`: the model for single-step writes.
   const j = process.argv.indexOf('--single-model')
   const singleModel = j === -1 ? undefined : process.argv[j + 1]
   return new Agent({ world, jev: countedJev(createDecisionClient()), thinker: countedThinker(createThinker({ effort, singleModel })), web: key ? countedWeb(parallelWeb(key)) : undefined, files, events, config, jevNotes: profile.notes })
@@ -354,8 +353,7 @@ function countedWeb(web: WebTools): WebTools {
 function countedThinker(thinker: Thinker): Thinker {
   return {
     async run(req) {
-      if (req.single?.kind === 'write') usage.writing++
-      else if (req.single?.kind === 'confirm') usage.confirming++
+      if (req.single) usage.writing++
       else usage.thinking++
       const result = await thinker.run(req)
       usage.thinkingInputTokens += result.usage?.inputTokens ?? 0

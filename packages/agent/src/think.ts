@@ -44,8 +44,8 @@ export interface ThinkRequest {
   messages: ModelMessage[]
   /** Index of the message the previous call's input ended on: its cache is read there. */
   cacheAt?: number
-  /** A turn that decides one step: its calls come back unrun, for the agent to apply. */
-  single?: { kind: 'write' | 'confirm'; option: string }
+  /** A turn that decides one step, what goes in a field: its calls come back unrun, for the agent to apply. */
+  single?: { kind: 'write'; option: string }
   /** Runs one option and returns what comes of it: the outcome, the screen and the new options. Absent without a screen (a background task). */
   act?(call: ActCall, toolCallId: string): Promise<string>
   /** Searches the web in the background. Absent without web access. Throws when it fails. */
@@ -204,9 +204,14 @@ export const DONE_CHECK = `This may already be done. If something is left for th
 /** What thinking is told when a button was pressed before the user finished speaking. */
 export const EARLY_GUESS = `Stanley pressed something before the user finished speaking. Check each step against everything they said: undo any they took back or corrected, then do what is left. If it all matches, write only ${SILENT}.`
 
-/** What a single-step turn on a button that may commit is told. */
-export function confirmNote(option: string): string {
-  return `Next: pressing [${option}]. Judging by its name it may send, delete or otherwise commit something, but that is a guess: look at the screen. Press it now (call act on it) if it only opens or prepares something, or if the user asked for what it does and has heard any words you wrote yourself: when they already asked, asking again only slows them down. Otherwise say what is ready and ask.`
+/** What thinking is told when Jev chose a button that commits but wasn't sure the user asked for it. */
+export function goAheadNote(option: string): string {
+  return `Next would be pressing [${option}], which can't be taken back. Press it if the user asked for what it does and has heard any words you wrote yourself; otherwise say what is ready and ask.`
+}
+
+/** What thinking is told when pressing a button would send the user's words, and some were heard unsure. */
+export function unsureNote(option: string, words: string): string {
+  return `Next would be pressing [${option}], which sends "${words}". Speech recognition was unsure of some of the user's words, so don't press it yet: say back what you heard and ask whether to go ahead.`
 }
 
 /** How often a page being written is drawn again. */

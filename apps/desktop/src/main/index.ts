@@ -157,7 +157,7 @@ const thinker: Thinker = mock
         // The user's words are the plain user messages: observations and notes are in tags.
         const words = messages.findLast((m) => m.role === 'user' && typeof m.content === 'string' && !m.content.startsWith('<'))?.content
         if (single?.kind === 'write') return scriptedTurn('', { option: single.option, text: typeof words === 'string' ? words : '', wrote: 'user' })
-        return scriptedTurn(single?.kind === 'confirm' ? "I'm offline, so I won't send or delete anything." : "I'm offline, so I can't help with that one.")
+        return scriptedTurn("I'm offline, so I can't help with that one.")
       },
     }
   : createThinker()

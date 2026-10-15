@@ -93,7 +93,7 @@ decisions showed the old single question giving 50% to an option whose route hel
 | Jev says | What happens |
 | --- | --- |
 | `act` on a link, app, `back`, `home` | Runs at once, even mid-word (navigation is cheap to undo) |
-| `act` on a button | Runs once the user finishes the thought; if it **commits** (see **Effects**), once their turn ends, and thinking confirms |
+| `act` on a button | Runs once the user finishes the thought; if it **commits** (see **Effects**), once their turn ends and Jev is sure the user asked for it (`consent`), else thinking gets the go-ahead |
 | `act` on a field | At any pause thinking writes what goes in it (one call), then the fast part carries on. The user's own words go in at once (live dictation, retyped as they go on); words Stanley composed wait for the thought to finish |
 | `think` with a field step ≥ 0.9 | Handled as writing that field: one call instead of a tool loop |
 | Anything but `done`, with a `use skill` step ≥ 0.9 | The skill is read at once, even mid-word (it only reads); the next tick decides with it in view |
@@ -115,7 +115,7 @@ of certainty:
 | Press a button that changes something undoable (tick, add, move, save) | Jev to be sure (`speakingChange`) and to have heard what it needs (`heard` ≥ 0.6): runs mid-word |
 | Type the user's own words into a field | A pause (a field can be retyped) |
 | Type words Stanley composed, hand over to thinking | The thought to finish |
-| Press something that commits (send, delete, archive) | The turn to end, then thinking confirms |
+| Press something that commits (send, delete, archive) | The turn to end, and Jev sure the user asked for it (`consent`) |
 | Say anything | The turn to end; words the user adds first drop it |
 
 Two signals, each reading what the other can't:
@@ -164,10 +164,10 @@ Speech recognition is not exact, so Stanley treats the user's words as heard, no
 - **Fixed from context, or asked about.** Writing and thinking turns read a marked word as what
   the user most likely said (a name on screen, a word that fits) and ask, quoting what was heard,
   when a marked word matters and can't be worked out. A write step that asks instead types nothing.
-  Only marked words are in doubt: a general "ask when unsure" made confirming hesitate over clear
-  requests (a booking went from 4/4 to 0/4), so confirming doesn't get this guidance.
+  Only marked words are in doubt: a general "ask when unsure" made a go-ahead hesitate over clear
+  requests (a booking went from 4/4 to 0/4).
 - **Never sent unheard.** A press that commits words the user said in a turn with unsure words
-  reads them back first ("I heard: …. Should I go ahead?"), decided in code, not by a model.
+  goes to thinking instead, told to say back what it heard and ask: decided in code, not by a model.
 - **Said back.** When the user's own words (two or more) were typed and committed and Stanley
   said nothing else, it says them: "Done: "Book doctor's appointment"". Hands-free, the user may
   not be looking.
@@ -187,7 +187,7 @@ recognition, the web when the session has it, and the date), fixed for the sessi
 continues the same history: the screen goes in as an observation (`<screen>` and `<options>`, or
 `<screen unchanged/>` when thinking saw the same last), the turn runs on everything before it, and
 what it did is appended exactly as it was sent: reasoning, tool calls, and the screens its steps
-returned. Three ways in, all with the same tools and `toolChoice: 'auto'`:
+returned. Two ways in, both with the same tools and `toolChoice: 'auto'`:
 
 - **write** (one step): Jev chose a field. The observation ends with a note naming it. A call to
   `act` on it is the decision: what to type, and whose words they are (`wrote`: `user` when said
@@ -201,12 +201,6 @@ returned. Three ways in, all with the same tools and `toolChoice: 'auto'`:
   words; then Jev continues. A command on the user's files runs within the step (reading a skill,
   or a list the user named), and the step goes on to decide, up to three steps in all. A lookup, or
   a first call that can't run, hands over to a whole turn.
-- **confirm** (one step): Jev chose a button that commits. Thinking presses it (calls `act` on it)
-  only if the user asked for that and has heard any words Stanley wrote itself; otherwise it says
-  what is ready and asks. Asking to reply or post with given words is asking to send; asking to
-  draft is not. When the user already asked for exactly this, it presses: asking again only slows
-  them down. Other `act` calls run as for write; anything else hands over to a whole turn. A single step's text waits for the step to
-  end, so a question isn't spoken just before a press.
 - **run** (a short tool loop over `act`, the same options as Jev): for `think` turns. It answers,
   asks, or works the screen itself. Its text is speech: streamed, shown and spoken as it is written
   (see **Speaking**). With web access it also has `search(query)` and `fetch(url)`, which look things
@@ -216,7 +210,7 @@ returned. Three ways in, all with the same tools and `toolChoice: 'auto'`:
   ("show me that", "the Wikipedia one") without searching again. With the user's files it also
   has `bash` (see **Files**).
 
-When the user says more while thinking works, a single step (write, confirm) is dropped at once: it
+When the user says more while thinking works, a single step (write) is dropped at once: it
 hinges on exactly their words. A whole turn is judged: one Jev question (`WORKING` in `barge.ts`,
 like the barge-in judge for speech over Stanley's voice) asks whether the words stop it (`stop`,
 `no, the other one`, `never mind`, saying more exactly what they meant) or can wait until it
@@ -286,8 +280,17 @@ screen: `looks` (shows or fetches), `changes` (the user's own data, easy to undo
 between changing and committing counts as committing. The answer is cached per app and label, since
 a button's effect doesn't change; the conversation isn't sent, so the cache is honest.
 
-Only `commits` goes to thinking. Confidence is not consent, but consent is a judgement about the
-conversation, so the model that can reason about the conversation makes it.
+A button that commits waits for the user's turn to end. Then one more Jev question, asked only for
+it (`CONSENT` in `effects.ts`, with the conversation and the screen as it is now): did the user ask
+for what pressing it does? Replying with words they gave is asking to send; drafting is not, and
+words Stanley wrote need the user to have heard them and said to go ahead. At P(asked) ≥ 0.8
+(`consent`) it presses, as fast as any other step; below, thinking takes the turn and asks in its
+own words, or presses it when the conversation shows the user asked.
+
+Consent is its own question, not part of "what now". Folded into Jev's prompt it didn't separate:
+P(act) on Send for "draft a reply" (0.62–0.70) overlapped with sends the user asked for
+(0.50–0.79), and the wording made Jev wary of cookie banners' "Accept all", looping on the page
+behind. Asked alone, sends the user asked for scored 0.91–1.00 and drafts 0.11–0.15.
 
 ### Tick scheduling
 
@@ -324,7 +327,8 @@ count grew, or a segment finalized.
 | `done` after they finish needs at least this, else thinking checks | 0.5 |
 | …and after an early press, at least this, else thinking checks the guesses (`earlyGuessDone`) | 0.8 |
 | The chosen step needs at least this confidence, else listen / thinking | 0.4 |
-| P(commits) at or above this sends a button to thinking | 0.3 |
+| P(commits) at or above this makes a button commit | 0.3 |
+| A press that commits needs Jev's P(the user asked for it) at least this, else thinking (`consent`) | 0.8 |
 | Max steps per utterance → stop ("got stuck") | 15 |
 | Oscillation: same step from the same screen N times in the last M steps → stop | 3 in 6 |
 | Stale navigation, or a stale button that doesn't commit when the words only grew, still runs at step confidence ≥ | 0.8 |
@@ -560,8 +564,7 @@ Stanley talks back with **Kokoro 82M v1.0** (Apache-2.0, voice `af_heart`, `STAN
 another) through sherpa-onnx in main, 6 threads: ~200 ms + ~0.23× the audio's length on an M1 Pro.
 Without the model, what it says is only shown.
 
-- **Streamed.** Thinking streams its text (`streamText`; `write`/`confirm` stream their `say`
-  field). A reply waits for the user's turn to end, as before, then goes out as it is written
+- **Streamed.** Thinking streams its text (`streamText`; `write` streams its `say` field). A reply waits for the user's turn to end, as before, then goes out as it is written
   (`speak` events); words the user adds first drop it.
 - **Cut into pieces** (`Segmenter`). The first piece is short so speech starts quickly: a sentence
   or clause within 60 characters, else a break before a new phrase ("…built in 1889 | by Gustave
@@ -630,9 +633,9 @@ All via **Vercel AI Gateway** with the AI SDK (`ai`, pinned exactly), one `AI_GA
   `providerMetadata.typesafe.confidence[questionId]`. `packages/jev` normalizes each answer to
   `{ choice, probabilities, confidence }`: `decide` for several questions in one call, `choose` for
   one, plus a mock.
-- **Thinking**: GPT-6.1 Sol via gateway (GPT-6 Luna for a single write or confirm step) behind a
+- **Thinking**: GPT-6.1 Sol via gateway (GPT-6 Luna for a single write step) behind a
   `Thinker` interface with one method, `run`: a tool loop with `act`, plus `search`, `fetch` and
-  `open_page` when the agent has them, or one step whose calls come back unrun (write, confirm).
+  `open_page` when the agent has them, or one step whose calls come back unrun (write).
 - **Web**: Parallel Search and Extract APIs (`PARALLEL_API_KEY`), in `@stanley/app-web/parallel`:
   the agent's background search and fetch, and the Web app's page reader where it has no live page
   (tests and evals).

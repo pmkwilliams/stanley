@@ -22,8 +22,10 @@ export interface AgentConfig {
   skillStep: number
   /** Judge each kind of button on a screen in the background when it first appears. */
   warmEffects: boolean
-  /** P(commits) at or above this makes a button go to thinking: unsure counts as committing. */
+  /** P(commits) at or above this makes a button commit (waits for the turn to end, needs `consent`): unsure counts as committing. */
   commits: number
+  /** A press that commits runs when Jev's P(the user asked for what it does) reaches this; below it, thinking gets the go-ahead. */
+  consent: number
   /** A navigation decided from a stale transcript still runs at or above this step confidence. */
   staleNavConfidence: number
   maxStepsPerUtterance: number
@@ -88,6 +90,7 @@ export const defaultConfig: AgentConfig = {
   skillStep: 0.9,
   warmEffects: true,
   commits: 0.3,
+  consent: 0.8,
   staleNavConfidence: 0.8,
   maxStepsPerUtterance: 15,
   oscillation: { repeats: 3, window: 6 },
