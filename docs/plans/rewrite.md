@@ -22,7 +22,8 @@ gate agreed before its first run.**
 - **The decision model does almost everything.** Jev should make the vast majority of decisions and
   take almost all the steps. Stages 0–6 build and test Jev alone, taking control of every request a
   person would carry out without needing words or judgement, and push it as far as it will go
-  before any work on thinking starts. Thinking is rebuilt after that, in stage 7.
+  before any work on thinking starts. Thinking is rebuilt after that, in stage 7, on the local
+  model; a cloud model is considered only if stage 7's results call for it.
 - **Stack**: TypeScript, Electron, Svelte. The shell (`apps/desktop`), the app cores and UIs
   (`packages/app-*`), `packages/browser`, `packages/files` and `packages/tts` are kept.
   `packages/agent`, `packages/jev` and `evals/` are replaced; they stay in the tree, untouched, as
@@ -223,6 +224,8 @@ beats another only when their intervals don't overlap.
 
 - Thinking is rebuilt small: it reads the same shared history as Jev, in the same order, with v1's
   tools. Background tasks (`delegate`) carry over unchanged.
+- Thinking runs on the local model the shell already serves (Gemma 4 E4B on llama.cpp). Whether to
+  upgrade to a cloud model is decided from this stage's results, not before.
 - Cases: the `needs thinking` cases and the handoffs recorded in stages 3–6.
 - Metrics: end state or answer right; time from the handoff to thinking's first step or words;
   steps thinking took that Jev could have; share of all steps taken by Jev in end-to-end runs.
