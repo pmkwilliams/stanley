@@ -13,7 +13,7 @@ what you need to start stage 0 without re-deriving anything.
 
 ## What is kept and what is replaced
 
-| Kept as it is | Replaced (left untouched as reference until stage 6 passes, then deleted) |
+| Kept as it is | Replaced (left untouched as reference until stage 7 passes, then deleted except what the new loop still uses) |
 | --- | --- |
 | `apps/desktop` (the shell), `packages/app-*`, `packages/app-sdk`, `packages/browser`, `packages/files`, `packages/tts` | `packages/agent`, `packages/jev`, `evals/` |
 | `packages/stt` until stage 1 picks a recognizer | |
@@ -43,13 +43,16 @@ To do, in order:
 
 1. Move clip storage to `bench/corpus/` (gitignored), and save with each clip the shell's state at
    the utterance's start (open apps, layout, each app's state) so stage 3 can rebuild the screen.
-2. A prompt-card mode: the shell shows a goal ("you want the second email gone"), the user says it
-   however they like, and the clip is tagged with the card. Write the cards from the real sessions,
-   covering every `kind` and `condition` in rewrite.md's stage 0.
-3. A labeller for the stage 0 schema (`said`, `goal`, `deciding`, `kind`, `conditions`). Word timings
-   come from a reference transcription of the whole clip; the user corrects the deciding word.
-4. A coverage report: counts per `kind` and `condition` against the gate, and the frozen 30% test
-   split, written once and never reshuffled.
+2. A prompt-card mode for one ~30-minute session: the shell shows a goal ("you want the second email
+   gone"), the user says it however they like, and the clip is tagged with the card (`goal`, `kind`).
+   Write ~130 cards from the real sessions in the per-`kind` counts of rewrite.md's stage 0, plus
+   ~15 live-condition cards and the three one-minute background recordings (played through the
+   speakers, no one talking).
+3. Condition mixing: the background recordings mixed into each clean clip, tagged with `condition`.
+4. A labeller: `said` prefilled from local Whisper large-v3-turbo (word timestamps), and a suggested
+   `deciding` word the user confirms or corrects.
+5. A coverage report: counts per `kind` and `condition` against the gate, and the frozen 30% test
+   split, stratified by `kind`, written once and never reshuffled.
 
 The user records; you can't. Their mic works only when the shell runs from their terminal (below).
 
@@ -60,7 +63,7 @@ The user records; you can't. Their mic works only when the shell runs from their
   `env -u ELECTRON_RUN_AS_NODE open -na Ghostty.app --args --working-directory="$PWD" -e "$PWD/scripts/dev.command"`.
   Stop any old Electron instance first, and check `pgrep -fl electron-vite` for a duplicate after
   launching. The user may have their own instance running; ask before killing it.
-- **Commit** on the current branch (`main`) when the user asks; no feature branches unless asked.
+- **Commit** on the current branch (`main`) after each piece passes review; no feature branches unless asked.
 - **Disk**: check `df -h /System/Volumes/Data` before any model download. It has been as low as
   ~9 GB free and swings by ~4 GB (275 GB free on 2026-10-17). One model on disk at a time in stage 1;
   delete each when its run is done.
@@ -75,12 +78,11 @@ The user records; you can't. Their mic works only when the shell runs from their
 - **UI**: Tailwind's default scales, semantic tokens, shadcn-svelte components first.
 - **Answers**: scoped to the decision at hand; no inventories or asides.
 
-## Open questions to settle with the user as they come up
+## Settled with the user (2026-10-17)
 
-- Stage 0: how many sessions they can record per week, and whether free-use recording stays on by
-  default.
-- Stage 1: whether a cloud recognizer is acceptable in the product or only as a reference; whether a
-  Swift helper (for Apple SpeechAnalyzer) is acceptable in the shell.
-- Stage 3: the app action contract (typed actions with declared effects) reverses v1's "no hints for
-  the agent" rule for our own apps. The user has chosen our own shell and apps, but confirm the
-  contract before building it.
+All of these are written into rewrite.md: one ~30-minute recording session with conditions by
+mixing; free-use recording on by default; local Whisper turbo for reference transcripts; gates pass
+on the measured value with intervals reported; no cloud recognizers; a Swift helper is acceptable;
+stage 2 is built as stage 3's first question; the action contract with declared effects and undo is
+confirmed; Jev alone through stage 6, thinking rebuilt in stage 7, background tasks carried over
+unchanged.
