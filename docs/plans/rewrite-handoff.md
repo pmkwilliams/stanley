@@ -1,15 +1,16 @@
 # Handoff: starting the rewrite
 
 You are picking up the rewrite of Stanley's agent loop and evals. Read
-[rewrite.md](rewrite.md) first: it is the plan, and its stages and gates are agreed. This file is
-what you need to start stage 0 without re-deriving anything.
+[rewrite.md](rewrite.md) first: it is the plan, starting with "What Stanley is". Its stages are
+agreed; stage 0's gate is agreed, and the later gates are proposals to agree with the user before
+each stage's first run. This file is what you need to start stage 0 without re-deriving anything.
 
 ## Where things stand (2026-10-17)
 
 - Research is done: the v1 design, its git history and evals, its real session logs, and outside
   work on decision models, fast computer-use agents and real-time voice. The conclusions that
   matter are in rewrite.md's "Decisions" and "What v1 taught us".
-- No rewrite code exists yet.
+- No rewrite code exists yet. Nothing has been recorded: `evals/speech/clips/` is empty.
 
 ## What is kept and what is replaced
 
@@ -39,22 +40,43 @@ Most of the recording path already exists; extend it rather than starting over.
   Oct 10–17, ~157 spoken sessions, ~777 utterances). No audio. Use them to write the prompt cards and
   to see which kinds of request really happen; they can't replace recordings.
 
-To do, in order:
+Facts to build on:
+
+- Apps are headless: each app's state is a plain serializable object owned by the main process
+  (`packages/app-sdk/src/index.ts`), so a snapshot of every app's state plus the layout is enough to
+  rebuild the screen. A snapshot is for replay, not for the agent; it adds nothing to what the agent
+  sees.
+- Session logs are JSONL, one `{source, event, seq, at}` per line; `source` is `app`, `agent`, `stt`
+  or `log`. Utterances are in `stt` events (`decode`, `speech-start`, `speech-end`), what v1 did in
+  `agent` events (`decision`, `act`), and the screen in `app` `status` events.
+- Speech playback for the "Stanley speaking" background goes through `packages/tts`.
+
+To do, in order. These pieces are independent enough to build in parallel, except that 3–5 read the
+clip format 1 writes, so settle that format first:
 
 1. Move clip storage to `bench/corpus/` (gitignored), and save with each clip the shell's state at
-   the utterance's start (open apps, layout, each app's state) so stage 3 can rebuild the screen.
+   the utterance's start (open apps, layout, each app's state) and the session timeline, so stage 3
+   can rebuild the screen. Turn free-use recording on by default (today it is off unless
+   `STANLEY_SAVE_CLIPS=1` or the Debug menu item); the Debug item turns it off.
 2. A prompt-card mode for one ~30-minute session: the shell shows a goal ("you want the second email
    gone"), the user says it however they like, and the clip is tagged with the card (`goal`, `kind`).
    Write ~130 cards from the real sessions in the per-`kind` counts of rewrite.md's stage 0, plus
    ~15 live-condition cards and the three one-minute background recordings (played through the
-   speakers, no one talking).
+   speakers, no one talking). Each card sets up the apps' state it needs before it is shown. A card
+   never gives the words to say; "not for Stanley" cards describe a situation ("tell someone in the
+   room you'll be five minutes"). The session is recorded on speakers, not headphones.
 3. Condition mixing: the background recordings mixed into each clean clip, tagged with `condition`.
-4. A labeller: `said` prefilled from local Whisper large-v3-turbo (word timestamps), and a suggested
-   `deciding` word the user confirms or corrects.
+4. A labeller: `said` prefilled from local Whisper large-v3-turbo (word timestamps; check disk
+   before downloading it), and a suggested `deciding` word the user confirms or corrects. `goal`
+   and `kind` come from the card, `condition` from the mix.
 5. A coverage report: counts per `kind` and `condition` against the gate, and the frozen 30% test
-   split, stratified by `kind`, written once and never reshuffled.
+   split, stratified by `kind`, written once and never reshuffled. Audio and labels stay gitignored
+   (the user's voice and words); the split, as a list of clip ids, is committed so it can't drift.
 
 The user records; you can't. Their mic works only when the shell runs from their terminal (below).
+When the tooling is ready, ask the user for the session; after it, have them label, run the coverage
+report, and bring it to them against the gate. Stage 1 starts only when they agree stage 0 passed,
+and with its gate agreed first.
 
 ## How to work here
 
@@ -62,8 +84,10 @@ The user records; you can't. Their mic works only when the shell runs from their
   `ELECTRON_RUN_AS_NODE=1`, and the mic would be attributed to an app that can't ask for it):
   `env -u ELECTRON_RUN_AS_NODE open -na Ghostty.app --args --working-directory="$PWD" -e "$PWD/scripts/dev.command"`.
   Stop any old Electron instance first, and check `pgrep -fl electron-vite` for a duplicate after
-  launching. The user may have their own instance running; ask before killing it.
-- **Commit** on the current branch (`main`) after each piece passes review; no feature branches unless asked.
+  launching. The user may have their own instance running (on 2026-10-17 one was running from the
+  `layout-arrange-anytime` worktree); ask before killing it.
+- **Commit** on the current branch (`main`) after each piece passes review (a code review of the
+  piece's diff, findings fixed); no feature branches unless asked.
 - **Disk**: check `df -h /System/Volumes/Data` before any model download. It has been as low as
   ~9 GB free and swings by ~4 GB (275 GB free on 2026-10-17). One model on disk at a time in stage 1;
   delete each when its run is done.
@@ -73,6 +97,9 @@ The user records; you can't. Their mic works only when the shell runs from their
 - **One agent.** Every model is Stanley in the second person; nothing tells a model what another
   layer decided or why it is being asked; whatever one model sees, the others see in the same order.
   The user is emphatic about this.
+- **Real apps only.** Our apps show what an accessibility tree would and nothing more; never add a
+  field, label or hint for the agent that a real app or web page wouldn't have.
+- **Jev first.** Get decisions as far as possible on Jev alone; no work on thinking before stage 7.
 - **No case-specific fixes.** A failing case is fixed by changing a mechanism; never add wording
   about one scenario to a prompt or an option.
 - **UI**: Tailwind's default scales, semantic tokens, shadcn-svelte components first.
@@ -83,6 +110,6 @@ The user records; you can't. Their mic works only when the shell runs from their
 All of these are written into rewrite.md: one ~30-minute recording session with conditions by
 mixing; free-use recording on by default; local Whisper turbo for reference transcripts; gates pass
 on the measured value with intervals reported; no cloud recognizers; a Swift helper is acceptable;
-stage 2 is built as stage 3's first question; the action contract with declared effects and undo is
-confirmed; Jev alone through stage 6, thinking rebuilt in stage 7, background tasks carried over
-unchanged.
+stage 2 is built as stage 3's first question; apps declare nothing for the agent (effects are
+inferred by Stanley, undo is going back and the app's own undo); Jev alone through stage 6, thinking
+rebuilt in stage 7 on the local Gemma 4 E4B, background tasks carried over unchanged.

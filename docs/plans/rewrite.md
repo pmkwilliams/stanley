@@ -7,6 +7,25 @@ hand-set thresholds fitted to Jev's raw probabilities, eight kinds of question a
 dozen paths to thinking. Most eval numbers are 2–3 runs on synthetic, typed scenarios, and the last
 two big changes were never measured against a baseline.
 
+## What Stanley is
+
+A prototype of an operating system driven by voice. The shell is the OS, the primary harness: the
+user speaks to one agent, Stanley, and Stanley takes the actions, navigation and quick operations
+first. Small local language models give quick answers, write into fields and do easier reasoning.
+Stanley can hand a complex task to a full Claude Code agent in the background, and the user keeps
+talking to Stanley meanwhile.
+
+Whatever model is working, there is one agent with one identity and one history. Models differ in
+capability and context limits, but each speaks as Stanley and owns every earlier step as its own: asked
+about a past action, the model answering never talks as if someone else took it.
+
+The Electron shell is a proof of concept for a whole OS, so our apps are seen exactly as real apps
+and web pages would be: what an accessibility tree gives (roles, visible names, state) and nothing
+more. No app carries information for the agent that a real app wouldn't provide; it would make the
+evals lie.
+
+## The rewrite
+
 We keep the shell and rewrite the agent loop and the evals from first principles. The evals come
 first, and they test one stage at a time. **We don't start a stage until the one before it passes a
 gate agreed before its first run.**
@@ -83,7 +102,7 @@ beats another only when their intervals don't overlap.
   - `kind`: command, short command, naming something on screen, self-correction, backchannel,
     not for Stanley, dictation, question, compound.
   - `conditions`: quiet, music on speakers, Stanley speaking, other voices.
-- Action labels (which option, which app action) are added in stage 3, once the action space exists.
+- Step labels (the acceptable next steps) are added in stage 3, once the action space exists.
 - **One recording session of about 30 minutes.** Each recording should be of something only the
   user's voice can give:
   - **Conditions by mixing.** The user records in quiet. In the same session the shell plays each
@@ -97,7 +116,7 @@ beats another only when their intervals don't overlap.
   - **Text from real sessions.** Stages that need no audio (2–3) add dev cases from the transcripts
     in real session logs, which are rich in feedback about the app (talk not for Stanley).
   - **Free use.** Recording stays on by default; free-use clips go to dev only.
-- **Gate**: about 130 labelled prompted utterances, weighted to what needs the voice: command 20,
+- **Gate (agreed)**: about 130 labelled prompted utterances, weighted to what needs the voice: command 20,
   short command 20, naming something on screen 20, self-correction 15, compound 15, dictation 10,
   question 10, backchannel 10, not for Stanley 10 (every `kind` at least 10). Every `condition`
   covered by mixing, checked against the ~15 live clips, and the three background recordings. A
@@ -164,19 +183,22 @@ beats another only when their intervals don't overlap.
   checked, the expected end state, written by the agent and spot-checked by the user, so more than
   one valid path passes.
 - This stage starts from first principles, with no v1 code carried over:
-  1. **The action space.** What a step is: our apps' typed actions with an effect (`navigate`,
-     `view`, `undoable`, `commit`, `destructive`) and typed arguments, alongside the generic
-     element actions for web pages. Effects are declared by the apps, not inferred, except on web
-     pages. Every `navigate`, `view` and `undoable` action comes with its undo in the contract, since
-     stage 5 undoes steps taken before the turn ended. This reverses v1's "no hints for the agent"
-     rule for our own apps.
+  1. **The action space.** What a step is: an action on an element as an accessibility tree
+     describes it (press, type into, scroll, go back), the same on our apps and on web pages, plus
+     the shell's own operations (open, close, arrange). Apps declare nothing for the agent: no
+     effects, no typed actions, no hints (the rule in `packages/app-sdk`). Stanley infers each
+     step's effect (`navigate`, `view`, `undoable`, `commit`, `destructive`) itself, as one of the
+     questions below, measured and calibrated like the rest; the policy table runs on the inferred
+     effect. Undo is only what a real OS has: going back and the app's own undo (Cmd-Z). A step
+     whose undo isn't certain waits for the end of the turn.
   2. **The state.** How the screen, history and request are rendered for a decision model.
   3. **The questions.** As few as possible, always the same ones. v1's evidence: separate questions
      for what to do now, which step, and whether the user has finished beat one combined question;
      consent was cleanest as its own question.
   4. **Then the model.** Jev, a local decision model on llama.cpp's Jev-compatible endpoint (e.g.
      Laya, Kev-4B), SubQ Snap, on the same cases.
-- Metrics: accuracy at the operating point; `alone` cases handed off; calibration (reliability
+- Metrics: accuracy at the operating point; effect inferred right, and above all no `commit` or
+  `destructive` step taken for a lesser effect; `alone` cases handed off; calibration (reliability
   curve, expected calibration error) per question; the margin between the top two options; latency
   p50/p90; input tokens.
 - **Gate (proposed)**: ≥95% right on the clear cases at a calibrated cutoff, ≥90% on stage 1's
@@ -200,8 +222,8 @@ beats another only when their intervals don't overlap.
 *Do multi-step requests finish, and are self-corrections undone?*
 
 - Headless app cores, checked by their end state.
-- Every step taken before the turn ended can be undone; a step the final words contradict ("Mail,
-  no, Calendar") is undone.
+- Every step taken before the turn ended was one that could be undone (by going back or the app's
+  own undo); a step the final words contradict ("Mail, no, Calendar") is undone.
 - Metrics: end state right; no steps repeated back and forth; self-corrections undone; steps per
   request.
 - **Gate (proposed)**: end state right on ≥95% of single-step and ≥85% of compound requests; every
