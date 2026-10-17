@@ -29,9 +29,11 @@ their sides.
 What `eval:layout` settled:
 
 - A question per set, not per app: per app (alone / left / right / hidden) passed 31/38.
-- What is on the screen goes ahead of the conversation, right after how the screen works
-  (`layoutText`). After the conversation, Jev kept to the screen as it was: 0/16 on the two hardest
-  cases, against 8–13/16 before it.
+- What is on the screen is in the conversation, where it changed (`layoutLine`), as thinking reads
+  it too; how the screen works (`SCREEN_PROMPT`) is in both models' instructions. After the
+  conversation, Jev kept to the screen as it was: 0/16 on the two hardest cases, against 8–13/16
+  ahead of it. In it, where it changed, passed 59/63 to ahead of it 62/63 on 3 runs, and 14/20 each
+  on 10 runs of the two that differed.
 - Home last among `show`'s options: first, it drew answers toward the screen as it was.
 - Unsure (`show` < `screen.show`, 0.3): the screen stays as it is. Showing the app Stanley worked on
   alone, as before, was the worst choice in 7 of the 9 unsure answers; Jev's own guess was right.

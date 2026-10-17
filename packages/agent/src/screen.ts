@@ -17,11 +17,12 @@ const MAX_CANDIDATES = 11
 export const HOME_OPTION = 'No apps'
 
 /**
- * How the screen works, for Jev, when Stanley can lay it out. What is on it goes right after this,
- * ahead of the conversation (`layoutText`): after it, Jev kept to the screen as it was (eval:layout).
+ * How the screen works, for both models, when Stanley can lay it out. What is on it is in the
+ * conversation, where it changed (`layoutLine`), so both read it in the same place and thinking's
+ * history keeps its cache. Jev, told it after the conversation, kept to the screen as it was (eval:layout).
  */
-export const JEV_SCREEN = `## The user's screen
-Up to three apps fit on the screen at once: one alone fills it, two sit side by side, and with three, two are stacked on one side. When Stanley has done what the user asked, the screen shows what they asked to see, what they are in the middle of, and what Stanley did that they would want to look at. Work they don't need to see stays in the background. On the home screen the user is in the middle of nothing, so what Stanley did comes into view.`
+export const SCREEN_PROMPT = `## The user's screen
+Up to three apps fit on the screen at once: one alone fills it, two sit side by side, and with three, two are stacked on one side. When you have done what the user asked, the screen shows what they asked to see, what they are in the middle of, and what you did that they would want to look at. Work they don't need to see stays in the background. On the home screen the user is in the middle of nothing, so what you did comes into view. Each time what is on the screen changes, the conversation says so ("On the screen now: …").`
 
 /** The two questions, and what their options name: frozen with them, so the answers map back to apps. */
 export interface ScreenAsk {
@@ -57,8 +58,8 @@ export function validSides(sides: Sides): boolean {
   return sides.length === 2 && apps.length <= 3 && sides.every((side) => side.length <= 2)
 }
 
-/** What Jev reads about the screen: how it works, and what is on it now. */
-export const layoutText = (shown: string) => `${JEV_SCREEN}\nNow on the screen: ${shown}`
+/** What is on the screen, where it changed in the conversation, as both models read it. */
+export const layoutLine = (shown: string) => `On the screen now: ${shown}`
 
 /** How the screen reads in Jev's state: `Email (left), Tasks (top right), Weather (bottom right).` */
 export function describeScreen(sides: Sides, title: (id: string) => string): string {
@@ -105,8 +106,8 @@ export function screenQuestions(apps: AppEntry[], before: Sides, focus: string |
   const show = Object.fromEntries([...sets].map(([name, set]) => [name, !set.length ? 'No app is on the screen' : set.length === 1 ? `${name} fills the screen on its own` : `${name} side by side`]))
   const left = Object.fromEntries([...lefts].map(([name]) => [name, `${name} on the left`]))
   return {
-    show: { instructions: 'When Stanley has done what the user asked, which apps are on the screen?', options: show },
-    left: { instructions: 'When Stanley has done what the user asked, which apps are on the left side of the screen? (Ignored when one app or none is on it.)', options: left },
+    show: { instructions: 'When you have done what the user asked, which apps are on the screen?', options: show },
+    left: { instructions: 'When you have done what the user asked, which apps are on the left side of the screen? (Ignored when one app or none is on it.)', options: left },
     sets,
     lefts,
     before,

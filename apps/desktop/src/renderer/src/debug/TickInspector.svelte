@@ -84,18 +84,6 @@
     <p class="{para} text-muted-foreground">Passed all guardrails.</p>
   {/if}
 
-  {#if tick.effects.length}
-    <h2 class={h2}>What the button does</h2>
-    <ul class={list}>
-      {#each tick.effects as e, i (i)}
-        <li>
-          <strong>{e.option}</strong> → <span class={e.effect === 'commits' ? 'text-warning' : ''}>{e.effect}</span>{e.cached ? ' (cached)' : ''}
-          <span class="text-muted-foreground">· {ms(e.latencyMs)} · {Object.entries(e.probabilities).map(([k, p]) => `${k} ${(p * 100).toFixed(0)}%`).join(', ')}</span>
-        </li>
-      {/each}
-    </ul>
-  {/if}
-
   {#if tick.screens.length}
     <h2 class={h2}>The screen</h2>
     <ul class={list}>
@@ -138,7 +126,6 @@
         {#if t.end.aborted}<span class="text-warning">Dropped: the user said more.</span>
         {:else if t.end.text}Said <strong>"{t.end.text}"</strong>
         {:else}<span class="text-muted-foreground">Said nothing.</span>{/if}
-        {#if t.end.calls?.length}· chose {t.end.calls.map((c) => `${c.tool} ${JSON.stringify(c.input)}`).join(', ')}{/if}
         <span class="text-muted-foreground">· {t.end.steps} steps · {ms(t.end.latencyMs)}</span>
         {#if u}<span class="text-muted-foreground"> · {u.inputTokens ?? "?"} in ({u.cacheReadTokens ?? 0} cached, {u.cacheWriteTokens ?? 0} written; last step {u.lastInputTokens ?? "?"}) / {u.outputTokens ?? '?'} out tokens</span>{/if}
       </p>

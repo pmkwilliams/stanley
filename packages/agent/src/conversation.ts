@@ -10,7 +10,7 @@ export interface DecisionMeta {
 }
 
 /** Who chose something: Jev, thinking, the agent's own code, or the user in the app directly. Debug only. */
-export type Actor = 'jev' | 'thinking' | 'agent' | 'user'
+export type Actor = 'jev' | 'writer' | 'thinking' | 'agent' | 'user'
 
 /** What a step operated, enough to describe it without the screen it was on. */
 export type StepTarget =
@@ -31,8 +31,8 @@ export interface StepMeta {
   target: StepTarget
   /** Text typed into a field. */
   text?: string
-  /** Whose words `text` is: the user's (or follows from their request), or written by Stanley. */
-  wrote?: 'user' | 'stanley'
+  /** Whose words `text` is, by how much of it the user said (`ownWords`): theirs, or Stanley's own. */
+  wrote?: 'user' | 'you'
   summary: string
   error?: boolean
   /** Fuller content the step produced, for the debug window. */
@@ -42,6 +42,8 @@ export interface StepMeta {
   /** How many of that utterance's words had been heard when the step was decided. */
   heardWords?: number
   decision?: DecisionMeta
+  /** What the screen shows after the step (`describeScreen`), when the step changed it other than by arranging it. */
+  layout?: string
 }
 
 /** A web search or a page read in the background. */
@@ -100,6 +102,8 @@ export interface EntryMeta {
   event?: 'task-start' | 'task-end' | 'stuck'
   /** Stuck: why, as "it kept repeating the same step". */
   detail?: string
+  /** Note: what the screen shows now (`describeScreen`), changed other than by a step. */
+  layout?: string
 }
 
 export interface Entry {
@@ -217,12 +221,8 @@ export class Conversation {
     this.commit()
   }
 
-  /**
-   * A thinking call: commits everything before it, then the observation. Calls a single-step turn
-   * left unanswered are dropped first, so every call has its result.
-   */
+  /** A thinking call: commits everything before it, then the observation. */
   send(observation: string, live?: LiveUtterance): Sent {
-    for (let i = this.entries.length - 1; i >= this.sentEnd; i--) if (this.unanswered(i)) this.splice(i, 1, [])
     this.commit(live)
     this.push([this.entry({ kind: 'observation' }, { role: 'user', content: observation })])
     const messages: ModelMessage[] = []
@@ -281,26 +281,6 @@ export class Conversation {
     return { final: final.trim(), toolCallIds }
   }
 
-  /**
-   * A single-step turn's call was applied: its result goes right after it. If the call is gone (it
-   * was dropped, or sent unanswered), the step goes in as Stanley's own call and result.
-   */
-  applyCall(toolCallId: string, call: { tool: string; input: unknown }, output: ToolResultPart['output'], result: ResultMeta): void {
-    const i = this.entries.findIndex((e) => e.meta.kind === 'call' && e.meta.toolCallId === toolCallId)
-    if (i >= this.sentEnd && this.unanswered(i)) {
-      const tool = { toolCallId, tool: call.tool, input: call.input, by: 'thinking' as const }
-      this.splice(i + 1, 0, [this.entry({ kind: 'result', by: 'thinking', toolCallId, results: [result] }, resultMessage(tool, output))])
-      return
-    }
-    this.stagePair({ toolCallId: `stanley_${this.count + 1}`, tool: call.tool, input: call.input, by: 'thinking' }, output, result)
-  }
-
-  /** A single-step turn's call wasn't applied: it was output, never input, so it goes. */
-  dropCall(toolCallId: string): void {
-    const i = this.entries.findIndex((e) => e.meta.kind === 'call' && e.meta.toolCallId === toolCallId)
-    if (i >= this.sentEnd && this.unanswered(i)) this.splice(i, 1, [])
-  }
-
   /** What Stanley said, once said. `message` is what of it thinking doesn't already have ('' for none). */
   said(replyId: number, text: string, message = text): void {
     this.stage({ kind: 'said', by: 'agent', replyId, said: { text } }, message ? { role: 'assistant', content: message } : undefined)
@@ -349,12 +329,6 @@ export class Conversation {
 
   private unprinted(live: LiveUtterance): boolean {
     return wordsOf(live.text).length > (this.printed.get(live.utteranceId) ?? 0)
-  }
-
-  /** A tool call at `i` whose result isn't right after it. */
-  private unanswered(i: number): boolean {
-    const m = this.entries[i]?.message
-    return !!m && hasCalls(m) && this.entries[i + 1]?.message?.role !== 'tool'
   }
 
   private turnEntry(message: ModelMessage, ran: Map<string, Ran>, turn: number | undefined, toolCallIds: string[]): Entry {

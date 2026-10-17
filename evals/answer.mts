@@ -37,7 +37,7 @@ function page(name: string): { title: string; text: string } {
 
 function conversation(c: AnswerCase): string {
   const lines = c.utterances.map((u) => `User: ${u}`)
-  if (c.said) lines.splice(-1, 0, `Stanley said: "${c.said}"`)
+  if (c.said) lines.splice(-1, 0, `You said: "${c.said}"`)
   return `## Conversation\n${lines.join('\n')}`
 }
 

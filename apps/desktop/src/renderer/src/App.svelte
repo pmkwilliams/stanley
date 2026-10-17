@@ -124,13 +124,13 @@
           <Surface data={snapshot.surfaces[id]} perform={(nodeId: string, args?: { text?: string }) => window.stanley.perform(id, nodeId, args)} agentName={snapshot.name} {fullscreen} />
         </div>
       {/each}
-      <!-- A kept window is never taken out: hidden, it stays laid out, out of sight, out of reach and out of the grid, where it was (`pinned`) as it fades, and pops in and out the same way. Only its fade is a CSS transition: moving and resizing are the glide's. -->
+      <!-- A kept window is never taken out: hidden, it stays laid out, out of sight, out of reach and out of the grid (`absolute!` over the window's own `relative`, or it takes a row of its own and squeezes the others to nothing), where it was (`pinned`) as it fades, and pops in and out the same way. Only its fade is a CSS transition: moving and resizing are the glide's. -->
       {#each [...kept].filter((id) => snapshot!.surfaces[id] !== undefined) as id (id)}
         {@const Surface = surfaces[id]}
         {@const on = shown.includes(id)}
         {@const full = on && fullscreen}
         <div
-          class={[appWindow, 'transition-[opacity,scale,visibility] motion-reduce:transition-none', on ? [sides.length < 2 && 'col-start-1 row-start-1', windowTile(sides), 'duration-340 ease-out', full ? 'z-4' : 'z-1'] : 'invisible absolute z-0 scale-88 opacity-0 duration-260 ease-in']}
+          class={[appWindow, 'transition-[opacity,scale,visibility] motion-reduce:transition-none', on ? [sides.length < 2 && 'col-start-1 row-start-1', windowTile(sides), 'duration-340 ease-out', full ? 'z-4' : 'z-1'] : 'invisible absolute! z-0 scale-88 opacity-0 duration-260 ease-in']}
           style={on ? windowPlace(sides, id) : motion.pinned(id)}
           data-fullscreen={full || undefined}
           inert={!on}

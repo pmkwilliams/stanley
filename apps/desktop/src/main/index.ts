@@ -7,7 +7,8 @@ import { shownTab, type WebState } from '@stanley/app-web/core'
 import { parallelWeb } from '@stanley/app-web/parallel'
 import { livePage } from '@stanley/browser'
 import { localFiles } from '@stanley/files'
-import { Agent, BargeIn, createThinker, deciderProfile, defaultConfig, findElement, named, PAGE_SIZE, screenVocabulary, scriptedTurn, SYSTEM_PROMPT, type AgentStatus, type FileTools, type Overheard, type PageSize, type Thinker } from '@stanley/agent'
+import { Agent, BargeIn, createThinker, deciderProfile, defaultConfig, findElement, llamaEmbed, named, PAGE_SIZE, screenVocabulary, scriptedTurn, SYSTEM_PROMPT, TASK_EFFORT, TASK_MODEL, type AgentStatus, type FileTools, type Overheard, type PageSize, type Thinker } from '@stanley/agent'
+import { createClaudeCodeThinker } from '@stanley/agent/claude-code'
 import { createDecisionClient, createMockJevClient, type DecisionClient } from '@stanley/jev'
 import { SAMPLE_RATE, Transcriber, writeWav, type HeardWord } from '@stanley/stt'
 import { KOKORO, loadKokoro, Speaker } from '@stanley/tts'
@@ -19,7 +20,7 @@ import { Drafts } from './drafts'
 import { filePath, SCHEME, serveFile, serveLib } from './folder-pages'
 import { WebviewTabs } from './page'
 import { Previewer } from './preview'
-import { startQuickModel } from './quick'
+import { startEmbedModel, startQuickModel } from './quick'
 import { Shell } from './shell'
 import { fileStore } from './store'
 
@@ -151,19 +152,34 @@ function pageNavigated(tab: number) {
   }, 100)
 }
 
-/** Offline, thinking types the user's last words and otherwise apologises. */
+/** Offline, the writer types the user's last words, and thinking apologises. */
 const thinker: Thinker = mock
   ? {
-      run: async ({ single, messages }) => {
-        // The user's words are the plain user messages: observations and notes are in tags.
-        const words = messages.findLast((m) => m.role === 'user' && typeof m.content === 'string' && !m.content.startsWith('<'))?.content
-        if (single?.kind === 'write') return scriptedTurn('', { option: single.option, text: typeof words === 'string' ? words : '', wrote: 'user' })
-        return scriptedTurn("I'm offline, so I can't help with that one.")
-      },
+      run: async () => scriptedTurn("I'm offline, so I can't help with that one."),
+      // The user's words are the conversation's last "User…: " line.
+      quick: async (_, text) => text.split('\n').findLast((line) => line.startsWith('User'))?.replace(/^[^:]*:\s*/, '') ?? '',
     }
   : createThinker()
 /** The quick model runs on this computer: its server starts now, as it takes a few seconds to load. */
 const quickModel = mock ? undefined : startQuickModel(join(root, 'models'))
+/** So does the embedding model, which ranks the steps on offer by what the user asks. */
+const embedModel = startEmbedModel(join(root, 'models'))
+/**
+ * Background tasks run on Claude Code, on the Claude subscription it is logged in to
+ * (`STANLEY_TASKS=gateway` keeps them on the gateway). When it can't take a task on (not installed
+ * or logged in, or over its limits), the gateway's Claude does.
+ */
+const tasksDir = join(app.getPath('userData'), 'tasks')
+mkdirSync(tasksDir, { recursive: true })
+const taskThinker: Thinker | undefined =
+  process.env.STANLEY_TASKS === 'gateway'
+    ? undefined
+    : createClaudeCodeThinker({
+        effort: TASK_EFFORT,
+        cwd: tasksDir,
+        fallback: mock ? undefined : createThinker({ model: TASK_MODEL, effort: TASK_EFFORT }),
+        onFallback: (reason) => console.warn(`Background task on the gateway: ${reason}`),
+      })
 
 const sessionsDir = join(app.getPath('userData'), 'sessions')
 /**
@@ -253,6 +269,8 @@ function startSession() {
     thinker,
     web: process.env.PARALLEL_API_KEY ? parallelWeb(process.env.PARALLEL_API_KEY) : undefined,
     files,
+    taskThinker,
+    embed: llamaEmbed(),
     events: {
       status: (s) => {
         if (self !== agent) return
@@ -310,8 +328,8 @@ function startSession() {
   refreshHotwords()
 }
 startSession()
-// The quick model reads how to tidy dictation as soon as it is up, so the first dictation is quick too.
-void quickModel?.then((stop) => stop && agent.warmDictation())
+// The writer reads its instructions as soon as it is up, so its first step is quick too.
+void quickModel?.then((stop) => stop && agent.warmWriter())
 
 /**
  * While Stanley talks, what the mic hears goes here first: Stanley's own voice is taken out, it
@@ -319,7 +337,7 @@ void quickModel?.then((stop) => stop && agent.warmDictation())
  */
 const bargeIn = new BargeIn({
   jev,
-  conversation: (except) => agent.conversation(except),
+  state: (except) => agent.talkingState(except),
   speech: () => speaker?.position() ?? null,
   name: agentName,
   events: {
@@ -617,8 +635,8 @@ function backdrop(url: string, theme: 'light' | 'dark'): string {
  */
 function applySettings() {
   const { theme, name } = readSettings(store)
-  // Dictation's instructions say the assistant's name, so a new one is read ahead of time too.
-  void quickModel?.then((stop) => stop && agent.warmDictation())
+  // The writer's instructions say the assistant's name, so a new one is read ahead of time too.
+  void quickModel?.then((stop) => stop && agent.warmWriter())
   nativeTheme.themeSource = theme
   win?.setBackgroundColor(WINDOW_BG[theme])
   win?.setTitle(name)
@@ -827,6 +845,7 @@ app.whenReady().then(() => {
 app.on('will-quit', () => {
   globalShortcut.unregisterAll()
   void quickModel?.then((stop) => stop?.())
+  void embedModel.then((stop) => stop?.())
   // What thinking hasn't seen yet goes into the session file too.
   agent.history.commit()
 })

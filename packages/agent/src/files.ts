@@ -52,6 +52,8 @@ export interface KnownFile {
   latest: boolean
   /** Where the screen shows it, for a file it can show (a web page, a PDF, a picture). */
   url?: string
+  /** Read this task: what it says is in the conversation, so it isn't offered to read again. */
+  read?: boolean
 }
 
 export { SCRATCH_DIR }
@@ -158,7 +160,7 @@ export function topFiles(paths: string[]): string {
 }
 
 /** For Jev, when the session has the user's files. */
-export const JEV_FILES = `The user's files are in a folder Stanley can look into in the background: "list files" lists it, and its folders and files each have a step to list or read them. Looking at files shows nothing on screen. Files the screen can show (web pages, PDFs, pictures, videos) also have an "open file" step, which puts them on screen as a browser would. Finding something in them, answering from them, or changing them is for \`think\`.`
+export const JEV_FILES = `The user's files are in a folder you can look into in the background: "list files" lists it, and its folders and files each have a step to list or read them. Looking at files shows nothing on screen. Files the screen can show (web pages, PDFs, pictures, videos) also have an "open file" step, which puts them on screen as a browser would. Making, changing or finding something in them, or answering from them, is for \`think\`.`
 
 /** `'it'\''s'`: a word bash reads back exactly. */
 export function quote(text: string): string {

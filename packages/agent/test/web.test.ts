@@ -65,11 +65,11 @@ describe('narrate lookups', () => {
     r.said("Gustave Eiffel's company.")
     expect(narrate(r.h.view(), screen).split('\n').slice(1, 7)).toEqual([
       'User: who designed it',
-      'Wren searched the web for "Eiffel Tower designer":',
+      'You searched the web for "Eiffel Tower designer":',
       '- "Eiffel Tower" (en.wikipedia.org/wiki/Eiffel_Tower): Designed by the company of Gustave Eiffel.',
-      'Wren read "Official site" (toureiffel.paris/en).',
-      'Wren searched the web for "nothing": nothing found.',
-      `Wren said: "Gustave Eiffel's company."`,
+      'You read "Official site" (toureiffel.paris/en).',
+      'You searched the web for "nothing": nothing found.',
+      `You said: "Gustave Eiffel's company."`,
     ])
   })
 

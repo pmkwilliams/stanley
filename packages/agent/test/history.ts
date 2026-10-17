@@ -9,9 +9,9 @@ export function recorder(h = new Conversation()) {
     /** A finalized segment of what the user said. */
     words: (utteranceId: number, text: string) => h.heard(utteranceId, text),
     /** A step Jev (or thinking, staged the same way) took. */
-    step: (s: { target: StepTarget; summary?: string; by?: Actor; text?: string; wrote?: 'user' | 'stanley'; utteranceId?: number; heardWords?: number; error?: boolean }) => {
+    step: (s: { target: StepTarget; summary?: string; by?: Actor; text?: string; wrote?: 'user' | 'you'; utteranceId?: number; heardWords?: number; error?: boolean }) => {
       const step: StepMeta = { id: `s${++n}`, by: 'jev', summary: 'done', ...s }
-      const toolCallId = `jev_${step.id}`
+      const toolCallId = `call_${step.id}`
       h.stagePair({ toolCallId, tool: 'act', input: { option: targetOf(s.target), ...(s.text !== undefined && { text: s.text }) }, by: step.by }, { type: step.error ? 'error-text' : 'text', value: step.summary }, { toolCallId, step })
     },
     /** The user clicked or typed in an app themselves. */

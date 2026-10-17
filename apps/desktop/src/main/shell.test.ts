@@ -63,6 +63,19 @@ const SITE: Site = {
 }
 
 describe('Shell', () => {
+  it("offers the other apps' screens, those on the screen first, and uses their buttons where they are", async () => {
+    const shell = make()
+    await shell.open('tasks')
+    await shell.open('email')
+    await shell.arrange([['email']])
+    expect(shell.others().map((o) => [o.title, o.visible])).toEqual([['Tasks', false]])
+    const field = shell.others()[0]!.elements.find((e) => e.kind === 'input')!
+    await shell.perform(field, { text: 'Buy milk' })
+    expect(shell.focus).toBe('email')
+    await shell.arrange([['email'], ['tasks']])
+    expect(shell.others().map((o) => [o.title, o.visible])).toEqual([['Tasks', true]])
+  })
+
   it('changes the theme in Settings, and keeps it for the next session', async () => {
     const values = new Map<string, unknown>()
     const store: AppStore = { get: (k) => values.get(k), set: (k, v) => void values.set(k, v) }

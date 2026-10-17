@@ -27,13 +27,19 @@ agent drives real web pages through `packages/browser` (see **Websites**).
 
 ### One agent, two speeds
 
-Several models do the work, but it should read as one Stanley, in the trace and to the user.
+Several models do the work, but it should read as one Stanley, in the trace and to the user. Every
+model is addressed as Stanley and reads Stanley's own words for who it is and how it acts
+(`persona.ts`), then only how it takes its turn. No model is told what another decided, and none
+declares a fact the code can read itself.
 
-- **Fast: Jev** (~330 ms). Decides turn-taking and takes clear, reversible steps, including while
-  the user is still speaking: open an app, open an item, press play, tick a box.
-- **Slow: thinking** (GPT-6.1 Sol; Gemma 4 E4B on this computer tidies dictated words). Anything that needs words or judgement: what goes in a
-  field, whether to press something that sends or deletes, answering, asking, and working out a
-  request the fast part can't.
+- **Fast: Jev** (~330 ms). Decides turn-taking and takes clear steps, including while the user is
+  still speaking: open an app, open an item, press play, tick a box. It also decides when a press
+  sends or can't be undone (`submit`).
+- **The writer** (Gemma 4 E4B on this computer, ~0.6 s). Writes the text of the step Jev takes:
+  what goes in a field, what to search for. It reads the last few turns of Jev's conversation, not
+  the screen, so it answers in under a second.
+- **Slow: thinking** (GPT-6.1 Sol). Anything that needs working out: answering, asking, composing
+  words of Stanley's own, and a request the fast part can't do.
 
 There is one history (see **Context**). Thinking continues it as one long conversation: Jev's steps
 are in it as Stanley's own calls, so thinking reads everything Stanley did as its own. Jev reads a
@@ -71,7 +77,7 @@ scroll for the rest.
 Apps describe their screens with `nodes(state)`: `location` = link, `action` = button, `input` =
 field, `group` = a container that only gives context. Labels are what the UI shows (`Send reply`,
 `Add a task`), descriptions only secondary visible text. Nothing in them may coach the agent, and the
-demo apps don't set the `destructive` hint, so the agent's own judgement is what gets tested.
+demo apps don't set the `destructive` hint, so the agent's own decision (`submit`) is what gets tested.
 
 ### A tick (Jev)
 
@@ -79,14 +85,16 @@ One Jev call per tick, with three questions about the same state:
 
 1. **next**: what Stanley should do now.
    - `listen`: the user hasn't finished saying what they want.
-   - `act`: take the next step on screen.
-   - `think`: the next part needs words or judgement.
-   - `done`: what the user asked for is done, and any question has been answered out loud.
-2. **step**: which element, app, `back` or `home` the step would be.
+   - `act`: take the next step: anything that can be undone or only looks, typing into a field,
+     or `respond`.
+   - `submit`: press what sends, posts, pays, buys, books, shares, archives or deletes, because the
+     user asked for it and has heard any words Stanley wrote itself.
+   - `done`: what the user asked for is done, and any question has been answered out loud. A
+     message ready but not asked to go out is `done`.
+2. **step**: which element, app, `back` or `home` the step would be. Each option is one action
+   (`[Add a task]` types, `[Add a task › press Enter]` presses), so the step says what `act` does.
 3. **heard**: has the user finished saying what the next part needs (`finished`), or are words
    still coming that it depends on (`more`)? The words half of turn-taking (see **Turn-taking**).
-4. **words**: if the step types into a field, whose words go in it: the user's (dictated, or a
-   value they named) or Stanley's (described as a tone or gist, or not said yet).
 
 Splitting them keeps the step's probability from being spread across the turn-taking options, and
 the turn-taking decision from being split across dozens of near-identical elements (a replay of real
@@ -95,9 +103,9 @@ decisions showed the old single question giving 50% to an option whose route hel
 | Jev says | What happens |
 | --- | --- |
 | `act` on a link, app, `back`, `home` | Runs at once, even mid-word (navigation is cheap to undo) |
-| `act` on a button | Runs once the user finishes the thought; if it **commits** (see **Effects**), once their turn ends and Jev is sure the user asked for it (`consent`), else thinking gets the go-ahead |
-| `act` on a field | At any pause, with `words` at least 0.8 the user's, a quick model tidies their words out of the last few turns (no history or tools) and they go in at once (live dictation, retyped as they go on). Otherwise thinking writes what goes in it (one call) and words Stanley composed wait for the thought to finish. Then the fast part carries on |
-| `think` with a field step ≥ 0.9 | Handled as writing that field: one call instead of a tool loop |
+| `act` on a button | Runs once Jev is sure and has heard what it needs, even mid-word (`speakingChange`) |
+| `submit` on a button (or `act` on one the app marks `destructive`) | Once the user's turn ends, and Jev, asked just that, is sure the user asked for it (`consent`); else thinking takes the turn |
+| `act` on a field | At any pause, the writer writes it from the last few turns and it goes in at once (live dictation, retyped as they go on). Words of Stanley's own (see **Whose words**) wait for the thought to finish and are read back. Nothing written yet: listen, or thinking takes the turn once the user has finished. Then the fast part carries on |
 | Anything but `done`, with a `use skill` step ≥ 0.9 | The skill is read at once, even mid-word (it only reads); the next tick decides with it in view |
 | `act`, unsure of `act` or of the step | Listens while the user speaks; after they finish, thinking takes the turn |
 | `think` | Thinking takes the turn once the user finishes the thought |
@@ -113,11 +121,11 @@ of certainty:
 
 | Step | Waits for |
 | --- | --- |
-| Open, navigate, scroll, list or read files, press a button that only looks | Nothing: runs mid-word, with a lower bar (`speakingNav`) when Jev is sure of the place and has heard enough |
-| Press a button that changes something undoable (tick, add, move, save) | Jev to be sure (`speakingChange`) and to have heard what it needs (`heard` ≥ 0.6): runs mid-word |
+| Open, navigate, scroll, list or read files | Nothing: runs mid-word, with a lower bar (`speakingNav`) when Jev is sure of the place and has heard enough |
+| Press a button (tick, add, move, save, play) | Jev to be sure (`speakingChange`) and to have heard what it needs (`heard` ≥ 0.6): runs mid-word |
 | Type the user's own words into a field | A pause (a field can be retyped) |
 | Type words Stanley composed, hand over to thinking | The thought to finish |
-| Press something that commits (send, delete, archive) | The turn to end, and Jev sure the user asked for it (`consent`) |
+| `submit`: press something that sends or can't be undone (send, delete, archive) | The turn to end, and Jev sure the user asked for it (`consent`) |
 | Say anything | The turn to end; words the user adds first drop it |
 
 Two signals, each reading what the other can't:
@@ -153,9 +161,10 @@ navigation, made after their last words, a `done` or `listen` Jev is unsure of c
 quietly. Thinking would only say where they are, which they can see. A navigation made before
 their last words was a guess, so thinking still checks it.
 
-**What a button does** (looks, changes or commits) is judged before any of the gates, once per app
-and kind of button ("› Delete" on any task), and in the background for each kind on a screen as
-it first appears, so a press rarely waits for it.
+**Whose words**: no model says whose words a field holds. When less than half of what was typed
+(beyond what the field already held, numbers aside) is words the user said this task, they are
+Stanley's own (`ownWords` in `write.ts`): prose of its own is read back before anything can send
+it, and only the user's own words are said back once committed.
 
 ### Misheard words
 
@@ -163,13 +172,14 @@ Speech recognition is not exact, so Stanley treats the user's words as heard, no
 - **Unsure words are marked.** Parakeet scores every token; a word whose least likely token is
   under 0.5 reaches the models as `word(?)`. On clean speech words stay above ~0.6; garbled
   output ("Put dark is the content" for "Book doctor's appointment") falls to 0.1–0.4.
-- **Fixed from context, or asked about.** Writing and thinking turns read a marked word as what
-  the user most likely said (a name on screen, a word that fits) and ask, quoting what was heard,
-  when a marked word matters and can't be worked out. A write step that asks instead types nothing.
+- **Fixed from context, or asked about.** The writer and thinking read a marked word as what
+  the user most likely said (a name on screen, a word that fits); thinking asks, quoting what was
+  heard, when a marked word matters and can't be worked out.
   Only marked words are in doubt: a general "ask when unsure" made a go-ahead hesitate over clear
   requests (a booking went from 4/4 to 0/4).
-- **Never sent unheard.** A press that commits words the user said in a turn with unsure words
-  goes to thinking instead, told to say back what it heard and ask: decided in code, not by a model.
+- **Never sent unheard.** A `submit` of words the user said in a turn with unsure words goes to
+  thinking instead, decided in code; thinking's instructions say to read such words back and ask
+  before sending them.
 - **Said back.** When the user's own words (two or more) were typed and committed and Stanley
   said nothing else, it says them: "Done: "Book doctor's appointment"". Hands-free, the user may
   not be looking.
@@ -189,31 +199,21 @@ recognition, the web when the session has it, and the date), fixed for the sessi
 continues the same history: the screen goes in as an observation (`<screen>` and `<options>`, or
 `<screen unchanged/>` when thinking saw the same last), the turn runs on everything before it, and
 what it did is appended exactly as it was sent: reasoning, tool calls, and the screens its steps
-returned. Two ways in, both with the same tools and `toolChoice: 'auto'`:
+returned. It has the same tools on every call and `toolChoice: 'auto'`: a short tool loop over
+`act`, the same options as Jev. It answers, asks, writes words of Stanley's own, or works the
+screen itself. Its text is speech: streamed, shown and spoken as it is written (see **Speaking**).
+With web access it also has `search(query)` and `fetch(url)`, which look things up in the background
+without changing the screen, and `open_page(url)`. A question is answered from a lookup; something
+the user wants to see goes on screen. What a search found stays in the history in full, so thinking
+can answer a follow-up from it, and Jev can open any of it later ("show me that", "the Wikipedia
+one") without searching again. With the user's files it also has `bash` (see **Files**).
 
-- **write** (one step): Jev chose a field, and isn't sure the words are the user's own. The observation ends with a note naming it. A call to
-  `act` on it is the decision: what to type, and whose words they are (`wrote`: `user` when said
-  by the user or following directly from the request, like a search query or a city; `stanley`
-  when written from a gist or a tone). Text without a call asks the user; neither means nothing to
-  type yet. Calls come back unrun, and typing appends the call's result. Words Stanley wrote itself
-  are always read back word for word (the agent adds the quote if thinking paraphrased), which hands
-  the turn to the user. Otherwise Jev continues (Enter, Send, done). Other `act` calls (tick this,
-  then type that) run in order as thinking's own steps, stopping at one no longer on screen, typing
-  that isn't the user's own words, or a press that commits before the turn ends or with unsure
-  words; then Jev continues. A command on the user's files runs within the step (reading a skill,
-  or a list the user named), and the step goes on to decide, up to three steps in all. A lookup, or
-  a first call that can't run, hands over to a whole turn.
-- **run** (a short tool loop over `act`, the same options as Jev): for `think` turns. It answers,
-  asks, or works the screen itself. Its text is speech: streamed, shown and spoken as it is written
-  (see **Speaking**). With web access it also has `search(query)` and `fetch(url)`, which look things
-  up in the background without changing the screen, and `open_page(url)`. A question is answered
-  from a lookup; something the user wants to see goes on screen. What a search found stays in the
-  history in full, so thinking can answer a follow-up from it, and Jev can open any of it later
-  ("show me that", "the Wikipedia one") without searching again. With the user's files it also
-  has `bash` (see **Files**).
+Nothing tells thinking why it was called: it reads the state, as every turn does, and its
+instructions cover each case (what may already be done, what the user took back, what to press only
+when asked). Why it was called is for the debug window only.
 
-When the user says more while thinking works, a single step (write) is dropped at once: it
-hinges on exactly their words. A whole turn is judged: one Jev question (`WORKING` in `barge.ts`,
+When the user says more while the writer works, its step is dropped at once: it hinges on exactly
+their words. A thinking turn is judged: one Jev question (`WORKING` in `barge.ts`,
 like the barge-in judge for speech over Stanley's voice) asks whether the words stop it (`stop`,
 `no, the other one`, `never mind`, saying more exactly what they meant) or can wait until it
 finishes (`and make it blue`, another question), with what thinking is doing right now. The turn
@@ -221,8 +221,7 @@ goes on while Jev judges, and more words are judged again. Stopped, it says noth
 it already took stay done and in the history (a step that ran in a step cut short goes in as
 Stanley's own call and result). Either way Jev then decides with everything they said: at once when
 it stopped, after it finishes when not. `pnpm eval:working` checks the judgement. After a `run`, the
-task ends; what was said is in the history, so a follow-up ("yes, send it") is Jev's. Why thinking
-was called is for the debug window only: the instructions say what to do in each case.
+task ends; what was said is in the history, so a follow-up ("yes, send it") is Jev's.
 
 **Prompt caching.** The history only grows, so each call's input starts with the last one's. Three
 markers, kept for an hour (gaps between calls often pass five minutes): the instructions, where the
@@ -273,21 +272,20 @@ ends. The design follows T3 Code's delegation:
 - Each task's brief, instructions and messages go to `userData/sessions/<session>.task-N.jsonl`,
   and its start, steps, end and delivery are rows in the debug timeline. Locking cancels them all.
 
-### Effects: what a button does
+### Submit: what can't be undone
 
-Real apps and pages don't label their buttons, so the agent judges. The first time a button is
-chosen, one Jev question classifies what pressing it does, from its name, its context and the
-screen: `looks` (shows or fetches), `changes` (the user's own data, easy to undo) or `commits`
-(reaches other people or the outside world, deletes, archives, or is otherwise hard to undo). Unsure
-between changing and committing counts as committing. The answer is cached per app and label, since
-a button's effect doesn't change; the conversation isn't sent, so the cache is honest.
+Real apps and pages don't label their buttons, so Stanley decides itself, as part of what it does
+next: `submit` is a press that sends, posts, pays, buys, books, shares, archives or deletes;
+anything else is `act`. No separate judge classifies buttons: what a press does is part of the same
+decision that chooses it, made on the same state. An app's `destructive` hint, where it has one,
+makes an `act` on that button a submit too.
 
-A button that commits waits for the user's turn to end. Then one more Jev question, asked only for
-it (`CONSENT` in `effects.ts`, with the conversation and the screen as it is now): did the user ask
-for what pressing it does? Replying with words they gave is asking to send; drafting is not, and
-words Stanley wrote need the user to have heard them and said to go ahead. At P(asked) ≥ 0.8
-(`consent`) it presses, as fast as any other step; below, thinking takes the turn and asks in its
-own words, or presses it when the conversation shows the user asked.
+A submit waits for the user's turn to end. Then one more Jev question, asked only for it
+(`CONSENT` in `consent.ts`, on the state every decision reads): did the user ask for what pressing
+it does? Replying with words they gave is asking to send; drafting is not, and words Stanley wrote
+need the user to have heard them and said to go ahead. At P(asked) ≥ 0.8 (`consent`) it presses,
+as fast as any other step; below, thinking takes the turn and asks in its own words, or presses it
+when the conversation shows the user asked.
 
 Consent is its own question, not part of "what now". Folded into Jev's prompt it didn't separate:
 P(act) on Send for "draft a reply" (0.62–0.70) overlapped with sends the user asked for
@@ -323,19 +321,16 @@ count grew, or a segment finalized.
 | Guard | Default |
 | --- | --- |
 | `act` needs at least this P(act) while the user is speaking, else listen | 0.6 |
-| …for a button that changes something undoable (`speakingChange`) | 0.6 |
+| …for a button that isn't a submit (`speakingChange`) | 0.6 |
 | …for going somewhere, when the step ≥ 0.7 and `heard` ≥ 0.5 (`speakingNav`) | 0.4 |
 | …and after they finish, else thinking | 0.4 |
 | `done` after they finish needs at least this, else thinking checks | 0.5 |
 | …and after an early press, at least this, else thinking checks the guesses (`earlyGuessDone`) | 0.8 |
 | The chosen step needs at least this confidence, else listen / thinking | 0.4 |
-| P(commits) at or above this makes a button commit | 0.3 |
-| A press that commits needs Jev's P(the user asked for it) at least this, else thinking (`consent`) | 0.8 |
+| A submit needs Jev's P(the user asked for it) at least this, else thinking (`consent`) | 0.8 |
 | Max steps per utterance → stop ("got stuck") | 15 |
 | Oscillation: same step from the same screen N times in the last M steps → stop | 3 in 6 |
-| Stale navigation, or a stale button that doesn't commit when the words only grew, still runs at step confidence ≥ | 0.8 |
-| `think` with a field step at least this sure is handled as writing | 0.9 |
-| P(`words` = user) at least this, and the quick model tidies the user's words into the field (`dictated`) | 0.8 |
+| Stale navigation, or a stale button that isn't a submit when the words only grew, still runs at step confidence ≥ | 0.8 |
 | Elements and known pages offered per tick / to thinking | 150 / 300 |
 | Thinking tool steps | 10 |
 | User turns Jev reads | 50 |
@@ -567,7 +562,7 @@ Stanley talks back with **Kokoro 82M v1.0** (Apache-2.0, voice `af_heart`, `STAN
 another) through sherpa-onnx in main, 6 threads: ~200 ms + ~0.23× the audio's length on an M1 Pro.
 Without the model, what it says is only shown.
 
-- **Streamed.** Thinking streams its text (`streamText`; `write` streams its `say` field). A reply waits for the user's turn to end, as before, then goes out as it is written
+- **Streamed.** Thinking streams its text (`streamText`). A reply waits for the user's turn to end, as before, then goes out as it is written
   (`speak` events); words the user adds first drop it.
 - **Cut into pieces** (`Segmenter`). The first piece is short so speech starts quickly: a sentence
   or clause within 60 characters, else a break before a new phrase ("…built in 1889 | by Gustave
@@ -637,10 +632,11 @@ All via **Vercel AI Gateway** with the AI SDK (`ai`, pinned exactly), one `AI_GA
   `{ choice, probabilities, confidence }`: `decide` for several questions in one call, `choose` for
   one, plus a mock.
 - **Thinking**: GPT-6.1 Sol via gateway behind a `Thinker` interface with `run`: a tool loop with
-  `act`, plus `search`, `fetch` and `open_page` when the agent has them, or one step whose calls
-  come back unrun (write). And `quick`: Gemma 4 E4B (Q4_K_M) on llama.cpp's server, which the app
-  starts, tidies dictated words into fields and puts task briefs in a sentence; GPT-6 Luna stands
-  in until it answers.
+  `act`, plus `search`, `fetch` and `open_page` when the agent has them. And `quick`, the writer
+  (`write.ts`): Gemma 4 E4B (Q4_K_M) on llama.cpp's server, which the app starts, writes what goes
+  in fields and searches, and puts task briefs in a sentence; GPT-6 Luna stands in until it
+  answers. Its instructions and earlier turns are read ahead of time (`warmWriter`), so a step
+  reads only its own input: 94% on the dictate eval's dev and held-out cases, p50 0.6 s.
 - **Web**: Parallel Search and Extract APIs (`PARALLEL_API_KEY`), in `@stanley/app-web/parallel`:
   the agent's background search and fetch, and the Web app's page reader where it has no live page
   (tests and evals).
@@ -669,7 +665,7 @@ the same action handlers.
 The main window stays clean; **Debug → Open Debug Window** (⌘⇧D) opens a separate window for
 diagnosing agent behaviour. It is driven by one structured stream (`DebugEvent`): the agent's trace
 (`AgentDebugEvent`: every tick request including ones that never ran, exact Jev input, both answers,
-guardrail gates with thresholds, button effects, each thinking call with why, step results), STT
+guardrail gates with thresholds, each thinking call with why, what the writer read and wrote, step results), STT
 timing (VAD, decode latency, dropped partials, silence), app events (mic, status, typed/manual input)
 and the history's records. Each session's stream is written to
 `userData/sessions/<session>.debug.jsonl` next to the history JSONL, and each background task's
@@ -677,7 +673,7 @@ own log to `<session>.task-N.jsonl`.
 
 - **Timeline** grouped by task; optional rows for partials, VAD, skipped requests, status.
 - **Tick inspector**: what was heard and why the tick ran, what Jev decided vs what took effect,
-  gating, button effects, each thinking call (its exact input, message by message, rebuilt from the
+  gating, each thinking call (its exact input, message by message, rebuilt from the
   history; steps; what it said; tokens in, cached and out; Copy model input), steps, both questions'
   options ranked by probability, the full Jev state.
 - **History**: every entry, who chose it, Jev's confidence and heard words; staged entries marked.

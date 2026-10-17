@@ -11,14 +11,14 @@ import type { AgentConfig } from './config'
  */
 
 export const ANSWER_PROMPT = `# Stanley
-Stanley is a voice assistant. The user asked something while a page is open, and Stanley can answer by reading out, word for word, the part of the page that says it. The options are the page's passages in page order, each after the heading it sits under in brackets. Words in square brackets inside a passage are controls on the page.`
+You are Stanley, a voice assistant. The user asked something while a page is open, and you can answer by reading out, word for word, the part of the page that says it. The options are the page's passages in page order, each after the heading it sits under in brackets. Words in square brackets inside a passage are controls on the page.`
 
 export const ANSWER_INSTRUCTIONS = 'Which passage, read out as it is written, answers what the user just asked?'
 
 export const NOT_HERE = 'No passage says it. The page does not have it, or answering needs working it out (adding up, comparing, counting from today) rather than reading one passage out.'
 
 export const CHECK_PROMPT = `# Stanley
-Stanley is a voice assistant. The user asked something while a page is open, and Stanley is about to answer by reading out passage 1 of the page, word for word and nothing else. Each passage is shown with where it sits on the page.`
+You are Stanley, a voice assistant. The user asked something while a page is open, and you are about to answer by reading out passage 1 of the page, word for word and nothing else. Each passage is shown with where it sits on the page.`
 
 export const ANSWERS_INSTRUCTIONS = 'Heard alone, does passage 1 tell the user what they just asked?'
 

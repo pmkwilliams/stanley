@@ -11,7 +11,7 @@ function setup(judge: (heard: string) => Verdict, speech: Speech | null = { id: 
       throw new Error('not used')
     },
     choose: async (req: ChoiceRequest) => {
-      const heard = req.state.split('## What the user said over it\n\n')[1]!.replace(/"/g, '')
+      const heard = req.instructions.match(/the user say "(.*)" over you/)![1]!
       asked.push(heard)
       const probabilities = { acknowledging: 0, interrupting: 0, answering: 0, elsewhere: 0, ...judge(heard) }
       const choice = Object.entries(probabilities).sort(([, a], [, b]) => b - a)[0]![0]
@@ -23,7 +23,7 @@ function setup(judge: (heard: string) => Verdict, speech: Speech | null = { id: 
   let dismissed = 0
   const barge = new BargeIn({
     jev,
-    conversation: () => '## Conversation\nUser: what is next',
+    state: () => '## Conversation\nUser: what is next',
     speech: () => speech,
     events: { duck: (on) => ducks.push(on), cut: (h) => cuts.push(h), dismiss: () => dismissed++ },
   })

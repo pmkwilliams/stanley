@@ -2,12 +2,14 @@ export interface AgentConfig {
   /** While the user is speaking, `act` needs at least this confidence; below it Stanley listens. */
   speakingAct: number
   /**
-   * While the user is speaking, going somewhere (a navigation, or a button that only looks) needs
+   * While the user is speaking, going somewhere (an app, a link, a page, back or home) needs
    * this P(act), when the step is at least `step` and Jev's P(heard what it needs) at least `heard`.
    */
   speakingNav: { act: number; step: number; heard: number }
   /** While the user is speaking, a press that changes something undoable needs at least this P(act). */
   speakingChange: number
+  /** While the user is speaking, a press needs its step at least this sure, whatever the button does; below it Stanley listens. */
+  speakingPress: number
   /** After they finish, `act` needs at least this confidence; below it thinking takes the turn. */
   act: number
   /** After the user finishes, `done` needs at least this confidence; below it thinking checks what's left. */
@@ -16,17 +18,9 @@ export interface AgentConfig {
   stepConfidence: number
   /** After a press made before the user finished, `done` at or above this closes the task without thinking checking it. */
   earlyGuessDone: number
-  /** `think` with a field step at least this sure is handled as writing that field (one call, not a tool loop). */
-  writeStep: number
-  /** Jev's P(the user said the words) for a field at least this, and the quick model tidies their words into it; below, thinking writes it (or asks). */
-  dictated: number
-  /** A skill step at least this sure is read whatever Jev says comes next, except `done`: reading only looks. */
-  skillStep: number
-  /** Judge each kind of button on a screen in the background when it first appears. */
-  warmEffects: boolean
-  /** P(commits) at or above this makes a button commit (waits for the turn to end, needs `consent`): unsure counts as committing. */
-  commits: number
-  /** A press that commits runs when Jev's P(the user asked for what it does) reaches this; below it, thinking gets the go-ahead. */
+  /** Jev's P(a skill is for what the user asks) at least this, and it is read whatever comes next, except `done`: reading only looks. */
+  skillRead: number
+  /** A press Jev chose to `submit` runs when its P(the user asked for what it does) reaches this; below it, thinking takes the turn. */
   consent: number
   /**
    * What the screen shows (see screen.ts). Jev's likeliest arrangement is made unless its `show`
@@ -44,6 +38,13 @@ export interface AgentConfig {
   maxElements: number
   /** Elements offered to thinking: it handles more context. It opens pages by address instead. */
   thinkingElements: number
+  /**
+   * Which elements are offered when there are more than fit, out of every open app's, and in what
+   * order (see options.ts `rank`): relevance to what the user is asking, by meaning (relevance.ts)
+   * and by their words, with the app Stanley works on ahead of others on the screen, and those
+   * ahead of apps in the background. `order`: as the screens list them, or the most relevant first.
+   */
+  ranking: { order: 'screen' | 'relevance'; weights: { meaning: number; word: number; tier: { focused: number; visible: number; background: number }; near: number } }
   /** Tool steps per thinking turn. */
   thinkingSteps: number
   /** User turns Jev reads, the most recent ones: its input is re-read on every tick. */
@@ -90,16 +91,13 @@ export interface AgentConfig {
 export const defaultConfig: AgentConfig = {
   speakingAct: 0.6,
   speakingChange: 0.6,
+  speakingPress: 0.7,
   speakingNav: { act: 0.4, step: 0.7, heard: 0.5 },
   act: 0.4,
   done: 0.5,
   earlyGuessDone: 0.8,
   stepConfidence: 0.4,
-  writeStep: 0.9,
-  dictated: 0.8,
-  skillStep: 0.9,
-  warmEffects: true,
-  commits: 0.3,
+  skillRead: 0.5,
   consent: 0.8,
   screen: { show: 0.3, left: 0.4 },
   staleNavConfidence: 0.8,
@@ -107,6 +105,7 @@ export const defaultConfig: AgentConfig = {
   oscillation: { repeats: 3, window: 6 },
   maxElements: 150,
   thinkingElements: 300,
+  ranking: { order: 'relevance', weights: { meaning: 1, word: 0.1, tier: { focused: 0.06, visible: 0.03, background: 0 }, near: 0.02 } },
   thinkingSteps: 10,
   jevTurns: 50,
   finished: { heard: 0.6, voice: 0.5, heardAlone: 0.85 },
@@ -126,13 +125,13 @@ export interface DeciderProfile {
 
 /**
  * Jev's is the default, which the prompts and thresholds were fitted to. SubQ Snap spreads its
- * confidence wider (a skill it means to read rarely reaches 0.9), and weighs a question's own
+ * confidence wider (a skill it means to read is often under 0.5), and weighs a question's own
  * instructions over the shared prompt.
  */
 export function deciderProfile(decider = 'jev'): DeciderProfile {
   if (decider !== 'subq') return { config: defaultConfig }
   return {
-    config: { ...defaultConfig, skillStep: 0.7 },
+    config: { ...defaultConfig, skillRead: 0.4 },
     notes: {
       next: 'An email or message about a web page is not that page: when the user asks to go to a page or a site, it is done only once that page itself is open.',
       step: 'When the user gives the exact words to type ("saying …"), the step is the field they go in.',

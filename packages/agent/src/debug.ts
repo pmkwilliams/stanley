@@ -2,8 +2,6 @@ import type { ActionArgs } from '@stanley/app-sdk'
 import type { MultiChoiceResult, Question } from '@stanley/jev'
 import type { TickOutcome } from './agent'
 import type { TaskMeta } from './conversation'
-import type { EffectVerdict } from './effects'
-import type { UnrunCall } from './think'
 import type { TranscriptSnapshot } from './transcript'
 
 /** Tokens a thinking turn used, all its steps together. */
@@ -22,7 +20,7 @@ export type TickReason = 'words' | 'action' | 'end' | 'pause'
 /** What `request()` did with a tick request. Everything but `tick` means no Jev call. */
 export type RequestResult = 'tick' | 'deferred' | 'no-new-words' | 'halted' | 'nothing-to-re-ask' | 'held' | 'released'
 
-export type GateRule = 'stale' | 'act-confidence' | 'done-confidence' | 'step-confidence' | 'mid-speech' | 'thought-open' | 'turn-open' | 'early-guess' | 'unsure-words' | 'listen-ended' | 'oscillation' | 'step-cap' | 'ran-calls' | 'only-navigated' | 'skill' | 'consent' | 'screen'
+export type GateRule = 'stale' | 'act-confidence' | 'done-confidence' | 'step-confidence' | 'mid-speech' | 'thought-open' | 'turn-open' | 'early-guess' | 'unsure-words' | 'listen-ended' | 'oscillation' | 'step-cap' | 'only-navigated' | 'skill' | 'consent' | 'screen'
 
 /**
  * Structured trace of the loop, for the debug window. Carries everything needed
@@ -48,17 +46,18 @@ export type AgentDebugEvent =
   /** Jev's answer to whether the user asked for what pressing a button that commits does, before it runs. */
   | { type: 'consent'; tickId: number; option: string; probabilities: Record<string, number>; latencyMs: number }
   /** What pressing a button does, judged before it runs. */
-  | ({ type: 'effect'; tickId: number; option: string; latencyMs: number } & EffectVerdict)
   /**
-   * The turn went to thinking. `run` is a turn with tools; `write` decides one step Jev chose
-   * (`option`), as `confirm` did in older sessions. Its exact input is the first `entries` of the history (the history is
+   * The turn went to thinking: `run`, a turn with tools. In older sessions `write` and `confirm`
+   * decided one step Jev chose (`option`). Its exact input is the first `entries` of the history (the history is
    * append-only), after the session's instructions. `handover` is why, for the debug window only.
    */
   | { type: 'think-start'; tickId: number; mode: 'run' | 'write' | 'confirm'; handover: string; option?: string; entries: number; cacheAt?: number }
-  /** The quick model tidied the user's dictated words for a field: what it read and what it wrote. */
+  /** The writer wrote what goes in a field: what it read and what it wrote. */
   | { type: 'dictate'; tickId: number; option: string; input: string; text: string; latencyMs: number }
+  /** The writer wrote the search Jev chose to make: what it read and the query it wrote. */
+  | { type: 'query'; tickId: number; input: string; text: string; latencyMs: number }
   | { type: 'think-step'; tickId: number; option: string; text?: string; result: string }
-  | { type: 'think-end'; tickId: number; text: string; steps: number; latencyMs: number; aborted: boolean; calls?: UnrunCall[]; usage?: ThinkUsage }
+  | { type: 'think-end'; tickId: number; text: string; steps: number; latencyMs: number; aborted: boolean; usage?: ThinkUsage }
   | {
       type: 'act'
       tickId: number

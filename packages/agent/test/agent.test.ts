@@ -1,16 +1,16 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ModelMessage } from 'ai'
-import type { AgentNode } from '@stanley/app-sdk'
+import { DEFAULT_AGENT_NAME, type AgentNode } from '@stanley/app-sdk'
 import type { ChoiceRequest, ChoiceResult, DecideRequest, DecisionClient, MultiChoiceResult } from '@stanley/jev'
 import { Agent, type AgentDeps, type AgentStatus, type TickReport } from '../src/agent'
 import { GIST_PROMPT, type TaskRecord } from '../src/background'
 import { defaultConfig } from '../src/config'
 import { validate } from '../src/conversation'
 import type { AgentDebugEvent } from '../src/debug'
-import type { Effect } from '../src/effects'
+import { named } from '../src/narrate'
 import { topFiles, type FileTools } from '../src/files'
 import type { SkillScan } from '../src/skills'
-import { DONE_CHECK, scriptedTurn, type FileOutput, type ThinkRequest, type Thinker, type ThinkResult } from '../src/think'
+import { scriptedTurn, type FileOutput, type ThinkRequest, type Thinker, type ThinkResult } from '../src/think'
 import { describeScreen, sidesKey, type Sides } from '../src/screen'
 import type { WebTools } from '../src/web'
 import type { World } from '../src/world'
@@ -65,14 +65,15 @@ function fakeWorld(opts: { screenChanges?: boolean; failOn?: string; titles?: Re
 }
 
 interface Pick {
-  next: 'listen' | 'act' | 'think' | 'done'
+  next: 'listen' | 'act' | 'done'
   step?: string
   nextConfidence?: number
   stepConfidence?: number
   /** P(the user finished saying what the next part needs); default 0.9. */
   heard?: number
-  /** P(the user said the words for a field themselves); without it, Jev doesn't answer `words`. */
-  dictated?: number
+  /** The skill for what the user asks, when asked, and P(it); default none. */
+  skill?: string
+  skillConfidence?: number
   /** The screen's answers, when asked: the apps on it (`show`), which are on the left, and P(show). */
   show?: string
   left?: string
@@ -83,14 +84,13 @@ type Script = (req: DecideRequest, call: number) => Pick | Promise<Pick>
 /** Jev's judgement of words said while thinking works, by the words: P(stop), P(hold), P(elsewhere). */
 type Working = (heard: string) => Partial<Record<'stop' | 'hold' | 'elsewhere', number>>
 
-function scripted(script: Script, effect: Effect = 'changes', working: Working = () => ({ stop: 1 }), asked = 1): DecisionClient & { calls: number; effectCalls: number; consentCalls: number; heardWhileWorking: string[] } {
+function scripted(script: Script, working: Working = () => ({ stop: 1 }), asked = 1): DecisionClient & { calls: number; consentCalls: number; heardWhileWorking: string[] } {
   const client = {
     calls: 0,
-    effectCalls: 0,
     consentCalls: 0,
     heardWhileWorking: [] as string[],
     async decide(req: DecideRequest): Promise<MultiChoiceResult> {
-      const { next, step = 'home screen', nextConfidence = 0.9, stepConfidence = 0.9, heard = 0.9, dictated, show, left, showConfidence = 0.9 } = await script(req, client.calls++)
+      const { next, step = 'home screen', nextConfidence = 0.9, stepConfidence = 0.9, heard = 0.9, skill = 'none', skillConfidence = 0.9, show, left, showConfidence = 0.9 } = await script(req, client.calls++)
       const screen = req.questions.show && show
         ? {
             show: { choice: show, confidence: showConfidence, probabilities: { [show]: showConfidence } },
@@ -107,14 +107,14 @@ function scripted(script: Script, effect: Effect = 'changes', working: Working =
           next: { choice: next, confidence: nextConfidence, probabilities: { [next]: nextConfidence } },
           step: { choice: step, confidence: stepConfidence, probabilities: { [step]: stepConfidence } },
           heard: { choice: heard >= 0.5 ? 'finished' : 'more', confidence: Math.max(heard, 1 - heard), probabilities: { finished: heard, more: 1 - heard } },
-          ...(dictated !== undefined && { words: { choice: dictated >= 0.5 ? 'user' : 'stanley', confidence: Math.max(dictated, 1 - dictated), probabilities: { user: dictated, stanley: 1 - dictated } } }),
+          ...(req.questions.skill && { skill: { choice: skill, confidence: skillConfidence, probabilities: { [skill]: skillConfidence } } }),
         },
         latencyMs: 1,
       }
     },
     async choose(req: ChoiceRequest): Promise<ChoiceResult> {
       if ('hold' in req.options) {
-        const heard = req.state.split('## What the user said while it works\n\n')[1]!.replace(/"/g, '')
+        const heard = req.instructions.match(/The user said "(.*)" while you work/)![1]!
         client.heardWhileWorking.push(heard)
         const probabilities = { stop: 0, hold: 0, elsewhere: 0, ...working(heard) }
         const choice = Object.entries(probabilities).sort(([, a], [, b]) => b - a)[0]![0]
@@ -125,46 +125,31 @@ function scripted(script: Script, effect: Effect = 'changes', working: Working =
         const choice = asked >= 0.5 ? 'asked' : 'not asked'
         return { choice, probabilities: { asked, 'not asked': 1 - asked }, confidence: Math.max(asked, 1 - asked), latencyMs: 1 }
       }
-      client.effectCalls++
-      return { choice: effect, probabilities: { [effect]: 1 }, confidence: 1, latencyMs: 1 }
+      throw new Error(`unexpected question: ${req.instructions}`)
     },
   }
   return client
 }
 
-/** What a single-step turn on a field decides, as a test states it. */
-interface Writing {
-  source: 'user' | 'stanley' | 'missing' | 'unclear'
-  text: string
-  say: string
-}
-
-/** Thinking stand-ins: a full turn, and the single-step turn on a field. */
+/** Thinking stand-ins: a full turn, and the writer's step. */
 interface FakeThinking {
   run?: (req: ThinkRequest) => Promise<{ text: string } | ThinkResult>
-  /** Any single-step turn, as it comes back: before `write`. */
-  single?: (req: ThinkRequest) => Promise<ThinkResult>
-  write?: (req: ThinkRequest) => Promise<Writing>
-  quick?: Thinker['quick']
+  /** What the writer writes for a step, from what it reads (`writerInput`). */
+  write?: (input: string) => Promise<string>
+  /** The writer as it is called; null for none. Defaults to `write`. */
+  quick?: Thinker['quick'] | null
 }
 
-/** Types what the user said, and otherwise says nothing and does nothing. Tests override parts. */
-function fakeThinker(over: FakeThinking = {}): Thinker & { runs: ThinkRequest[]; writes: ThinkRequest[] } {
+/** Writes "Buy eggs" into any field, and otherwise says nothing and does nothing. Tests override parts. */
+function fakeThinker(over: FakeThinking = {}): Thinker & { runs: ThinkRequest[]; writes: string[] } {
   const runs: ThinkRequest[] = []
-  const writes: ThinkRequest[] = []
+  const writes: string[] = []
+  const quick: Thinker['quick'] = async (_, text) => (writes.push(text), (over.write ?? (async () => 'Buy eggs'))(text))
   return {
     runs,
     writes,
-    ...(over.quick && { quick: over.quick }),
+    ...(over.quick !== null && { quick: over.quick ?? quick }),
     async run(req) {
-      const option = req.single?.option ?? ''
-      if (req.single && over.single) return over.single(req)
-      if (req.single?.kind === 'write') {
-        writes.push(req)
-        const w = await (over.write ?? (async () => ({ source: 'user', text: 'Buy eggs', say: '' }) as Writing))(req)
-        if (w.source === 'user' || w.source === 'stanley') return scriptedTurn(w.say, { option, text: w.text, wrote: w.source })
-        return scriptedTurn(w.source === 'unclear' ? w.say : '')
-      }
       runs.push(req)
       const result = await (over.run ?? (async () => ({ text: '' })))(req)
       return 'messages' in result ? result : scriptedTurn(result.text)
@@ -191,9 +176,9 @@ const say = (agent: Agent, text: string) => {
   agent.partial(text)
 }
 
-function setup(script: Script, opts: { world?: Parameters<typeof fakeWorld>[0]; thinker?: FakeThinking; effect?: Effect; working?: Working; asked?: number; deps?: Partial<AgentDeps>; events?: Partial<AgentDeps['events']> } = {}) {
+function setup(script: Script, opts: { world?: Parameters<typeof fakeWorld>[0]; thinker?: FakeThinking; working?: Working; asked?: number; deps?: Partial<AgentDeps>; events?: Partial<AgentDeps['events']> } = {}) {
   const { world, performed } = fakeWorld(opts.world)
-  const jev = scripted(script, opts.effect, opts.working, opts.asked)
+  const jev = scripted(script, opts.working, opts.asked)
   const thinker = fakeThinker(opts.thinker)
   const ticks: TickReport[] = []
   const statuses: AgentStatus[] = []
@@ -297,7 +282,7 @@ describe('Agent loop', () => {
   })
 
   it('holds a press that commits while the user is speaking', async () => {
-    const { agent, performed, debug } = setup(() => ({ next: 'act', step: 'Delete' }), { effect: 'commits' })
+    const { agent, performed, debug } = setup(() => ({ next: 'submit', step: 'Delete' }))
     agent.utteranceStart()
     agent.voice(true)
     say(agent, 'delete it')
@@ -515,16 +500,17 @@ describe('Agent loop', () => {
     expect(handover(debug)).toEqual(['no step stood out clearly'])
   })
 
-  it('tells thinking to say nothing when an unsure done-check finds nothing left', async () => {
+  it('has thinking check what is left when Jev is unsure it is done', async () => {
     // A change, not just going somewhere: a task that only navigated closes without checking.
-    const { agent, performed, thinker } = setup(plan({ next: 'act', step: 'Sort' }, { next: 'done', nextConfidence: 0.3 }))
+    const { agent, performed, thinker, debug } = setup(plan({ next: 'act', step: 'Sort' }, { next: 'done', nextConfidence: 0.3 }))
     agent.utteranceStart()
     agent.segment('sort my list')
     agent.utteranceEnd()
     await settle()
     expect(performed).toContain('tasks:sort')
     expect(thinker.runs).toHaveLength(1)
-    expect(observation(thinker.runs[0]!)).toContain(`<note>${DONE_CHECK}</note>`)
+    expect(handover(debug)[0]).toContain('unsure it was done')
+    expect(observation(thinker.runs[0]!)).not.toContain('<note>')
   })
 
   it('stops when it keeps choosing the same step from the same screen', async () => {
@@ -534,7 +520,7 @@ describe('Agent loop', () => {
     await settle()
     expect(performed.filter((p) => p === 'tasks:item')).toHaveLength(2)
     expect(statuses.at(-1)).toBe('stuck')
-    expect(await agent.context()).toContain('Wren stopped: it kept repeating the same step.')
+    expect(await agent.context()).toContain('You stopped: you kept repeating the same step.')
   })
 
   it('repeats a step that keeps changing the screen', async () => {
@@ -577,7 +563,7 @@ describe('Agent loop', () => {
     agent.utteranceStart()
     spoke(agent, 'sort')
     await settle()
-    expect(seen[1]).toContain('Wren pressed [Sort]: failed (tasks:sort broke).')
+    expect(seen[1]).toContain('You pressed [Sort]: failed (tasks:sort broke).')
     expect(performed).toEqual(['tasks:item', 'show'])
     expect(statuses.at(-1)).toBe('done')
   })
@@ -623,47 +609,25 @@ describe('Agent writing', () => {
     spoke(agent, 'add buy eggs')
     await settle()
     expect(performed).toEqual(['tasks:title=Buy eggs', 'tasks:add', 'show'])
-    expect(await agent.context()).toContain('Wren typed "Buy eggs" into [Add a task].')
+    expect(await agent.context()).toContain('You typed "Buy eggs" into [Add a task].')
   })
 
-  it("marks words Wren wrote itself, and ends the turn when it has something to say", async () => {
+  it('reads back words of its own word for word, and ends the turn', async () => {
     const { agent, performed, said } = setup(plan({ next: 'act', step: 'Add a task' }), {
-      thinker: { write: async () => ({ source: 'stanley', text: 'Ramen? I was born ready.', say: 'I wrote "Ramen? I was born ready." Send it?' }) },
+      thinker: { write: async () => 'Ramen? I was born ready.' },
     })
     agent.utteranceStart()
     agent.segment('reply with something funny')
     agent.utteranceEnd()
     await settle()
     expect(performed).toEqual(['tasks:title=Ramen? I was born ready.', 'show'])
-    expect(said).toEqual(['I wrote "Ramen? I was born ready." Send it?'])
-    expect(await agent.context()).toContain('Wren wrote its own words into [Add a task]: "Ramen? I was born ready."')
+    expect(said).toEqual(['I wrote: "Ramen? I was born ready." Should I go ahead?'])
+    expect(await agent.context()).toContain('You wrote your own words into [Add a task]: "Ramen? I was born ready."')
   })
 
-  it('writes a field Jev is sure of with one call, even when it chose to think', async () => {
-    const { agent, performed, thinker } = setup(plan({ next: 'think', step: 'Add a task', stepConfidence: 0.97 }, { next: 'done' }))
-    agent.utteranceStart()
-    agent.segment('add buy eggs')
-    agent.utteranceEnd()
-    await settle()
-    expect(performed[0]).toBe('tasks:title=Buy eggs')
-    expect(thinker.runs).toHaveLength(0)
-  })
-
-  it('reads back its own words word for word, even when thinking paraphrased them', async () => {
-    const { agent, said } = setup(plan({ next: 'act', step: 'Add a task' }), {
-      thinker: { write: async () => ({ source: 'stanley', text: 'Ramen? I was born ready.', say: 'I drafted something playful.' }) },
-    })
-    agent.utteranceStart()
-    agent.segment('reply with something funny')
-    agent.utteranceEnd()
-    await settle()
-    // What thinking said may already be playing, so the words follow it.
-    expect(said).toEqual(['I drafted something playful. I wrote: "Ramen? I was born ready." Should I go ahead?'])
-  })
-
-  it('fills in a short value without reading it back, even when thinking calls it its own', async () => {
+  it('fills in a short value without reading it back, even when the words are its own', async () => {
     const { agent, performed, said } = setup(plan({ next: 'act', step: 'Add a task' }, { next: 'done' }), {
-      thinker: { write: async () => ({ source: 'stanley', text: '4 people', say: '' }) },
+      thinker: { write: async () => '4 people' },
     })
     agent.utteranceStart()
     agent.segment('a table for four')
@@ -674,7 +638,7 @@ describe('Agent writing', () => {
   })
 
   it('keeps listening when there is nothing to type yet and the user is mid-turn', async () => {
-    const { agent, performed, statuses } = setup(plan({ next: 'act', step: 'Add a task' }), { thinker: { write: async () => ({ source: 'missing', text: '', say: '' }) } })
+    const { agent, performed, statuses } = setup(plan({ next: 'act', step: 'Add a task' }), { thinker: { write: async () => '' } })
     agent.utteranceStart()
     agent.segment('add one called')
     await settle()
@@ -685,7 +649,7 @@ describe('Agent writing', () => {
   it('waits through a long pause on a field without counting it as a step', async () => {
     let typed = false
     const { agent, performed, statuses } = setup(() => ({ next: 'act', step: 'Add a task' }), {
-      thinker: { write: async () => (typed ? { source: 'user', text: 'Avocado', say: '' } : { source: 'missing', text: '', say: '' }) },
+      thinker: { write: async () => (typed ? 'Avocado' : '') },
     })
     agent.utteranceStart()
     for (const words of ['add one called', 'um', 'uh', 'hmm']) {
@@ -700,7 +664,7 @@ describe('Agent writing', () => {
   })
 
   it('asks through thinking when the user finished without saying what to type', async () => {
-    const { agent, thinker, debug } = setup(plan({ next: 'act', step: 'Add a task' }), { thinker: { write: async () => ({ source: 'missing', text: '', say: '' }) } })
+    const { agent, thinker, debug } = setup(plan({ next: 'act', step: 'Add a task' }), { thinker: { write: async () => '' } })
     agent.utteranceStart()
     agent.segment('add one')
     agent.utteranceEnd()
@@ -714,10 +678,10 @@ describe('Agent writing', () => {
     const gate = new Promise<void>((r) => (release = r))
     const { agent, performed, debug } = setup((_, i) => (i === 0 ? { next: 'act', step: 'Add a task' } : { next: 'listen' }), {
       thinker: {
-        write: async ({ signal }) => {
+        quick: async (_, __, signal) => {
           await gate
-          signal.throwIfAborted()
-          return { source: 'user', text: 'Buy', say: '' }
+          signal!.throwIfAborted()
+          return 'Buy'
         },
       },
     })
@@ -728,39 +692,38 @@ describe('Agent writing', () => {
     release()
     await settle()
     expect(performed).toEqual([])
-    expect(debug.some((e) => e.type === 'think-start' && e.mode === 'write')).toBe(true)
-    expect(debug.some((e) => e.type === 'think-end' && e.aborted)).toBe(true)
+    expect(debug.some((e) => e.type === 'gate' && e.rule === 'stale' && e.detail.includes('writing'))).toBe(true)
+    expect(debug.some((e) => e.type === 'dictate')).toBe(false)
   })
 })
 
 describe('Agent dictation', () => {
   it("tidies the user's own words into a field with the quick model, not thinking", async () => {
     const asked: string[] = []
-    const { agent, performed, thinker } = setup(plan({ next: 'act', step: 'Add a task', dictated: 0.95 }, { next: 'act', step: 'Add a task › press Enter' }, { next: 'done' }), {
+    const { agent, performed, thinker } = setup(plan({ next: 'act', step: 'Add a task' }, { next: 'act', step: 'Add a task › press Enter' }, { next: 'done' }), {
       thinker: { quick: async (_, text) => (asked.push(text), 'Buy eggs') },
     })
     agent.utteranceStart()
     spoke(agent, 'add um buy eggs')
     await settle()
     expect(performed).toEqual(['tasks:title=Buy eggs', 'tasks:add', 'show'])
-    expect(thinker.writes).toHaveLength(0)
+    expect(thinker.runs).toHaveLength(0)
     expect(asked[0]).toContain('add um buy eggs')
-    expect(asked[0]).toContain('[Add a task] is empty.')
+    expect(asked[0]).toContain('You type into [Add a task] now, which is empty.')
   })
 
-  it('has thinking write the field when Jev is unsure the words are the user\'s', async () => {
-    let quick = 0
-    const { agent, thinker } = setup(plan({ next: 'act', step: 'Add a task', dictated: 0.6 }, { next: 'done' }), { thinker: { quick: async () => (quick++, 'Buy eggs') } })
+  it('has thinking take the field once the user has finished, when there is no writer', async () => {
+    const { agent, thinker, debug } = setup(plan({ next: 'act', step: 'Add a task' }, { next: 'done' }), { thinker: { quick: null } })
     agent.utteranceStart()
     agent.segment('add something for the weekend')
     agent.utteranceEnd()
     await settle()
-    expect(quick).toBe(0)
-    expect(thinker.writes).toHaveLength(1)
+    expect(thinker.runs).toHaveLength(1)
+    expect(handover(debug)[0]).toContain('no quick model')
   })
 
   it('keeps listening when the user has not said the words yet', async () => {
-    const { agent, performed, statuses } = setup(plan({ next: 'act', step: 'Add a task', dictated: 0.9 }), { thinker: { quick: async () => '' } })
+    const { agent, performed, statuses } = setup(plan({ next: 'act', step: 'Add a task' }), { thinker: { quick: async () => '' } })
     agent.utteranceStart()
     agent.segment('add one called')
     await settle()
@@ -787,21 +750,9 @@ describe('Agent and misheard words', () => {
     expect(ticked && 'transcript' in ticked && ticked.transcript).toEqual({ finalized: ['pay the Aconquo invoice'], partial: '', previous: '' })
   })
 
-  it('asks instead of typing when the words for a field look misheard', async () => {
-    const { agent, performed, said } = setup(plan({ next: 'act', step: 'Add a task' }), {
-      thinker: { write: async () => ({ source: 'unclear', text: '', say: 'I heard "how do you do to do". What should the task say?' }) },
-    })
-    agent.utteranceStart()
-    agent.segment('add how do you do to do')
-    agent.utteranceEnd()
-    await settle()
-    expect(performed.filter((p) => p.startsWith('tasks:title'))).toEqual([])
-    expect(said).toEqual(['I heard "how do you do to do". What should the task say?'])
-  })
-
   it("says back the user's words once they are committed, never their marks", async () => {
     const { agent, performed, said } = setup(plan({ next: 'act', step: 'Add a task' }, { next: 'act', step: 'Add a task › press Enter' }, { next: 'done' }), {
-      thinker: { write: async () => ({ source: 'user', text: 'Pay the Okonkwo(?) invoice', say: '' }) },
+      thinker: { write: async () => 'Pay the Okonkwo(?) invoice' },
     })
     agent.utteranceStart()
     agent.segment('add pay the Okonkwo invoice')
@@ -812,11 +763,10 @@ describe('Agent and misheard words', () => {
   })
 
   it('has thinking read back the words before pressing something that commits, when some were unsure', async () => {
-    const { agent, performed, said, thinker } = setup(plan({ next: 'act', step: 'Add a task' }, { next: 'act', step: 'Delete' }), {
-      effect: 'commits',
+    const { agent, performed, said, thinker, debug } = setup(plan({ next: 'act', step: 'Add a task' }, { next: 'submit', step: 'Delete' }), {
       thinker: {
-        write: async () => ({ source: 'user', text: "I'm in, see you Friday", say: '' }),
-        run: async (req) => ({ text: observation(req).includes('"I\'m in, see you Friday"') ? 'I heard "see you Friday". Send it?' : '' }),
+        write: async () => "I'm in, see you Friday",
+        run: async () => ({ text: 'I heard "see you Friday". Send it?' }),
       },
     })
     agent.utteranceStart()
@@ -829,12 +779,13 @@ describe('Agent and misheard words', () => {
     await settle()
     expect(performed).not.toContain('tasks:delete')
     expect(thinker.runs).toHaveLength(1)
+    expect(handover(debug)[0]).toContain('partly unsure')
     expect(said).toEqual(['I heard "see you Friday". Send it?'])
   })
 
   it('does not echo a value it only typed, or a single word', async () => {
     const { agent, said } = setup(plan({ next: 'act', step: 'Add a task' }, { next: 'done' }), {
-      thinker: { write: async () => ({ source: 'user', text: 'Denver', say: '' }) },
+      thinker: { write: async () => 'Denver' },
     })
     agent.utteranceStart()
     agent.segment('weather in denver')
@@ -846,17 +797,16 @@ describe('Agent and misheard words', () => {
 
 describe('Agent buttons that commit', () => {
   it('runs a button that only changes things without asking', async () => {
-    const { agent, performed, jev } = setup(plan({ next: 'act', step: 'Sort' }, { next: 'done' }), { effect: 'changes' })
+    const { agent, performed, jev } = setup(plan({ next: 'act', step: 'Sort' }, { next: 'done' }))
     agent.utteranceStart()
     spoke(agent, 'sort')
     await settle()
     expect(performed).toContain('tasks:sort')
-    // Each kind of button on the screen (Sort, Delete, press Enter), judged in the background.
-    expect(jev.effectCalls).toBe(3)
+    expect(jev.consentCalls).toBe(0)
   })
 
   it('presses a button that commits when Jev is sure the user asked for it, without thinking', async () => {
-    const { agent, performed, thinker, jev } = setup(plan({ next: 'act', step: 'Delete' }, { next: 'done' }), { effect: 'commits' })
+    const { agent, performed, thinker, jev } = setup(plan({ next: 'submit', step: 'Delete' }, { next: 'done' }))
     agent.utteranceStart()
     agent.segment('delete it')
     agent.utteranceEnd()
@@ -867,8 +817,7 @@ describe('Agent buttons that commit', () => {
   })
 
   it('hands a button that commits to thinking when Jev is unsure the user asked for it', async () => {
-    const { agent, performed, said, statuses, thinker } = setup(plan({ next: 'act', step: 'Delete' }), {
-      effect: 'commits',
+    const { agent, performed, said, statuses, thinker } = setup(plan({ next: 'submit', step: 'Delete' }), {
       asked: 0.4,
       thinker: { run: async (req) => ({ text: observation(req).includes('[Delete]') ? 'Should I delete it?' : '' }) },
     })
@@ -881,19 +830,11 @@ describe('Agent buttons that commit', () => {
     expect(said).toEqual(['Should I delete it?'])
     expect(statuses.at(-1)).toBe('done')
   })
-
-  it('judges what each kind of button does once per app', async () => {
-    const { agent, jev } = setup((_, i) => (i < 2 ? { next: 'act', step: 'Sort' } : { next: 'done' }), { world: { screenChanges: true } })
-    agent.utteranceStart()
-    spoke(agent, 'sort twice')
-    await settle()
-    expect(jev.effectCalls).toBe(3)
-  })
 })
 
 describe('Agent thinking', () => {
   it('acts on the same options, accepts a paraphrased name, and says its text', async () => {
-    const { agent, performed, said, thinker } = setup(() => ({ next: 'think' }), {
+    const { agent, performed, said, thinker } = setup(() => ({ next: 'act', step: 'respond' }), {
       thinker: {
         run: async (req) => {
           thinker.runs.push(req)
@@ -913,7 +854,7 @@ describe('Agent thinking', () => {
   })
 
   it('only takes the turn at a pause, never mid-word', async () => {
-    const { agent, thinker, debug } = setup(() => ({ next: 'think' }))
+    const { agent, thinker, debug } = setup(() => ({ next: 'act', step: 'respond' }))
     agent.utteranceStart()
     say(agent, 'what is the')
     await settle()
@@ -924,7 +865,7 @@ describe('Agent thinking', () => {
   it('drops its run when what the user says next stops it, and re-decides with the whole turn', async () => {
     let release!: () => void
     const gate = new Promise<void>((r) => (release = r))
-    const { agent, said, jev, debug } = setup((_, i) => (i === 0 ? { next: 'think' } : { next: 'listen' }), {
+    const { agent, said, jev, debug } = setup((_, i) => (i === 0 ? { next: 'act', step: 'respond' } : { next: 'listen' }), {
       thinker: {
         run: async ({ signal }) => {
           await gate
@@ -955,7 +896,7 @@ describe('Agent thinking', () => {
     const { agent, said, jev, debug } = setup(
       (req, i) => {
         decided.push(req.state.split('## Conversation')[1] ?? '')
-        return i === 0 ? { next: 'think' } : { next: 'done' }
+        return i === 0 ? { next: 'act', step: 'respond' } : { next: 'done' }
       },
       {
         thinker: {
@@ -984,15 +925,15 @@ describe('Agent thinking', () => {
     expect(debug.find((e) => e.type === 'working' && e.action === 'hold')).toMatchObject({ heard: 'and make it blue' })
   })
 
-  it('stops a step it decides alone at once when the user says more, without asking', async () => {
+  it('stops the writer at once when the user says more, without asking', async () => {
     let release!: () => void
     const gate = new Promise<void>((r) => (release = r))
     const { agent, jev, debug } = setup((_, i) => (i === 0 ? { next: 'act', step: 'Add a task' } : { next: 'listen' }), {
       thinker: {
-        write: async ({ signal }) => {
+        quick: async (_, __, signal) => {
           await gate
-          signal.throwIfAborted()
-          return { source: 'user', text: 'Buy', say: '' }
+          signal!.throwIfAborted()
+          return 'Buy'
         },
       },
       working: () => ({ hold: 1 }),
@@ -1004,7 +945,7 @@ describe('Agent thinking', () => {
     release()
     await settle()
     expect(jev.heardWhileWorking).toEqual([])
-    expect(debug.some((e) => e.type === 'think-end' && e.aborted)).toBe(true)
+    expect(debug.some((e) => e.type === 'gate' && e.rule === 'stale' && e.detail.includes('writing'))).toBe(true)
   })
 })
 
@@ -1038,7 +979,7 @@ describe('Agent turn-taking', () => {
         if (!words) return i === 0 ? { next: 'act', step: 'Add a task', heard: 0.1 } : { next: 'act', step: 'Add a task › press Enter', heard: 0.1 }
         return performed.at(-1) === 'tasks:title=Buy oat milk' ? { next: 'act', step: 'Add a task › press Enter' } : { next: 'act', step: 'Add a task' }
       },
-      { thinker: { write: async () => ({ source: 'user', text: titles[writes++] ?? 'Buy oat milk', say: '' }) } },
+      { thinker: { write: async () => titles[writes++] ?? 'Buy oat milk' } },
     )
     agent.utteranceStart()
     spoke(agent, 'add a task buy', 0.2)
@@ -1054,7 +995,7 @@ describe('Agent turn-taking', () => {
   })
 
   it('runs held thinking without asking again once the voice says the thought is finished', async () => {
-    const { agent, jev, debug, thinker } = setup(plan({ next: 'think' }))
+    const { agent, jev, debug, thinker } = setup(plan({ next: 'act', step: 'respond' }))
     agent.utteranceStart()
     spoke(agent, 'what should I do today', 0.1)
     await settle()
@@ -1079,7 +1020,7 @@ describe('Agent turn-taking', () => {
   })
 
   it('holds a press that commits until the turn ends', async () => {
-    const { agent, performed } = setup(plan({ next: 'act', step: 'Delete' }, { next: 'done' }), { effect: 'commits' })
+    const { agent, performed } = setup(plan({ next: 'submit', step: 'Delete' }, { next: 'done' }))
     agent.utteranceStart()
     spoke(agent, 'delete it')
     await settle()
@@ -1090,7 +1031,7 @@ describe('Agent turn-taking', () => {
   })
 
   it('says nothing until the user finishes, and drops it if they keep going', async () => {
-    const { agent, said, debug } = setup(() => ({ next: 'think' }), { thinker: { run: async () => ({ text: 'It is sunny.' }) } })
+    const { agent, said, debug } = setup(() => ({ next: 'act', step: 'respond' }), { thinker: { run: async () => ({ text: 'It is sunny.' }) } })
     agent.utteranceStart()
     spoke(agent, "what's the weather")
     await settle()
@@ -1144,10 +1085,9 @@ describe('Agent turn-taking', () => {
 
   it('reads back unsure words said after a task ended, even when they rejoin its utterance', async () => {
     const { agent, performed, said } = setup(
-      (req, i) => (i === 0 ? { next: 'act', step: 'open Email' } : i === 1 ? { next: 'done' } : req.state.includes('fry') ? (performed.some((p) => p.startsWith('tasks:title')) ? { next: 'act', step: 'Delete' } : { next: 'act', step: 'Add a task' }) : { next: 'listen' }),
+      (req, i) => (i === 0 ? { next: 'act', step: 'open Email' } : i === 1 ? { next: 'done' } : req.state.includes('fry') ? (performed.some((p) => p.startsWith('tasks:title')) ? { next: 'submit', step: 'Delete' } : { next: 'act', step: 'Add a task' }) : { next: 'listen' }),
       {
-        effect: 'commits',
-        thinker: { write: async () => ({ source: 'user', text: "I'm in, see you Friday", say: '' }), run: async (req) => ({ text: /unsure/.test(observation(req)) ? 'Did you say Friday?' : '' }) },
+        thinker: { write: async () => "I'm in, see you Friday", run: async () => ({ text: 'Did you say Friday?' }) },
         deps: { config: quick },
       },
     )
@@ -1228,7 +1168,7 @@ describe('Agent speaking', () => {
 
   it('says what thinking writes as it writes it, once the user has finished', async () => {
     const t = streaming(['It is sunny', ' in Denver.', ' And warm.'])
-    const { agent, spoken, said } = speaking(() => ({ next: 'think' }), t.run)
+    const { agent, spoken, said } = speaking(() => ({ next: 'act', step: 'respond' }), t.run)
     agent.utteranceStart()
     agent.segment("what's the weather")
     agent.utteranceEnd()
@@ -1242,7 +1182,7 @@ describe('Agent speaking', () => {
 
   it("holds what thinking writes until the user's turn is over", async () => {
     const t = streaming(['It is sunny.', ''])
-    const { agent, spoken } = speaking(() => ({ next: 'think' }), t.run)
+    const { agent, spoken } = speaking(() => ({ next: 'act', step: 'respond' }), t.run)
     agent.utteranceStart()
     spoke(agent, "what's the weather")
     await settle()
@@ -1255,20 +1195,20 @@ describe('Agent speaking', () => {
   })
 
   it('keeps only what the user heard when they cut in', async () => {
-    const { agent, said } = speaking(() => ({ next: 'think' }), async () => ({ text: 'Your next meeting is at three, with Sam.' }))
+    const { agent, said } = speaking(() => ({ next: 'act', step: 'respond' }), async () => ({ text: 'Your next meeting is at three, with Sam.' }))
     agent.utteranceStart()
     agent.segment("what's next")
     agent.utteranceEnd()
     await settle()
     expect(said).toHaveLength(1)
     agent.cutOff(1, 'Your next meeting is at three,')
-    expect(agent.conversation()).toContain('Wren started to say: "Your next meeting is at three," but the user cut in.')
+    expect(agent.conversation()).toContain('You started to say: "Your next meeting is at three," but the user cut in.')
     expect(agent.conversation()).not.toContain('with Sam')
   })
 
   it('stops thinking that is still writing what the user cut in on', async () => {
     const t = streaming(['Your next meeting', ' is at three.'])
-    const { agent, said, debug } = speaking(() => ({ next: 'think' }), t.run)
+    const { agent, said, debug } = speaking(() => ({ next: 'act', step: 'respond' }), t.run)
     agent.utteranceStart()
     agent.segment("what's next")
     agent.utteranceEnd()
@@ -1277,12 +1217,12 @@ describe('Agent speaking', () => {
     await settle()
     expect(debug.some((e) => e.type === 'think-end' && e.aborted)).toBe(true)
     expect(said).toEqual([])
-    expect(agent.conversation()).toContain('Wren started to say: "Your next" but the user cut in.')
+    expect(agent.conversation()).toContain('You started to say: "Your next" but the user cut in.')
   })
 
   it('hushes a reply that went out of date while it was being said', async () => {
     const t = streaming(['It is sunny', ' today.'])
-    const { agent, hushed } = speaking((_, i) => (i === 0 ? { next: 'think' } : { next: 'listen' }), t.run)
+    const { agent, hushed } = speaking((_, i) => (i === 0 ? { next: 'act', step: 'respond' } : { next: 'listen' }), t.run)
     agent.utteranceStart()
     agent.segment("what's the weather")
     agent.utteranceEnd()
@@ -1291,6 +1231,36 @@ describe('Agent speaking', () => {
     say(agent, 'in Paris')
     await settle()
     expect(hushed).toEqual([1])
+  })
+})
+
+describe('Agent responding', () => {
+  it('asks Jev to listen, act, submit, think or be done, with saying something as one of its steps, which thinking writes', async () => {
+    let next: string[] = []
+    let steps: string[] = []
+    const { agent, thinker, said, debug } = setup(
+      (req) => ((next = Object.keys(req.questions.next!.options)), (steps = Object.keys(req.questions.step!.options)), { next: 'act', step: 'respond' }),
+      { thinker: { run: async () => ({ text: 'It is sunny.' }) } },
+    )
+    agent.utteranceStart()
+    agent.segment("what's the weather like")
+    agent.utteranceEnd()
+    await settle()
+    expect(next).toEqual(['listen', 'act', 'submit', 'think', 'done'])
+    expect(steps).toContain('respond')
+    expect(handover(debug)).toEqual(['Jev chose respond'])
+    // Thinking talks by writing, so it isn't offered the step.
+    expect(observation(thinker.runs[0]!)).not.toContain('[respond]')
+    expect(said).toEqual(['It is sunny.'])
+  })
+
+  it('hands the turn to thinking when Jev is too unsure of acting once the user has finished', async () => {
+    const { agent, debug } = setup(plan({ next: 'act', step: 'respond', nextConfidence: 0.2 }))
+    agent.utteranceStart()
+    agent.segment('hmm what about that')
+    agent.utteranceEnd()
+    await settle()
+    expect(handover(debug)).toEqual(['no step stood out clearly'])
   })
 })
 
@@ -1307,7 +1277,7 @@ describe('Agent web lookups', () => {
     let options: string[] = []
     const { agent, performed } = setup(
       (req, i) => {
-        if (i === 0) return { next: 'think' }
+        if (i === 0) return { next: 'act', step: 'respond' }
         options = Object.keys(req.questions.step!.options)
         return i === 1 ? { next: 'act', step: 'open page: George Washington - Wikipedia' } : { next: 'done' }
       },
@@ -1325,7 +1295,7 @@ describe('Agent web lookups', () => {
     agent.segment('who was the first one')
     agent.utteranceEnd()
     await settle()
-    expect(await agent.context()).toContain('Wren searched the web for "first US president":\n- "George Washington - Wikipedia" (en.wikipedia.org/wiki/George_Washington): George Washington was the first president')
+    expect(await agent.context()).toContain('You searched the web for "first US president":\n- "George Washington - Wikipedia" (en.wikipedia.org/wiki/George_Washington): George Washington was the first president')
 
     agent.utteranceStart()
     agent.segment('let me see it')
@@ -1333,11 +1303,11 @@ describe('Agent web lookups', () => {
     await settle()
     expect(options).toContain('open page: George Washington | whitehouse.gov')
     expect(performed).toContain('url https://en.wikipedia.org/wiki/George_Washington')
-    expect(await agent.context()).toContain('Wren opened the page "George Washington - Wikipedia" (en.wikipedia.org/wiki/George_Washington).')
+    expect(await agent.context()).toContain('You opened the page "George Washington - Wikipedia" (en.wikipedia.org/wiki/George_Washington).')
   })
 
   it('lets thinking open any page by address, logged under the title it opened with', async () => {
-    const { agent, performed } = setup(() => ({ next: 'think' }), {
+    const { agent, performed } = setup(() => ({ next: 'act', step: 'respond' }), {
       thinker: {
         run: async (req) => {
           await req.search!('first US president', 's1')
@@ -1354,7 +1324,7 @@ describe('Agent web lookups', () => {
     agent.utteranceEnd()
     await settle()
     expect(performed).toContain('url https://www.loc.gov/item/gw-papers/')
-    expect(await agent.context()).toContain('Wren opened the page "George Washington Papers" (loc.gov/item/gw-papers).')
+    expect(await agent.context()).toContain('You opened the page "George Washington Papers" (loc.gov/item/gw-papers).')
   })
 
   it('offers the pages kept open, as well as those it found, but not pages of the user\'s files', async () => {
@@ -1376,12 +1346,60 @@ describe('Agent web lookups', () => {
   })
 
   it('gives thinking no web tools without web access', async () => {
-    const { agent, thinker } = setup(() => ({ next: 'think' }))
+    const { agent, thinker } = setup(() => ({ next: 'act', step: 'respond' }))
     agent.utteranceStart()
     agent.segment('who won')
     agent.utteranceEnd()
     await settle()
     expect(thinker.runs[0]?.search).toBeUndefined()
+  })
+
+  it('searches as a step of its own, the quick model writing the query, and thinking answers from what it found', async () => {
+    const searched: string[] = []
+    const asked: string[] = []
+    const { agent, thinker, debug } = setup(plan({ next: 'act', step: 'search the web' }, { next: 'act', step: 'respond' }), {
+      thinker: { quick: async (_, text) => (asked.push(text), 'first US president'), run: async () => ({ text: 'George Washington.' }) },
+      deps: { web: { ...web, search: async (query, signal) => (searched.push(query), web.search(query, signal)) } },
+    })
+    agent.utteranceStart()
+    agent.segment('who was the first president')
+    agent.utteranceEnd()
+    await settle()
+    expect(asked[0]).toContain('User: who was the first president')
+    expect(searched).toEqual(['first US president'])
+    expect(await agent.context()).toContain('You searched the web for "first US president":\n- "George Washington - Wikipedia"')
+    // Thinking reads the search as one of its own, and isn't offered the step.
+    const calls = thinker.runs[0]!.messages.flatMap((m) => (typeof m.content === 'string' ? [] : m.content.flatMap((p) => (p.type === 'tool-call' ? [p.toolName] : []))))
+    expect(calls).toEqual(['search'])
+    expect(observation(thinker.runs[0]!)).not.toContain('search the web')
+    expect(validate(thinker.runs[0]!.messages)).toBeUndefined()
+    expect(handover(debug)).toEqual(['Jev chose respond'])
+  })
+
+  it('hands the turn to thinking when there is nothing to search for yet', async () => {
+    const searched: string[] = []
+    const { agent, debug } = setup(plan({ next: 'act', step: 'search the web' }), {
+      thinker: { quick: async () => '' },
+      deps: { web: { ...web, search: async (query, signal) => (searched.push(query), web.search(query, signal)) } },
+    })
+    agent.utteranceStart()
+    agent.segment('search for um')
+    agent.utteranceEnd()
+    await settle()
+    expect(searched).toEqual([])
+    expect(handover(debug)).toEqual(['Jev chose to search the web, but there was nothing to search for yet'])
+  })
+
+  it('offers searching only with the web and the quick model', async () => {
+    const offered: boolean[] = []
+    const script: Script = (req) => (offered.push('search the web' in req.questions.step!.options), { next: 'listen' })
+    for (const [deps, thinker] of [[{ web }, { quick: async () => 'x' }], [{ web }, { quick: null }], [{}, { quick: async () => 'x' }]] as [Partial<AgentDeps>, FakeThinking][]) {
+      const { agent } = setup(script, { deps, thinker })
+      agent.utteranceStart()
+      agent.segment('who won')
+      await settle()
+    }
+    expect(offered).toEqual([true, false, false])
   })
 })
 
@@ -1408,7 +1426,7 @@ describe('Agent files', () => {
       (req, i) => {
         state = req.state
         options.push(Object.keys(req.questions.step!.options))
-        return [{ next: 'act', step: 'list files' }, { next: 'act', step: 'list folder: Trips' }, { next: 'act', step: 'read file: Trips/packing.md' }][i] ?? { next: 'think' }
+        return [{ next: 'act', step: 'list files' }, { next: 'act', step: 'list folder: Trips' }, { next: 'act', step: 'read file: Trips/packing.md' }][i] ?? { next: 'act', step: 'respond' }
       },
       { deps: { files: f } },
     )
@@ -1420,9 +1438,9 @@ describe('Agent files', () => {
     expect(options[1]).toEqual(expect.arrayContaining(['list folder: Trips', 'read file: budget.csv']))
     expect(options[2]).toContain('read file: Trips/packing.md')
     const context = await agent.context()
-    expect(context).toContain("Wren listed the user's files: Trips/, budget.csv.")
-    expect(context).toContain('Wren listed the folder "Trips": packing.md.')
-    expect(context).toContain('Wren read the file "Trips/packing.md": - Passport - Charger')
+    expect(context).toContain("You listed the user's files: Trips/, budget.csv.")
+    expect(context).toContain('You listed the folder "Trips": packing.md.')
+    expect(context).toContain('You read the file "Trips/packing.md": - Passport - Charger')
     expect(state).toContain('"list files" lists it')
 
     agent.utteranceEnd()
@@ -1450,7 +1468,7 @@ describe('Agent files', () => {
   it('shows thinking the top two levels of the folder the first time, and again only when they change', async () => {
     let paths = ['Trips/', 'Trips/Lisbon/', 'Trips/Lisbon/hotel.pdf', 'Trips/packing.md', 'budget.csv']
     const f = { ...files(), paths: async () => paths }
-    const { agent, thinker } = setup(() => ({ next: 'think' }), { deps: { files: f } })
+    const { agent, thinker } = setup(() => ({ next: 'act', step: 'respond' }), { deps: { files: f } })
     const ask = async (words: string) => {
       agent.utteranceStart()
       agent.segment(words)
@@ -1473,7 +1491,7 @@ describe('Agent files', () => {
 
   it("gives thinking bash, and Jev a line for each command thinking ran", async () => {
     const f = files()
-    const { agent } = setup(() => ({ next: 'think' }), {
+    const { agent } = setup(() => ({ next: 'act', step: 'respond' }), {
       thinker: {
         run: async (req) => {
           expect(await req.bash!('ls -p', 'b1')).toBe('Trips/\nbudget.csv')
@@ -1488,8 +1506,8 @@ describe('Agent files', () => {
     agent.utteranceEnd()
     await settle()
     const context = await agent.context()
-    expect(context).toContain("Wren ran `ls -p` on the user's files.")
-    expect(context).toContain("Wren ran `rm nothing` on the user's files: failed (exit code 127).")
+    expect(context).toContain("You ran `ls -p` on the user's files.")
+    expect(context).toContain("You ran `rm nothing` on the user's files: failed (exit code 127).")
     expect(agent.instructions).toContain('~/Wren')
   })
 
@@ -1501,7 +1519,7 @@ describe('Agent files', () => {
     const { agent, performed } = setup(
       (req) => {
         options = Object.keys(req.questions.step!.options)
-        return { next: 'think' }
+        return { next: 'act', step: 'respond' }
       },
       {
         thinker: {
@@ -1522,7 +1540,7 @@ describe('Agent files', () => {
     expect(options).not.toContain('open file: notes.md')
     expect(performed).toContain('url stanley://files/plan.html')
     expect(results[1]).toBe(`There is no file "missing.html" in the user's folder that the screen can show.`)
-    expect(await agent.context()).toContain('Wren opened the page "plan.html"')
+    expect(await agent.context()).toContain('You opened the page "plan.html"')
   })
 
   /** A folder in memory that can be written, and a world that draws pages and looks at them. */
@@ -1541,7 +1559,7 @@ describe('Agent files', () => {
   it('draws a page thinking writes as it comes, then shows it and gives thinking its errors and a picture', async () => {
     const { f, stored, drawn } = pages()
     let output: FileOutput | undefined
-    const { agent, performed, debug } = setup(() => ({ next: 'think' }), {
+    const { agent, performed, debug } = setup(() => ({ next: 'act', step: 'respond' }), {
       thinker: {
         run: async (req) => {
           req.onDraft!('w1', 'Pages/sea.html', '<h1>Se')
@@ -1568,13 +1586,13 @@ describe('Agent files', () => {
     expect(output!.text).toContain('Wrote Pages/sea.html. Opened stanley://files/Pages/sea.html.\nIts console printed:\n- error (line 3): Uncaught ReferenceError: mermaid is not defined')
     expect(output!.image).toEqual({ data: 'aGk=', mediaType: 'image/jpeg' })
     expect(debug.some((e) => e.type === 'working')).toBe(false)
-    expect(await agent.context()).toContain('Wren wrote the file "Pages/sea.html".')
+    expect(await agent.context()).toContain('You wrote the file "Pages/sea.html".')
   })
 
   it('changes part of a page, and says why when the text to change is not there exactly once', async () => {
     const { f, stored } = pages()
     const outputs: FileOutput[] = []
-    const { agent, performed } = setup(() => ({ next: 'think' }), {
+    const { agent, performed } = setup(() => ({ next: 'act', step: 'respond' }), {
       thinker: {
         run: async (req) => {
           outputs.push(await req.editFile!('Pages/rain.html', 'color: green', 'color: blue', false, 'e1'))
@@ -1598,13 +1616,13 @@ describe('Agent files', () => {
     expect(stored.get('Pages/rain.html')).toBe('<h1 style="color: navy">Rain</h1><p style="color: navy">Drops</p>')
     expect(performed).toContain('url stanley://files/Pages/rain.html')
     const context = await agent.context()
-    expect(context).toContain('Wren changed the file "Pages/rain.html": failed (That text isn\'t in Pages/rain.html.')
-    expect(context).toContain('Wren changed the file "Pages/rain.html".')
+    expect(context).toContain('You changed the file "Pages/rain.html": failed (That text isn\'t in Pages/rain.html.')
+    expect(context).toContain('You changed the file "Pages/rain.html".')
   })
 
   it('takes a page off the screen when its writing never finished', async () => {
     const { f, drawn } = pages()
-    const { agent } = setup(() => ({ next: 'think' }), {
+    const { agent } = setup(() => ({ next: 'act', step: 'respond' }), {
       thinker: {
         run: async (req) => {
           req.onDraft!('w1', 'Pages/sea.html', '<h1>Se')
@@ -1630,12 +1648,12 @@ describe('Agent files', () => {
     agent.utteranceStart()
     spoke(agent, 'read me the gone one')
     await settle()
-    expect(await agent.context()).toContain('Wren read the file "gone.md": failed (bash: cat -- \'gone.md\': not found).')
+    expect(await agent.context()).toContain('You read the file "gone.md": failed (bash: cat -- \'gone.md\': not found).')
   })
 
   it('offers no files and no bash without them', async () => {
     let options: string[] = []
-    const { agent, thinker } = setup((req) => ((options = Object.keys(req.questions.step!.options)), { next: 'think' }))
+    const { agent, thinker } = setup((req) => ((options = Object.keys(req.questions.step!.options)), { next: 'act', step: 'respond' }))
     agent.utteranceStart()
     agent.segment('what files do I have')
     agent.utteranceEnd()
@@ -1647,7 +1665,7 @@ describe('Agent files', () => {
 
   it('gives the size pages are shown at in the instructions, and tells thinking when it changes', async () => {
     let size = { width: 1854, height: 886 }
-    const { agent, thinker } = setup(() => ({ next: 'think' }), { deps: { files: files(), pageSize: () => size } })
+    const { agent, thinker } = setup(() => ({ next: 'act', step: 'respond' }), { deps: { files: files(), pageSize: () => size } })
     const ask = async (words: string) => {
       agent.utteranceStart()
       agent.segment(words)
@@ -1673,7 +1691,7 @@ describe('Agent history', () => {
   const text = (req: ThinkRequest) => req.messages.map((m) => (typeof m.content === 'string' ? m.content : m.content.map((p) => (p.type === 'tool-call' ? `call ${p.toolCallId}` : p.type === 'tool-result' ? `result ${p.toolCallId}` : p.type === 'text' ? p.text : p.type)).join(' + ')))
 
   it("continues one history: each thinking call is sent all the last one was, then what happened since, with Jev's steps as calls", async () => {
-    const { agent, thinker } = setup(plan({ next: 'act', step: 'open Email' }, { next: 'think' }, { next: 'think' }), {
+    const { agent, thinker } = setup(plan({ next: 'act', step: 'open Email' }, { next: 'act', step: 'respond' }, { next: 'act', step: 'respond' }), {
       thinker: {
         run: async (req) => {
           if (thinker.runs.length === 1) await req.act({ option: 'Sort' }, 'call_1')
@@ -1690,7 +1708,7 @@ describe('Agent history', () => {
     agent.utteranceEnd()
     await settle()
     const [first, second] = thinker.runs.map(text)
-    expect(first!.slice(0, 3)).toEqual(['open my email and sort it', 'call jev_step-1', 'result jev_step-1'])
+    expect(first!.slice(0, 3)).toEqual(['open my email and sort it', 'call call_step-1', 'result call_step-1'])
     expect(second!.slice(0, first!.length)).toEqual(first)
     expect(second!.slice(first!.length)).toEqual(['call call_1', 'result call_1', 'Sorted.', 'thanks', '<screen unchanged/>'])
     // This stand-in reports no steps of its own, so the cache is read at the first call's observation.
@@ -1700,7 +1718,7 @@ describe('Agent history', () => {
   it('calls the assistant by the name the user gave it, in every prompt, and follows a rename', async () => {
     let name = 'Jarvis'
     const states: string[] = []
-    const { agent, thinker } = setup((req) => (states.push(req.state, JSON.stringify(req.questions)), { next: 'think' }), {
+    const { agent, thinker } = setup((req) => (states.push(req.state, JSON.stringify(req.questions)), { next: 'act', step: 'respond' }), {
       deps: { name: () => name },
       thinker: { run: async () => ({ text: 'Hi.' }) },
     })
@@ -1710,12 +1728,13 @@ describe('Agent history', () => {
     agent.utteranceEnd()
     await settle()
     expect(states.join('\n')).not.toMatch(/Wren(?! Kubrick)/)
+    expect(states[0]).toContain('You are Jarvis,')
     expect(states[0]).toContain('User: tell Wren Kubrick hi')
     expect(thinker.runs[0]!.instructions).not.toContain('Wren')
-    expect(agent.conversation()).toContain('Jarvis said: "Hi."')
+    // What it did and said is its own, whatever it is called.
+    expect(agent.conversation()).toContain('You said: "Hi."')
     name = 'Ada'
     expect(agent.instructions).toContain('You are Ada,')
-    expect(agent.conversation()).toContain('Ada said: "Hi."')
   })
 
   it('locks when the world can, once the user has finished', async () => {
@@ -1727,13 +1746,13 @@ describe('Agent history', () => {
     agent.utteranceEnd()
     await settle()
     expect(performed[0]).toBe('lock')
-    expect(await agent.context()).toContain('Wren locked the computer.')
+    expect(await agent.context()).toContain('You locked the computer.')
   })
 
   it("ends the instructions with today's date, gives Jev the date each tick, and tells thinking when the day changes", async () => {
     let now = new Date('2026-10-12T10:00:00')
     const states: string[] = []
-    const { agent, thinker } = setup((req) => (states.push(req.state), { next: 'think' }), { deps: { clock: () => now } })
+    const { agent, thinker } = setup((req) => (states.push(req.state), { next: 'act', step: 'respond' }), { deps: { clock: () => now } })
     expect(agent.instructions.endsWith('Today is Monday, 12 October 2026.')).toBe(true)
     agent.utteranceStart()
     agent.segment('what day is it')
@@ -1749,63 +1768,10 @@ describe('Agent history', () => {
     expect(observation(thinker.runs[1]!)).toContain('<note>It is now Tuesday, 13 October 2026.</note>')
   })
 
-  it('types into a field as the answer to the single step, and runs a different choice as thinking\'s own step', async () => {
-    let choice = 'Add a task'
-    const { agent, thinker, performed } = setup(plan({ next: 'act', step: 'Add a task' }, { next: 'done' }, { next: 'act', step: 'Add a task' }), {
-      thinker: { single: async () => scriptedTurn('', { option: choice, text: 'Eggs', wrote: 'user' }) },
-    })
-    agent.utteranceStart()
-    agent.segment('add eggs')
-    agent.utteranceEnd()
-    await settle()
-    expect(performed[0]).toBe('tasks:title=Eggs')
-    const history = agent.history.messages()
-    const call = history.findIndex((m) => m.role === 'assistant' && Array.isArray(m.content) && m.content.some((p) => p.type === 'tool-call' && p.toolCallId.startsWith('scripted_')))
-    expect(history[call + 1]?.role).toBe('tool')
-    expect(thinker.runs).toHaveLength(0)
-
-    choice = 'Sort'
-    agent.utteranceStart()
-    agent.segment('add milk')
-    agent.utteranceEnd()
-    await settle()
-    expect(thinker.runs).toHaveLength(0)
-    expect(performed).toContain('tasks:sort')
-    expect(validate(agent.history.messages())).toBeUndefined()
-  })
-
-  it('runs several steps thinking gave for one, without a whole turn, and stops before a commit mid-turn', async () => {
-    const { agent, thinker, performed, debug } = setup(plan({ next: 'act', step: 'Add a task' }, { next: 'done' }), {
-      effect: 'commits',
-      thinker: { single: async () => scriptedTurn('', { option: 'Buy milk' }, { option: 'Add a task', text: 'Eggs', wrote: 'user' }, { option: 'Delete' }) },
-    })
-    agent.utteranceStart()
-    spoke(agent, 'open milk and add eggs then delete')
-    await settle()
-    expect(performed.slice(0, 2)).toEqual(['tasks:item', 'tasks:title=Eggs'])
-    expect(performed).not.toContain('tasks:delete')
-    expect(thinker.runs).toHaveLength(0)
-    expect(debug.some((e) => e.type === 'gate' && e.rule === 'ran-calls')).toBe(true)
-    expect(validate(agent.history.messages())).toBeUndefined()
-  })
-
-  it('hands steps to a whole turn when the first one is not on screen', async () => {
-    const { agent, thinker, performed } = setup(plan({ next: 'act', step: 'Add a task' }, { next: 'done' }), {
-      thinker: { single: async () => scriptedTurn('', { option: 'Nowhere' }, { option: 'Sort' }) },
-    })
-    agent.utteranceStart()
-    agent.segment('add something')
-    agent.utteranceEnd()
-    await settle()
-    expect(thinker.runs).toHaveLength(1)
-    expect(performed).not.toContain('tasks:sort')
-  })
-
-
   it('keeps the steps of a turn cut short, so the history stays valid', async () => {
     let release!: () => void
     const gate = new Promise<void>((r) => (release = r))
-    const { agent, thinker } = setup((_, i) => (i === 0 ? { next: 'think' } : i === 1 ? { next: 'listen' } : { next: 'think' }), {
+    const { agent, thinker } = setup((_, i) => (i === 0 ? { next: 'act', step: 'respond' } : i === 1 ? { next: 'listen' } : { next: 'act', step: 'respond' }), {
       thinker: {
         run: async (req) => {
           if (thinker.runs.length > 1) return { text: '' }
@@ -1857,12 +1823,12 @@ describe('Agent skills', () => {
   it('reads a skill while the user speaks, then follows it with everything it says in view', async () => {
     const f = skillFiles()
     const states: string[] = []
-    const options: string[][] = []
+    const skills: string[][] = []
     const { agent, performed, thinker } = setup(
       (req, i) => {
         states.push(req.state)
-        options.push(Object.keys(req.questions.step!.options))
-        return [{ next: 'act', step: 'use skill: wind-down' }, { next: 'act', step: 'open Tasks' }, { next: 'act', step: 'Sort' }][i] ?? { next: 'done', nextConfidence: 0.99 }
+        skills.push(Object.keys(req.questions.skill?.options ?? {}))
+        return [{ next: 'listen', skill: 'wind-down' }, { next: 'act', step: 'open Tasks' }, { next: 'act', step: 'Sort' }][i] ?? { next: 'done', nextConfidence: 0.99 }
       },
       { deps: { files: f } },
     )
@@ -1870,20 +1836,20 @@ describe('Agent skills', () => {
     say(agent, "I'm winding down")
     await settle()
     expect(f.ran).toEqual(["cat -- '.agents/skills/wind-down/SKILL.md'"])
-    expect(options[0]).toContain('use skill: wind-down')
-    expect(states[0]).toContain('"use skill" step')
-    // Read this task, it is in view: it isn't offered again.
-    expect(options[1]).not.toContain('use skill: wind-down')
-    expect(states[1]).toContain('Wren read its skill "wind-down":\n  Open Tasks, then press Sort.')
+    expect(skills[0]).toEqual(['none', 'wind-down'])
+    expect(states[0]).toContain('You have skills, each described by when it is for.')
+    // Read this task, it is in view: it isn't asked about again.
+    expect(skills[1]).toEqual([])
+    expect(states[1]).toContain('You read your skill "wind-down":\n  Open Tasks, then press Sort.')
     agent.utteranceEnd()
     await settle()
     expect(performed).toEqual(expect.arrayContaining(['open tasks', 'tasks:sort']))
     expect(thinker.runs).toHaveLength(0)
   })
 
-  it('reads a skill the step is sure of even while Jev would listen, but not one it is unsure of', async () => {
+  it('reads a skill Jev finds is for what the user asks, even while it would listen, but not one it is unsure of', async () => {
     const f = skillFiles()
-    const { agent, debug } = setup((_, i) => [{ next: 'listen', step: 'use skill: wind-down', stepConfidence: 0.7 }, { next: 'listen', step: 'use skill: wind-down', stepConfidence: 0.95 }][i] ?? { next: 'listen' }, { deps: { files: f } })
+    const { agent, debug } = setup((_, i) => [{ next: 'listen', skill: 'wind-down', skillConfidence: 0.3 }, { next: 'listen', skill: 'wind-down', skillConfidence: 0.8 }][i] ?? { next: 'listen' }, { deps: { files: f } })
     agent.utteranceStart()
     say(agent, "I'm winding")
     await settle()
@@ -1898,7 +1864,7 @@ describe('Agent skills', () => {
     const f = skillFiles()
     const results: string[] = []
     let turn = 0
-    const { agent, thinker } = setup(() => ({ next: 'think' }), {
+    const { agent, thinker } = setup(() => ({ next: 'act', step: 'respond' }), {
       thinker: {
         run: async (req) => {
           if (turn++ === 0) {
@@ -1947,7 +1913,7 @@ describe('Agent memory', () => {
     const { agent, thinker } = setup(
       (req) => {
         states.push(req.state)
-        return { next: 'think' }
+        return { next: 'act', step: 'respond' }
       },
       { deps: { files: memoryFiles("- The user's manager is Priya Shah.\n") } },
     )
@@ -1964,7 +1930,7 @@ describe('Agent memory', () => {
     const { agent, thinker } = setup(
       (req) => {
         states.push(req.state)
-        return { next: 'think' }
+        return { next: 'act', step: 'respond' }
       },
       { deps: { files: memoryFiles() } },
     )
@@ -1979,7 +1945,7 @@ describe('Agent memory', () => {
 
 describe('Agent background tasks', () => {
   /** A folder that keeps what is written to it, a world that can draw its pages out of sight, and quick delivery. */
-  function backgroundSetup(run: (req: ThinkRequest, main: boolean) => Promise<{ text: string } | ThinkResult>, script: Script = () => ({ next: 'think' }), quick?: Thinker['quick']) {
+  function backgroundSetup(run: (req: ThinkRequest, main: boolean) => Promise<{ text: string } | ThinkResult>, script: Script = () => ({ next: 'act', step: 'respond' }), quick?: Thinker['quick']) {
     const stored = new Map<string, string>()
     const files: FileTools = {
       root: '~/Wren',
@@ -2005,7 +1971,7 @@ describe('Agent background tasks', () => {
     let env!: ReturnType<typeof setup>
     const taskThinker: Thinker = { run: (req) => env.thinker.run(req) }
     env = setup(script, {
-      thinker: { run: (req) => run(req, !!req.act), quick },
+      thinker: { run: (req) => run(req, !!req.act), quick: quick ?? null },
       deps: { world, files, taskThinker, config: { ...defaultConfig, background: { ...defaultConfig.background, quietMs: 5 } }, taskSink: (r) => records.push(r) },
       events: {
         tasks: (tasks) => {
@@ -2068,7 +2034,7 @@ describe('Agent background tasks', () => {
       text: 'Drew .stanley/scratch/rain.html out of sight, light, in a window 1850 by 885. It fits without scrolling.\nIts console printed:\n- log: bars: 12\nA picture of it follows.',
       image: { data: 'aGk=', mediaType: 'image/png' },
     })
-    expect(await agent.context()).toContain('Wren started a background task: "rainfall chart".')
+    expect(await agent.context()).toContain('You started a background task: "rainfall chart".')
 
     finish.open()
     await settle()
@@ -2077,9 +2043,9 @@ describe('Agent background tasks', () => {
     expect(mainRuns()).toHaveLength(2)
     const told = mainRuns()[1]!
     expect(told.messages.some((m) => m.role === 'user' && m.content === '<note>Background task task-1, "rainfall chart" finished:\nWrote .stanley/scratch/rain.html: monthly rainfall in Denver, 2025, wettest in May.</note>')).toBe(true)
-    expect(observation(told)).toContain('A background task ended: its result is in the note above.')
+    expect(observation(told)).not.toContain('A background task ended')
     expect(said).toEqual(["Sure, I'll make that in the background.", 'Your rainfall chart is ready.'])
-    expect(await agent.context()).toContain('Wren\'s background task "rainfall chart" finished: Wrote .stanley/scratch/rain.html')
+    expect(await agent.context()).toContain('Your background task "rainfall chart" finished: Wrote .stanley/scratch/rain.html')
     expect(debug.filter((e) => e.type === 'task').map((e) => (e as { action: string }).action)).toEqual(['start', 'step', 'step', 'end', 'deliver'])
     expect(records.map((r) => r.type)).toEqual(['start', 'end'])
     // The status bar shows a task working from when it starts until it ends.
@@ -2108,7 +2074,7 @@ describe('Agent background tasks', () => {
       },
     )
     await ask(agent, 'make me a chart of rainfall in Denver in the background')
-    expect(asked).toEqual([{ instructions: GIST_PROMPT, text: 'Make a chart of monthly rainfall in Denver for 2025 as .stanley/scratch/rain.html.' }])
+    expect(asked).toEqual([{ instructions: named(GIST_PROMPT, DEFAULT_AGENT_NAME), text: 'Make a chart of monthly rainfall in Denver for 2025 as .stanley/scratch/rain.html.' }])
     expect(gists).toEqual([[undefined], ["Making a chart of Denver's 2025 rainfall"]])
     finish.open()
     await settle()
@@ -2203,7 +2169,7 @@ describe('Agent background tasks', () => {
     expect(mainRuns()[1]!.instructions).toContain('task_steer')
     step.open()
     await settle()
-    expect(read[0]).toEqual([{ role: 'user', content: 'From Stanley: Show it in inches, not millimetres.' }])
+    expect(read[0]).toEqual([{ role: 'user', content: 'From the conversation: Show it in inches, not millimetres.' }])
     await ask(agent, 'and blue bars')
     last.open()
     await settle()
@@ -2211,8 +2177,8 @@ describe('Agent background tasks', () => {
     // Sent after its last step: it goes on from all it did, and reads it then.
     expect(taskRuns).toHaveLength(2)
     expect(taskRuns[1]!.messages.map((m) => m.role)).toEqual(['user', 'assistant'])
-    expect(read[1]).toEqual([{ role: 'user', content: 'From Stanley: Make the bars blue.' }])
-    expect(await agent.context()).toContain('Wren\'s background task "rainfall chart" finished: Wrote it, in inches, with blue bars.')
+    expect(read[1]).toEqual([{ role: 'user', content: 'From the conversation: Make the bars blue.' }])
+    expect(await agent.context()).toContain('Your background task "rainfall chart" finished: Wrote it, in inches, with blue bars.')
     expect(debug.filter((e) => e.type === 'task').map((e) => (e as { action: string }).action)).toEqual(['start', 'steer', 'steer', 'end', 'deliver'])
     expect((records[1] as Extract<TaskRecord, { type: 'end' }>).messages.map((m) => m.role)).toEqual(['assistant', 'assistant'])
 
@@ -2249,7 +2215,7 @@ describe('Agent background tasks', () => {
   })
 
   it('has no background tasks without the web or files to work with', async () => {
-    const { agent, thinker } = setup(() => ({ next: 'think' }))
+    const { agent, thinker } = setup(() => ({ next: 'act', step: 'respond' }))
     await ask(agent, 'look into something')
     expect(thinker.runs[0]!.delegate).toBeUndefined()
     expect(thinker.runs[0]!.instructions).not.toContain('## Background tasks')
@@ -2266,7 +2232,7 @@ describe('Agent screen layout', () => {
     expect(debug.find((e) => e.type === 'screen')).toMatchObject({ source: 'done', before: 'email', after: 'email | tasks' })
   })
 
-  it('asks what is on the screen in every decision, with the screen as it is', async () => {
+  it('tells Jev how the screen works ahead of the conversation, and what it shows in it', async () => {
     const { agent, jev } = setup(plan({ next: 'done', show: 'Email' }), { world: { sides: [['email'], ['tasks']] } })
     const states: string[] = []
     const decide = jev.decide.bind(jev)
@@ -2274,7 +2240,8 @@ describe('Agent screen layout', () => {
     agent.utteranceStart()
     spoke(agent, 'just the inbox')
     await settle()
-    expect(states[0]).toMatch(/## The user's screen\n.*\nNow on the screen: Email \(left\), Tasks \(right\)\.\n\n## Conversation/)
+    expect(states[0]).toMatch(/## The user's screen\n[^\n]*\n\nToday is /)
+    expect(states[0]).toContain('## Conversation\nOn the screen now: Email (left), Tasks (right).\nUser (still speaking): just the inbox')
   })
 
   it('arranges the screen as a step, which the conversation records, and leaves it so when the task ends', async () => {
@@ -2286,7 +2253,7 @@ describe('Agent screen layout', () => {
     spoke(agent, 'swap them round')
     await settle()
     expect(performed).toEqual(['arrange tasks | email'])
-    expect(states[1]).toContain('arranged the screen: Tasks (left), Email (right).')
+    expect(states[1]).toContain('arranged the screen. On the screen now: Tasks (left), Email (right).')
   })
 
   it('hands an unsure arrangement to thinking, which can ask', async () => {
@@ -2299,12 +2266,51 @@ describe('Agent screen layout', () => {
     expect(debug.some((e) => e.type === 'gate' && e.rule === 'screen')).toBe(true)
   })
 
-  it("doesn't offer thinking the screen to arrange: it is Jev's", async () => {
-    const { agent, thinker } = setup(plan({ next: 'think' }), { world: { sides: [['email']] } })
+  it('tells thinking what Jev is told about the screen, in the same place', async () => {
+    const { agent, jev, thinker } = setup(plan({ next: 'act', step: 'respond' }), { world: { sides: [['email'], ['tasks']] } })
+    const states: string[] = []
+    const decide = jev.decide.bind(jev)
+    jev.decide = async (req) => (states.push(req.state), decide(req))
     agent.utteranceStart()
     spoke(agent, 'what can you do')
     await settle()
-    expect(JSON.stringify(thinker.runs[0]!.messages)).not.toContain('arrange the screen')
+    const run = thinker.runs[0]!
+    expect(run.instructions).toMatch(/## The user's screen\n[^\n]*\n[^\n]*arrange the screen[^\n]*\n\nToday is /)
+    expect(run.messages.slice(0, 2).map((m) => m.content)).toEqual(['<note>On the screen now: Email (left), Tasks (right).</note>', 'what can you do'])
+    expect(states[0]).toContain('## Conversation\nOn the screen now: Email (left), Tasks (right).\nUser (still speaking): what can you do')
+  })
+
+  it('lets thinking arrange the screen, which then stays as it laid it out', async () => {
+    const outputs: string[] = []
+    const { agent, thinker, performed } = setup(plan({ next: 'act', step: 'respond' }), {
+      world: { sides: [['email'], ['tasks']] },
+      thinker: {
+        run: async (req) => {
+          outputs.push(await req.act!({ option: 'arrange the screen', screen: [['Mail']] }, 'call_1'))
+          outputs.push(await req.act!({ option: 'arrange the screen', screen: [['Email']] }, 'call_2'))
+          return { text: '' }
+        },
+      },
+    })
+    agent.utteranceStart()
+    spoke(agent, 'just the inbox')
+    await settle()
+    expect(String(thinker.runs[0]!.messages.at(-1)!.content)).toContain('[arrange the screen]')
+    expect(outputs[0]).toBe('There is no app "Mail" to put on the screen. The apps: "Tasks", "Email".')
+    expect(outputs[1]).toMatch(/^On the screen now: Email, filling the screen\.\n\n<screen /)
+    expect(performed).toEqual(['arrange email'])
+  })
+
+  it('says in the history what the end of a task laid the screen out as', async () => {
+    const { agent, thinker } = setup(plan({ next: 'act', step: 'open Tasks' }, { next: 'done', show: 'Tasks and Email', left: 'Email' }, { next: 'act', step: 'respond' }), { world: { sides: [['email']] } })
+    agent.utteranceStart()
+    spoke(agent, 'show me my inbox and my tasks')
+    await settle()
+    agent.utteranceStart()
+    spoke(agent, 'thanks')
+    await settle()
+    const notes = thinker.runs[0]!.messages.flatMap((m) => (typeof m.content === 'string' && m.content.startsWith('<note>On the screen') ? [m.content] : []))
+    expect(notes).toEqual(['<note>On the screen now: Email, filling the screen.</note>', '<note>On the screen now: Email (left), Tasks (right).</note>'])
   })
 
   it('leaves the screen as it is when unsure what it should show', async () => {
@@ -2325,7 +2331,7 @@ describe('Agent screen layout', () => {
   })
 
   it('asks Jev on its own what the screen shows when thinking ended the task', async () => {
-    const { agent, jev, performed } = setup((req, i) => (!req.questions.step ? { next: 'done', show: 'Tasks' } : i === 0 ? { next: 'think' } : { next: 'done' }), { world: { sides: [['email']] }, thinker: { run: async () => ({ text: 'You have two tasks.' }) } })
+    const { agent, jev, performed } = setup((req, i) => (!req.questions.step ? { next: 'done', show: 'Tasks' } : i === 0 ? { next: 'act', step: 'respond' } : { next: 'done' }), { world: { sides: [['email']] }, thinker: { run: async () => ({ text: 'You have two tasks.' }) } })
     const asked: string[][] = []
     const decide = jev.decide.bind(jev)
     jev.decide = async (req) => (asked.push(Object.keys(req.questions)), decide(req))
@@ -2347,7 +2353,7 @@ describe('Agent screen layout', () => {
   it('leaves the screen when the user starts again while Jev is asked what it should show', async () => {
     let answer!: () => void
     const asking = new Promise<void>((r) => (answer = r))
-    const { agent, performed } = setup(async (req, i) => (!req.questions.step ? (await asking, { next: 'done', show: 'Tasks' }) : i === 0 ? { next: 'think' } : { next: 'listen' }), {
+    const { agent, performed } = setup(async (req, i) => (!req.questions.step ? (await asking, { next: 'done', show: 'Tasks' }) : i === 0 ? { next: 'act', step: 'respond' } : { next: 'listen' }), {
       world: { sides: [['email']] },
       thinker: { run: async () => ({ text: 'You have two tasks.' }) },
     })
@@ -2373,7 +2379,7 @@ describe('Agent screen layout', () => {
         throw new Error('gateway down')
       }
       // The new words are a turn of their own, which only listens.
-      return i === 0 ? { next: 'act', step: 'Sort' } : i === 1 ? { next: 'think' } : { next: 'listen' }
+      return i === 0 ? { next: 'act', step: 'Sort' } : i === 1 ? { next: 'act', step: 'respond' } : { next: 'listen' }
     }, { world: { sides: [['email']] }, thinker: { run: async () => ({ text: 'Sorted.' }) } })
     agent.utteranceStart()
     spoke(agent, 'sort my tasks')
@@ -2387,7 +2393,7 @@ describe('Agent screen layout', () => {
   it('ends the task before deciding what the screen shows: words said meanwhile start a task of their own', async () => {
     let answer!: () => void
     const asking = new Promise<void>((r) => (answer = r))
-    const { agent } = setup(async (req, i) => (!req.questions.step ? (await asking, { next: 'done', show: 'Tasks' }) : i === 0 ? { next: 'think' } : { next: 'listen' }), {
+    const { agent } = setup(async (req, i) => (!req.questions.step ? (await asking, { next: 'done', show: 'Tasks' }) : i === 0 ? { next: 'act', step: 'respond' } : { next: 'listen' }), {
       world: { sides: [['email']] },
       thinker: { run: async () => ({ text: 'You have two tasks.' }) },
     })

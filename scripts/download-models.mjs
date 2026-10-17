@@ -56,6 +56,13 @@ if (process.platform === 'darwin' && process.arch === 'arm64') {
     execFileSync('curl', ['-fL', '-o', join(dir, `${gemma}.part`), `https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF/resolve/main/${gemma}`], { stdio: 'inherit' })
     execFileSync('mv', [join(dir, `${gemma}.part`), join(dir, gemma)])
   }
+  // Ranks the steps on offer by what the user asks: bge-small-en-v1.5 (MIT) on the same server.
+  const bge = 'bge-small-en-v1.5-q8_0.gguf'
+  if (!existsSync(join(dir, bge))) {
+    console.log('Downloading bge-small-en-v1.5 (Q8_0, ~37 MB)…')
+    execFileSync('curl', ['-fL', '-o', join(dir, `${bge}.part`), `https://huggingface.co/CompendiumLabs/bge-small-en-v1.5-gguf/resolve/main/${bge}`], { stdio: 'inherit' })
+    execFileSync('mv', [join(dir, `${bge}.part`), join(dir, bge)])
+  }
 }
 
 console.log(`Models ready in ${dir}`)

@@ -79,7 +79,7 @@ for (const [i, row] of rows.entries()) {
     let heard: number | null = jev && i < jevClips && !text ? 0 : null
     if (jev && i < jevClips && text) {
       jevCalls++
-      const history = row.messages.map((m) => `${m.role === 'user' ? 'User' : 'Stanley said'}: ${m.content}`).join('\n')
+      const history = row.messages.map((m) => `${m.role === 'user' ? 'User' : 'You said'}: ${m.content}`).join('\n')
       const state = `## Conversation\n${history}\nUser (still speaking): ${text}`
       const answer = await jev.choose({ state, instructions: HEARD_INSTRUCTIONS, options: HEARD })
       heard = answer.probabilities.finished ?? (answer.choice === 'finished' ? answer.confidence : 1 - answer.confidence)

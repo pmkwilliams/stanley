@@ -1,12 +1,13 @@
 import { appendFileSync, cpSync, existsSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Agent, createThinker, deciderProfile, defaultConfig, type AgentConfig, type AgentDeps, type FileTools, type HeardWord, type QuickEffort, type ThinkEffort, type Thinker, type TickReport, type WebTools, type World } from '@stanley/agent'
+import { Agent, createThinker, deciderProfile, defaultConfig, EMBED_URL, llamaEmbed, type AgentConfig, type AgentDeps, type FileTools, type HeardWord, type QuickEffort, type ThinkEffort, type Thinker, type TickReport, type WebTools, type World } from '@stanley/agent'
 import { parallelWeb } from '@stanley/app-web/parallel'
 import { localFiles } from '@stanley/files'
 import { createDecisionClient, type DecisionClient } from '@stanley/jev'
 import { Shell } from '../apps/desktop/src/main/shell'
 import { apps } from '../apps/desktop/src/main/apps'
+import { startEmbedModel } from '../apps/desktop/src/main/quick'
 import type { Check, Scenario } from './scenarios.mts'
 
 /** The agent counts as settled once it has been idle (not thinking/acting) this long. */
@@ -28,8 +29,7 @@ export const usage = {
   jevInputTokens: 0,
   jevMs: [] as number[],
   thinking: 0,
-  writing: 0,
-  /** Dictated words the quick model tidied into a field. */
+  /** Fields the writer wrote. */
   dictating: 0,
   /** Thinking's input tokens, all calls and steps together, and how many of them were read from the cache. */
   thinkingInputTokens: 0,
@@ -69,7 +69,7 @@ export function select<T>(items: T[], name: (t: T) => string, command: string): 
 
 export function printUsage() {
   const ratio = usage.thinkingInputTokens ? `${Math.round((usage.thinkingCachedTokens / usage.thinkingInputTokens) * 100)}%` : '—'
-  console.log(`Paid calls: ${usage.jev} ${process.env.STANLEY_DECIDER ?? 'jev'} (${usage.jevInputTokens.toLocaleString()} input tokens, p50 ${median(usage.jevMs)}s), ${usage.thinking} thinking turns, ${usage.writing} writes, ${usage.dictating} dictations (${usage.singleFallbacks} handed over to a whole turn) (thinking: ${usage.thinkingInputTokens.toLocaleString()} input tokens, ${ratio} read from cache, largest call ${usage.largestThinkingInput.toLocaleString()}), ${usage.searches} searches, ${usage.reads} page reads (Parallel)`)
+  console.log(`Paid calls: ${usage.jev} ${process.env.STANLEY_DECIDER ?? 'jev'} (${usage.jevInputTokens.toLocaleString()} input tokens, p50 ${median(usage.jevMs)}s), ${usage.thinking} thinking turns, ${usage.dictating} fields written (${usage.singleFallbacks} with nothing to type, handed to thinking) (thinking: ${usage.thinkingInputTokens.toLocaleString()} input tokens, ${ratio} read from cache, largest call ${usage.largestThinkingInput.toLocaleString()}), ${usage.searches} searches, ${usage.reads} page reads (Parallel)`)
   const t = usage.thinkMs
   console.log(`Thinking latency p50: run ${median(t.run)}s (${t.run.length}), write ${median(t.write)}s (${t.write.length}), dictate ${median(t.dictate)}s (${t.dictate.length})`)
   for (const f of usage.fallbacks) console.log(`  handed over: ${f}`)
@@ -80,7 +80,7 @@ export interface ScenarioResult {
   failures: string[]
   ticks: TickReport[]
   said: string[]
-  /** What the quick model tidied into fields, in order. */
+  /** What the writer typed into fields, in order. */
   dictated: string[]
   /** What the screen was laid out to show, or why it was left, each time Jev decided. */
   screens: string[]
@@ -105,6 +105,7 @@ export interface ScenarioResult {
  */
 export async function runScenario(scenario: Scenario, speak: Speak): Promise<ScenarioResult> {
   const shell = new Shell(apps, { env: process.env, fetch }, () => {})
+  await scenario.setup?.(shell)
   const { files, root } = fixtureFiles()
   const run = await drive(shell, scenario.utterances, speak, files)
   const failures = [...run.turnFailures, ...scenario.checks.map((c: Check) => c(shell, run.agent, root)).filter((r): r is string => typeof r === 'string')]
@@ -158,14 +159,14 @@ export async function drive(world: World, utterances: string[], speak: Speak, fi
   const stepsAt: number[] = []
   const thinking = { inputTokens: 0, cachedTokens: 0, largestInput: 0 }
   const modes = new Map<number, 'run' | 'write'>()
-  /** What the quick model tidied into fields. */
+  /** What the writer typed into fields. */
   const dictated: string[] = []
   const screens: string[] = []
   const agent = makeAgent(world, {
     debug: (e) => {
       if (e.type === 'screen') screens.push(`${e.source}: ${e.before || 'home'} → ${e.after === null ? `left (${e.reason})` : e.after || 'home'}${e.confidence === undefined ? '' : `, P(show) ${e.confidence.toFixed(2)}`}`)
       if (e.type === 'act' && !e.summary?.startsWith('ran ')) stepsAt.push(Date.now())
-      if (e.type === 'think-start' && e.mode === 'run' && /^asked to type/.test(e.handover)) {
+      if (e.type === 'think-start' && /nothing to type yet/.test(e.handover)) {
         usage.singleFallbacks++
         usage.fallbacks.push(e.handover)
       }
@@ -193,7 +194,7 @@ export async function drive(world: World, utterances: string[], speak: Speak, fi
       changedAt = Date.now()
     },
     turnEnd: () => (turn.endedAt = Date.now()),
-  }, files)
+  }, files, await embedding)
   const settleMs: number[] = []
   const endMs: number[] = []
   const firstStepMs: (number | null)[] = []
@@ -220,7 +221,21 @@ export async function drive(world: World, utterances: string[], speak: Speak, fi
   return { agent, turnFailures, result: { ticks, said, dictated, screens, settleMs, endMs, firstStepMs, lastStepMs, cutIns, trace: await agent.context(), thinking } }
 }
 
-function makeAgent(world: World, events: AgentDeps['events'], files?: FileTools): Agent {
+/**
+ * The embedding model that ranks the steps on offer, as in the app, started once and waited for
+ * (`--no-embed`: words alone, to compare).
+ */
+const embedding = process.argv.includes('--no-embed')
+  ? Promise.resolve(false)
+  : startEmbedModel(join(import.meta.dirname, '..', 'models')).then(async (stop) => {
+      for (let i = 0; stop && i < 60; i++) {
+        if (await fetch(`${EMBED_URL}/health`).then((r) => r.ok, () => false)) return true
+        await sleep(250)
+      }
+      return false
+    })
+
+function makeAgent(world: World, events: AgentDeps['events'], files?: FileTools, embed = false): Agent {
   const key = process.env.PARALLEL_API_KEY
   // `STANLEY_DECIDER=subq`: SubQ Snap instead of Jev, with the config and notes tuned for it.
   const profile = deciderProfile(process.env.STANLEY_DECIDER)
@@ -231,13 +246,13 @@ function makeAgent(world: World, events: AgentDeps['events'], files?: FileTools)
   // `--effort low|medium|high`: thinking's effort, to compare speed and results.
   const i = process.argv.indexOf('--effort')
   const effort = i === -1 ? undefined : (process.argv[i + 1] as ThinkEffort)
-  // `--quick-model <gateway id>`: the model that tidies dictated words into fields.
+  // `--quick-model <gateway id>`: the writer, which writes what goes in fields and searches.
   const j = process.argv.indexOf('--quick-model')
   const quickModel = j === -1 ? undefined : process.argv[j + 1]
   // `--quick-effort none|minimal|low`: the quick model's reasoning.
   const k = process.argv.indexOf('--quick-effort')
   const quickEffort = k === -1 ? undefined : (process.argv[k + 1] as QuickEffort)
-  return new Agent({ world, jev: countedJev(createDecisionClient()), thinker: countedThinker(createThinker({ effort, quickModel, quickEffort })), web: key ? countedWeb(parallelWeb(key)) : undefined, files, events, config, jevNotes: profile.notes })
+  return new Agent({ world, jev: countedJev(createDecisionClient()), thinker: countedThinker(createThinker({ effort, quickModel, quickEffort })), web: key ? countedWeb(parallelWeb(key)) : undefined, files, events, config, jevNotes: profile.notes, embed: embed ? llamaEmbed() : undefined })
 }
 
 export function overrides(config: AgentConfig): AgentConfig {
@@ -287,8 +302,7 @@ export function report(label: string, result: ScenarioResult) {
     const next = t.next ? Object.entries(t.next.probabilities).sort(([, a], [, b]) => b - a).slice(0, 2).map(([k, p]) => `${k} ${p.toFixed(2)}`).join(' ') : '—'
     const step = t.step ? `${t.step.choice} ${t.step.confidence.toFixed(2)}` : '—'
     const runnersUp = t.step?.top.filter((o) => o.option !== t.step!.choice).slice(0, 2).map((o) => `${o.option} ${o.p.toFixed(2)}`).join(', ')
-    const words = t.dictated !== undefined && t.effective === t.step?.choice ? `  words: user ${t.dictated.toFixed(2)}` : ''
-    console.log(`   ${t.outcome.padEnd(15)} → ${t.effective.padEnd(10)} next: ${next.padEnd(22)} step: ${step}${runnersUp ? `  | ${runnersUp}` : ''}${words}${t.detail ? ` (${t.detail})` : ''}`)
+    console.log(`   ${t.outcome.padEnd(15)} → ${t.effective.padEnd(10)} next: ${next.padEnd(22)} step: ${step}${runnersUp ? `  | ${runnersUp}` : ''}${t.detail ? ` (${t.detail})` : ''}`)
   }
   for (const text of result.dictated) console.log(`   dictated: "${text}"`)
   for (const text of result.screens) console.log(`   screen: ${text}`)
@@ -376,8 +390,7 @@ function countedWeb(web: WebTools): WebTools {
 function countedThinker(thinker: Thinker): Thinker {
   return {
     async run(req) {
-      if (req.single) usage.writing++
-      else usage.thinking++
+      usage.thinking++
       const result = await thinker.run(req)
       usage.thinkingInputTokens += result.usage?.inputTokens ?? 0
       usage.thinkingCachedTokens += result.usage?.inputTokenDetails.cacheReadTokens ?? 0

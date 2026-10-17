@@ -9,7 +9,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { DICTATE_PROMPT } from '@stanley/agent'
+import { writerInstructions } from '@stanley/agent'
 import { cases as dev } from './cases.mts'
 import { holdout } from './holdout.mts'
 import { input } from './input.mts'
@@ -39,7 +39,7 @@ const brief = `You are writing the reference answers for an evaluation of a smal
 Write, for every case, the ideal output: exactly what a careful person following these instructions would write. Follow the instructions to the letter. Don't use any tools or read any files; answer from the text here.
 
 # The model's instructions
-${DICTATE_PROMPT}
+${writerInstructions({ name: 'Stanley', today: new Date() })}
 
 # Notes
 - The output replaces the field's whole content. Line breaks are allowed where the user asked for them (a new paragraph, a list).

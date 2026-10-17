@@ -124,7 +124,7 @@ function skillList(scan: SkillScan): string {
 }
 
 /** For Jev, when there are skills. */
-export const JEV_SKILLS = `Each skill has a "use skill" step, described by when it is for. When the user asks for something a skill is for, take that step first: it reads the skill, in the background. Then do what the skill says, a step at a time.`
+export const JEV_SKILLS = `You have skills, each described by when it is for. When the user asks for something a skill is for, you read it first, in the background, and it is in the conversation from then on. Then do what the skill says, a step at a time.`
 
 /** How the skills changed from `before` to `after`, as a sentence, or null when they didn't. */
 export function skillChanges(before: SkillScan, after: SkillScan): string | null {

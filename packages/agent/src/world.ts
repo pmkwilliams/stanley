@@ -78,6 +78,10 @@ export interface World {
   /** Apps Stanley can open from anywhere. */
   appList(): AppEntry[]
   open(appId: string): Promise<StepResult>
+  /**
+   * Uses an element. In another open app (see `others`), a button or a field is used where it is,
+   * and Stanley stays on the screen it works on; a link goes there, as it would anywhere.
+   */
   perform(node: AgentNode, args: ActionArgs): Promise<StepResult>
   /**
    * Opens a web page by its address, as typing it into a browser would. A page kept open comes back
@@ -110,6 +114,12 @@ export interface World {
    * screen out; without them, the screen shows the app Stanley worked on once it is done (`show`).
    */
   sides?(): Sides
+  /**
+   * The screens of the other apps that are open, besides the one Stanley works on: those in front
+   * of the user (`visible`), then those in the background. Their elements can be used without
+   * going to them. Without it, only the screen Stanley works on is offered.
+   */
+  others?(): Screen[]
   /** Apps that can be put on the screen: the apps, and the one that shows web pages once it has a page. */
   placeable?(): AppEntry[]
   /**

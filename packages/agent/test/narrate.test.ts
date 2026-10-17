@@ -21,9 +21,9 @@ describe('narrate', () => {
       [
         '## Conversation',
         'User: add a task called buy eggs',
-        'Wren opened Tasks.',
-        'Wren typed "Buy eggs" into [Add a task].',
-        'Wren pressed Enter in [Add a task]: Added task "Buy eggs".',
+        'You opened Tasks.',
+        'You typed "Buy eggs" into [Add a task].',
+        'You pressed Enter in [Add a task]: Added task "Buy eggs".',
         '',
         '## Screen: Tasks (in front of the user)',
         '# Tasks\n- [ ] Buy eggs',
@@ -36,7 +36,16 @@ describe('narrate', () => {
     r.event('task-start')
     r.words(1, 'swap them round')
     r.step({ target: { kind: 'arrange' }, summary: 'Tasks (left), Email (right).', utteranceId: 1 })
-    expect(narrate(r.h.view(), screen)).toContain('User: swap them round\nWren arranged the screen: Tasks (left), Email (right).\n')
+    expect(narrate(r.h.view(), screen)).toContain('User: swap them round\nYou arranged the screen: Tasks (left), Email (right).\n')
+  })
+
+  it('lists the steps on offer after the screen, as thinking reads them', () => {
+    const r = recorder()
+    r.words(1, 'add a task')
+    const options = { criteria: { 'Add a task': 'field', respond: 'Say something to the user.' }, targets: new Map() }
+    expect(narrate(r.h.view(), screen, undefined, 50, [], options)).toContain(
+      '## Screen: Tasks (in front of the user)\n# Tasks\n- [ ] Buy eggs\n\n## Steps on offer\n- [Add a task] field\n- [respond] Say something to the user.',
+    )
   })
 
   it('shows the live utterance with its unfinished words, and marks it while the user is speaking', () => {
@@ -51,7 +60,7 @@ describe('narrate', () => {
   it("says whose words were typed, what Wren said, and the user's own clicks", () => {
     const r = recorder()
     r.words(1, 'reply with something funny')
-    r.step({ target: field, text: 'Ramen? Always.', wrote: 'stanley', by: 'thinking', summary: 'typed', utteranceId: 1 })
+    r.step({ target: field, text: 'Ramen? Always.', wrote: 'you', by: 'thinking', summary: 'typed', utteranceId: 1 })
     r.said('I wrote "Ramen? Always." Send it?')
     r.userStep({ kind: 'element', name: 'Send reply', role: 'button', nodeKind: 'action', nodeId: 'e:send' }, 'Reply sent')
     r.userStep({ kind: 'home' }, 'Went to the home screen')
@@ -59,8 +68,8 @@ describe('narrate', () => {
       [
         '## Conversation',
         'User: reply with something funny',
-        'Wren wrote its own words into [Add a task]: "Ramen? Always."',
-        'Wren said: "I wrote "Ramen? Always." Send it?"',
+        'You wrote your own words into [Add a task]: "Ramen? Always."',
+        'You said: "I wrote "Ramen? Always." Send it?"',
         'User pressed [Send reply]: Reply sent.',
         'User went to the home screen.',
         '',
@@ -82,16 +91,16 @@ describe('narrate', () => {
     r.words(1, 'tick the blue one')
     r.step(tick('Blue', 4))
     const live = { utteranceId: 1, text: 'tick the blue one sorry the', ended: false }
-    expect(narrate(r.h.view(live), screen, live)).toContain('Wren pressed [Blue › checkbox]: Marked "Blue" done.\nUser (went on, still speaking): sorry the\n')
+    expect(narrate(r.h.view(live), screen, live)).toContain('You pressed [Blue › checkbox]: Marked "Blue" done.\nUser (went on, still speaking): sorry the\n')
     r.words(1, 'sorry the red one')
     r.step(tick('Red', 8))
     expect(narrate(r.h.view(), screen).split('\n').slice(0, 6)).toEqual([
       '## Conversation',
       'User: tick the blue one',
-      'Wren opened Tasks.',
-      'Wren pressed [Blue › checkbox]: Marked "Blue" done.',
+      'You opened Tasks.',
+      'You pressed [Blue › checkbox]: Marked "Blue" done.',
       'User (went on): sorry the red one',
-      'Wren pressed [Red › checkbox]: Marked "Red" done.',
+      'You pressed [Red › checkbox]: Marked "Red" done.',
     ])
   })
 

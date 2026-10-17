@@ -26,5 +26,5 @@ When the user asks you to remember something, or tells you something about thems
 
 /** For Jev, when there is memory. */
 export function jevMemory(text: string): string {
-  return `What Stanley knows about the user from earlier sessions:\n<memory>\n${memoryText(text)}\n</memory>`
+  return `What you know about the user from earlier sessions:\n<memory>\n${memoryText(text)}\n</memory>`
 }

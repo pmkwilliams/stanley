@@ -4,7 +4,7 @@
  *
  *   pnpm eval:working
  */
-import { WORKING, WORKING_INSTRUCTIONS, WORKING_PROMPT, named, namedOptions } from '@stanley/agent'
+import { jevPreamble, named, namedOptions, WORKING, workingInstructions } from '@stanley/agent'
 import { createDecisionClient } from '@stanley/jev'
 import { loadEnv } from './harness.mts'
 
@@ -33,8 +33,9 @@ const cases: [string, string, string, 'stop' | 'hold' | 'elsewhere'][] = [
 
 let right = 0
 for (const [asked, doing, heard, want] of cases) {
-  const state = [named(WORKING_PROMPT, 'Stanley'), `## Conversation\nUser: ${asked}`, '## What Stanley is doing', `Working on what the user asked, not finished yet. Right now: ${doing}`, '## What the user said while it works', `"${heard}"`].join('\n\n')
-  const r = await jev.choose({ state, instructions: named(WORKING_INSTRUCTIONS, 'Stanley'), options: namedOptions(WORKING, 'Stanley'), signal: new AbortController().signal })
+  // The state every decision reads, without a screen, and the question of what was said while it works.
+  const state = `${jevPreamble({ name: 'Stanley', today: new Date() })}\n\n## Conversation\nUser: ${asked}`
+  const r = await jev.choose({ state, instructions: named(workingInstructions(doing, heard), 'Stanley'), options: namedOptions(WORKING, 'Stanley'), signal: new AbortController().signal })
   // Only stopping or not changes what Stanley does.
   const ok = (r.choice === 'stop') === (want === 'stop')
   if (ok) right++

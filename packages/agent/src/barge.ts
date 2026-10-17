@@ -8,15 +8,21 @@ import { normalize } from './transcript'
 type Overlap = 'acknowledging' | 'interrupting' | 'answering' | 'elsewhere'
 
 export const OVERLAP: Record<Overlap, string> = {
-  acknowledging: 'Only acknowledging Stanley or letting it go on: "mm-hm", "yeah", "okay", "right", "uh-huh", "got it", while Stanley is still in the middle of what it is saying.',
-  interrupting: 'Stopping Stanley or changing course: "wait", "stop", "hold on", "no", a correction, a change to what they asked, or a new request.',
-  answering: 'Answering what Stanley is asking, or replying to what it said, as it finishes saying it.',
-  elsewhere: "Not talking to Stanley: talking to someone else or on the phone, reading something out, background speech or noise, or Stanley's own voice picked up by the microphone.",
+  acknowledging: 'Only acknowledging you or letting you go on: "mm-hm", "yeah", "okay", "right", "uh-huh", "got it", while you are still in the middle of what you are saying.',
+  interrupting: 'Stopping you or changing course: "wait", "stop", "hold on", "no", a correction, a change to what they asked, or a new request.',
+  answering: 'Answering what you are asking, or replying to what you said, as you finish saying it.',
+  elsewhere: "Not talking to you: talking to someone else or on the phone, reading something out, background speech or noise, or your own voice picked up by the microphone.",
 }
-export const OVERLAP_INSTRUCTIONS = 'Stanley is talking, and the microphone heard the user say something over it. What is the user doing?'
-
-export const OVERLAP_PROMPT = `# Stanley
-Stanley is a voice assistant that operates apps and websites on the user's computer and talks to the user out loud. It is talking now, and the user said something over it. People do that to show they're following, to stop it, to answer it, or because they're talking to someone else. Stanley stops when the user wants to be heard, and goes on when they don't.`
+/**
+ * The question of words heard over Stanley's voice: what it is saying (`speech`), and what the user
+ * said over it. People do that to show they're following, to stop it, to answer it, or because
+ * they're talking to someone else.
+ */
+export function overlapInstructions(speech: Speech | null, heard: string): string {
+  const rest = speech?.rest.trim()
+  const saying = speech ? `You are talking: you have said "${speech.spoken.trim()}"${rest ? ` and have still to say "${rest}"` : ', and were finishing'}` : 'You have just finished talking'
+  return `${saying}, and the microphone heard the user say "${heard}" over you. What is the user doing?`
+}
 
 type Working = 'stop' | 'hold' | 'elsewhere'
 
@@ -26,14 +32,18 @@ type Working = 'stop' | 'hold' | 'elsewhere'
  * what it's doing wrong, or can wait until it's done.
  */
 export const WORKING: Record<Working, string> = {
-  stop: 'Stopping Stanley or changing what it is doing: "stop", "wait", "cancel", "never mind", "don\'t", "no", a correction, saying more exactly what they meant ("the Lakers game"), or asking for something else instead of it.',
-  hold: 'Something more for after what Stanley is doing, which can wait until it finishes: a change to the finished result ("and make it blue", "also add a title"), or another question or request.',
-  elsewhere: "Not talking to Stanley: talking to someone else or on the phone, reading something out, background speech or noise.",
+  stop: 'Stopping you or changing what you are doing: "stop", "wait", "cancel", "never mind", "don\'t", "no", a correction, saying more exactly what they meant ("the Lakers game"), or asking for something else instead of it.',
+  hold: 'Something more for after what you are doing, which can wait until you finish: a change to the finished result ("and make it blue", "also add a title"), or another question or request.',
+  elsewhere: "Not talking to you: talking to someone else or on the phone, reading something out, background speech or noise.",
 }
-export const WORKING_INSTRUCTIONS = 'Stanley is working on what the user asked, and the user said something while it works. What are they doing?'
-
-export const WORKING_PROMPT = `# Stanley
-Stanley is a voice assistant that operates apps and websites on the user's computer. It is working on something the user asked for, and the user said something while it works. People do that to stop it or change what it is doing, to add to it or ask for something more, or because they are talking to someone else. Stanley stops when what it is doing is no longer what the user wants. Otherwise it finishes, then does what they said.`
+/**
+ * The question of words said while Stanley works: what it is doing right now (`doing`, a sentence's
+ * end, "searching the web for …"), and what the user said. You stop when what you are doing is no
+ * longer what the user wants; otherwise you finish, then do what they said.
+ */
+export function workingInstructions(doing: string, heard: string): string {
+  return `You are working on what the user asked, not finished yet: right now, ${doing} The user said "${heard}" while you work. What are they doing?`
+}
 
 /** What Stanley is saying right now. */
 export interface Speech {
@@ -68,8 +78,8 @@ export const defaultBargeIn: BargeInConfig = { stop: 0.5, goOn: 0.6, cutWords: 4
 
 export interface BargeInDeps {
   jev: DecisionClient
-  /** The conversation so far without the screen, leaving out the reply being said. */
-  conversation(except: number): string
+  /** What every decision reads, without the screen and leaving out the reply being said (`Agent.talkingState`). */
+  state(except: number): string
   /** What Stanley is saying, or null once it isn't. */
   speech(): Speech | null
   /** What the user calls the assistant, read each time it is needed. Defaults to `DEFAULT_AGENT_NAME`. */
@@ -189,17 +199,11 @@ export class BargeIn {
     const controller = new AbortController()
     this.asking = controller
     const name = this.deps.name?.() ?? DEFAULT_AGENT_NAME
-    const state = [
-      named(OVERLAP_PROMPT, name),
-      this.deps.conversation(speech?.id ?? -1),
-      `## What ${name} is saying`,
-      speech ? `Said so far: "${speech.spoken.trim()}"\nStill to say: ${speech.rest.trim() ? `"${speech.rest.trim()}"` : 'nothing, it was finishing'}` : 'It has just finished.',
-      '## What the user said over it',
-      `"${user.map((w) => w.text).join(' ')}"`,
-    ].join('\n\n')
+    const state = this.deps.state(speech?.id ?? -1)
+    const instructions = named(overlapInstructions(speech, user.map((w) => w.text).join(' ')), name)
     const started = performance.now()
     this.deps.jev
-      .choose({ state, instructions: named(OVERLAP_INSTRUCTIONS, name), options: namedOptions(OVERLAP, name), signal: controller.signal })
+      .choose({ state, instructions, options: namedOptions(OVERLAP, name), signal: controller.signal })
       .then((result) => {
         if (this.asking !== controller) return
         this.asking = null

@@ -13,7 +13,7 @@
  *
  * Paid: one Jev call per case, three or so with --check.
  */
-import { chooseScreen, defaultConfig, describeScreen, JEV_FILES, JEV_SCREEN, jevPreamble, screenQuestions, sidesKey, type Sides } from '@stanley/agent'
+import { chooseScreen, defaultConfig, describeScreen, JEV_FILES, jevPreamble, layoutLine, screenQuestions, sidesKey, type Sides } from '@stanley/agent'
 import { experimental_decide } from 'ai'
 import { cases, type LayoutCase } from './layout/cases.mts'
 import { APPS, markdown, screens, states } from './layout/scene.mts'
@@ -45,21 +45,19 @@ const describe = (sides: Sides) => describeScreen(sides, title)
 
 /**
  * What Jev reads: what comes ahead of the conversation as the agent writes it (`jevPreamble`, the
- * desktop app's files section included), with what is on the screen (unless `--no-line`); then the
- * conversation, written by hand as `narrate` would, and the screen Stanley worked on.
+ * desktop app's files section included); then the conversation, written by hand as `narrate` would,
+ * starting with what is on the screen as the agent notes it (unless `--no-line`), and the screen
+ * Stanley worked on.
  */
 function state(c: LayoutCase, all: Record<string, unknown>, after?: { sides: string[][]; picture: boolean }): string {
-  const preamble = (shown?: string) => jevPreamble({ name: 'Stanley', today: new Date('2026-10-15T12:00:00'), extra: [JEV_FILES], shown })
-  const lines: string[] = []
-  if (after) lines.push(preamble(describe(parse(c.on))).replace('Now on the screen', 'Before, on the screen'))
-  else if (line) lines.push(preamble(`${describe(parse(c.on))}${image ? ' A picture of it follows.' : ''}`))
-  else lines.push(`${preamble()}\n\n${JEV_SCREEN}${image ? '\nA picture of the screen as it is now follows.' : ''}`)
-  lines.push('', '## Conversation', ...c.conversation)
+  const lines = [jevPreamble({ name: 'Stanley', today: new Date('2026-10-15T12:00:00'), extra: [JEV_FILES], layout: true })]
+  const before = line || after ? [layoutLine(`${describe(parse(c.on))}${image && !after ? ' A picture of it follows.' : ''}`)] : image ? ['A picture of the screen as it is now follows.'] : []
+  lines.push('', '## Conversation', ...before, ...c.conversation)
   if (c.worked) {
     const shown = parse(c.on).flat().includes(c.worked)
     lines.push('', `## Screen: ${title(c.worked)} (${shown ? 'in front of the user' : "in the background, the user can't see it"})`, markdown(c.worked, all[c.worked]))
   }
-  if (after) lines.push('', after.picture ? 'Stanley has now arranged the screen. A picture of it follows.' : `Stanley has now arranged the screen. Now on the screen: ${describe(after.sides)}`)
+  if (after) lines.push('', after.picture ? 'You have now arranged the screen. A picture of it follows.' : `You have now arranged the screen. ${layoutLine(describe(after.sides))}`)
   return lines.join('\n')
 }
 
@@ -113,7 +111,7 @@ function candidates(c: LayoutCase): { sides: string[][]; right: boolean }[] {
 }
 
 const VERDICT = {
-  yes: 'The screen shows what the user would want to see now: what they asked to see, what they are in the middle of, or what Stanley did that they would want to look at.',
+  yes: 'The screen shows what the user would want to see now: what they asked to see, what they are in the middle of, or what you did that they would want to look at.',
   no: 'It does not: something the user wants to see is missing or on the wrong side, or it shows something they asked to hide or have no need to see.',
 }
 

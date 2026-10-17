@@ -106,6 +106,13 @@ export class Shell implements World {
     return { sides: this.sides(), fullscreen: this.filling(alone) }
   }
 
+  /** The other apps open: those on the screen, left to right, then those in the background. */
+  others(): Screen[] {
+    const shown = this.shown.flat()
+    const open = [...this.surfaces.keys()].filter((id) => id !== this.focus)
+    return [...shown.filter((id) => open.includes(id)), ...open.filter((id) => !shown.includes(id))].map((id) => this.screenOf(id))
+  }
+
   /** What is on the screen, left to right. */
   sides(): Sides {
     return this.shown.map((side) => [...side])
@@ -212,7 +219,9 @@ export class Shell implements World {
 
   async perform(node: AgentNode, args: ActionArgs) {
     const sep = node.id.indexOf(SEP)
-    return this.performIn(node.id.slice(0, sep), node.id.slice(sep + 1), args)
+    const appId = node.id.slice(0, sep)
+    // A button or field of another app is used where it is: Stanley stays on the screen it works on.
+    return this.performIn(appId, node.id.slice(sep + 1), args, { stay: appId !== this.focus && node.kind !== 'location' })
   }
 
   async global(option: 'show' | 'home' | 'back') {
@@ -257,14 +266,15 @@ export class Shell implements World {
     })
   }
 
-  async performIn(appId: string, nodeId: string, args: ActionArgs) {
+  /** Uses an element of an app, which then has the focus, unless `stay` keeps it where it is. */
+  async performIn(appId: string, nodeId: string, args: ActionArgs, opts: { stay?: boolean } = {}) {
     const app = this.app(appId)
     if (nodeId === FULLSCREEN) return this.toggleFullscreen(app)
     const result = await this.serial(appId, async () => {
       await this.ensure(app)
       const result = await app.perform(this.surfaces.get(appId), nodeId, args, this.ctx)
       this.surfaces.set(appId, result.state)
-      this.navigate(appId)
+      if (!opts.stay) this.navigate(appId)
       this.onChange()
       return result
     })

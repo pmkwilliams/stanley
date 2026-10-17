@@ -1,11 +1,11 @@
-import { DEFAULT_AGENT_NAME, FILES_URL, FULLSCREEN, type ActionArgs, type AgentNode } from '@stanley/app-sdk'
+import { DEFAULT_AGENT_NAME, FILES_URL, FULLSCREEN, type ActionArgs } from '@stanley/app-sdk'
 import type { Answer, DecisionClient, MultiChoiceResult, Question } from '@stanley/jev'
 import type { JSONValue } from 'ai'
 import { defaultConfig, type AgentConfig, type DeciderProfile } from './config'
 import type { AgentDebugEvent, GateRule, RequestResult, TickReason } from './debug'
-import { Background, describe, GIST_PROMPT, TASK_DONE, TASK_EFFORT, TASK_MODEL, taskInstructions, type BackgroundTask, type TaskRecord } from './background'
-import { WORKING, WORKING_INSTRUCTIONS, WORKING_PROMPT } from './barge'
-import { CONSENT, CONSENT_PROMPT, consentInstructions, createEffectJudge, type EffectJudge, type EffectVerdict } from './effects'
+import { Background, describe, GIST_PROMPT, TASK_EFFORT, TASK_MODEL, taskInstructions, type BackgroundTask, type TaskRecord } from './background'
+import { WORKING, workingInstructions } from './barge'
+import { CONSENT, consentInstructions } from './consent'
 import { bashText, editText, JEV_FILES, knownFiles, listCommand, pageResized, PAGE_SIZE, pageSizeText, readCommand, topFiles, type BashResult, type FileMeta, type FileTools, type KnownFile, type PageSize } from './files'
 import {
   Conversation,
@@ -26,14 +26,17 @@ import {
 } from './conversation'
 import { anyUnsure, markUnsure, unmarked, type HeardWord } from './heard'
 import { jevMemory, MEMORY_PATH } from './memory'
-import { describeStep, named, namedOptions, narrate } from './narrate'
-import { navigates, stepOptions, type OptionSet, type Target } from './options'
-import { chooseScreen, describeScreen, sameSides, screenQuestions, layoutText, sidesKey, type ScreenAsk, type ScreenChoice, type Sides } from './screen'
+import { background, describeStep, named, namedOptions, narrate, optionList, stepResult } from './narrate'
+import { candidateText, candidatesOf, navigates, stepOptions, type OptionSet, type Ranking, type Target } from './options'
+import { ACTING, FIELDS, HEARING, IDENTITY, SCREEN } from './persona'
+import { Relevance, type Embed } from './relevance'
+import { chooseScreen, describeScreen, layoutLine, sameSides, SCREEN_PROMPT, screenQuestions, sidesKey, validSides, type ScreenAsk, type ScreenChoice, type Sides } from './screen'
 import { JEV_SKILLS, NO_SKILLS, skillBody, skillChanges, type Skill, type SkillScan } from './skills'
-import { createThinker, dictation, DICTATE_EXAMPLES, DICTATE_PROMPT, DONE_CHECK, EARLY_GUESS, fileOutput, instructions, longDate, PartialTurn, goAheadNote, unsureNote, writeNote, type ActCall, type FileOutput, type PageOutput, type SearchOutput, type Thinker, type ThinkResult } from './think'
+import { createThinker, fileOutput, instructions, longDate, PartialTurn, type ActCall, type FileOutput, type PageOutput, type QuickExample, type SearchOutput, type Thinker, type ThinkResult } from './think'
 import { extendsWords, fullText, hasNewWords, letters, normalize, type TranscriptSnapshot } from './transcript'
-import { knownPages, sameUrl, shortUrl, type KnownPage, type WebTools } from './web'
+import { knownPages, sameUrl, shortUrl, type KnownPage, type WebResult, type WebTools } from './web'
 import type { PageDraft, Screen, StepResult, World } from './world'
+import { ownWords, writerExamples, writerInput, writerInstructions, written, type WriteStep } from './write'
 
 export type TickOutcome = 'executed' | 'stale-discarded' | 'gated' | 'forced-stop' | 'error'
 
@@ -46,8 +49,6 @@ export interface TickReport {
   effective: string
   /** Jev's P(the user finished saying what the next part needs). */
   heard?: number
-  /** Jev's P(the user said the words for a field themselves), when the step was a field. */
-  dictated?: number
   latencyMs: number
   outcome: TickOutcome
   detail?: string
@@ -106,8 +107,6 @@ export interface AgentDeps {
   jev: DecisionClient
   /** Takes the turns that need words or judgement. */
   thinker: Thinker
-  /** Judges what a button does. Defaults to one cached Jev question per button (see effects.ts). */
-  effects?: EffectJudge
   /** Background web search and page reading for thinking. Without it, thinking only has the screen. */
   web?: WebTools
   /** The user's files: Jev lists and reads them, thinking runs bash on them, and skills are in them. Without it, there are no files. */
@@ -128,34 +127,45 @@ export interface AgentDeps {
   taskThinker?: Thinker
   /** Receives each background task's own log: its brief, then how it ended and everything it did. */
   taskSink?: (record: TaskRecord) => void
+  /** Embeds text, to rank the steps on offer by what the user is asking (relevance.ts). Without it, their words alone rank them. */
+  embed?: Embed
 }
 
+/** Jev's instructions: Stanley's own words (persona.ts), with how it answers the questions about each turn. */
 export const SYSTEM_PROMPT = `# Stanley
-Stanley is a voice assistant that operates apps and websites on the user's computer. Each time, you answer questions about the conversation below: what Stanley should do now, which step on the screen it would take, whether the user has finished saying what that needs, and, for a field, whose words go in it.
+${IDENTITY} Each time, you answer questions about what you do next in the conversation below: what to do now, which step you would take, and whether the user has finished saying what that needs.
 
 What to do now:
 - "listen" while the user is still saying what they want and it isn't clear yet what to do.
-- "act" when a step on the screen moves toward what they asked for. See a request through: if it is about something inside an app, open the app, then the item, then use it. Looking at, checking, reading or going through things means opening them, starting with the first, not stopping at the list they are in. When going through several, open the first and stop there: the user says when to move on.
-- "think" when the next part needs words or judgement: typing text, answering a question, asking the user something, getting their go-ahead, or working out what they mean. Stanley then writes, answers or asks, and can talk to the user.
-- "done" when what they asked for is done or showing on the screen. Don't go further than they asked. A question is done only once it is answered out loud: when the screen shows the answer, choose "think" so Stanley can say it.
+- "act" when one of the steps on offer moves toward what they asked for, including "respond", which says something to the user, and any press that can be undone or only looks.
+- "submit" when the next step sends, posts, pays, buys, books, shares, submits, archives or deletes something: it reaches other people or can't be taken back. Only when the user asked for that (asking to reply, message, email or post with words they gave is asking to send them; asking to draft or write something is not) and has heard any words you wrote yourself. Otherwise it is "done", leaving it ready, or "respond" to ask. See a request through: open what it is about, first its app when nothing of it is on offer, then use it. Looking at, checking, reading or going through things means opening them, starting with the first, not stopping at the list they are in. When going through several, open the first and stop there: the user says when to move on.
+- "think" when the next move takes working something out that no step on offer does: making or changing the user's files, finding something in them or answering from them, looking several things up, or anything else that needs careful thought.
+- "done" when what they asked for is done or showing on the screen. Don't go further than they asked. A question is done only once you have answered it out loud: when the screen shows the answer, "respond" says it.
 
-Stanley acts while the user is still talking, so later words can take back or change what it already did ("no wait", "actually", "not that one"). When they do, the next step undoes it first (untick what was ticked, put back what was moved, retype what was typed), then does what they meant. It is not done while something Stanley did is something the user took back.
+${ACTING}
 
-The user's words come from speech recognition, which can mishear. A word followed by (?) is one it was unsure of; read it as what the user most likely said, given the conversation and the screen.
+${HEARING}
 
-The screen is the app Stanley is working on, which may be in the background. Elements are written in [brackets]. A link opens something, a button does something, and a field holds text Stanley types.
+${SCREEN}
 
-Web pages Stanley found or read are listed in the conversation, and each can be put on screen with its "open page" step. Finding something new on the web is for \`think\`.`
+${FIELDS}
 
-type Next = 'listen' | 'act' | 'think' | 'done'
+Web pages you found or read are listed in the conversation, and each can be put on screen with its "open page" step. The "search the web" step looks something up in the background, from what the user said, and lists what it found.
+
+The "respond" step is the only way you talk to the user: answering what they asked, asking them something, or saying what is ready before it is sent. Answering something you don't know yet, or that changes over time, starts with finding it out.`
+
+type Next = 'listen' | 'act' | 'submit' | 'think' | 'done'
+/** What a decision comes to: Jev's choice, or thinking when it was too unsure or a check calls for it. */
+type Mode = Next
 
 export const NEXT: Record<Next, string> = {
   listen: "The user is still saying what they want, and it isn't clear yet what to do.",
-  act: 'Take a step on the screen that moves toward what the user asked for.',
-  think: 'The next part needs words or judgement: typing text, answering, looking something up, asking the user, getting their go-ahead, or working out what they mean.',
-  done: 'What the user asked for is done or showing on the screen, nothing Stanley did goes against what they now want, and any question they asked has been answered out loud.',
+  act: 'Take one of the steps on offer that moves toward what the user asked for, including saying something to them: anything that can be undone or only looks.',
+  submit: "Take the step that sends, posts, pays, buys, books, shares, submits, archives or deletes what the user asked for: they asked for it to go out, and have heard any words you wrote yourself.",
+  think: 'Work something out that no step on offer does: make or change files, find something in them or answer from them, look several things up, or anything else that needs careful thought.',
+  done: 'What the user asked for is done or showing on the screen, nothing you did goes against what they now want, and any question they asked has been answered out loud.',
 }
-export const NEXT_INSTRUCTIONS = 'What should Stanley do now?'
+export const NEXT_INSTRUCTIONS = 'What do you do now?'
 
 type Heard = 'finished' | 'more'
 
@@ -169,18 +179,10 @@ export const HEARD: Record<Heard, string> = {
   more: 'The user is partway through: the words stop before something the request needs (what to call it, what to write, who or which one), or trail off on a word like "called", "saying", "to", "and", "that" or "um".',
 }
 export const HEARD_INSTRUCTIONS = 'Has the user finished saying what the next part needs, or are words still coming that it depends on?'
-type Words = 'user' | 'stanley'
-
-/** Whose words go in a field: the user's are tidied into it by a quick model, Stanley's are written by thinking. */
-export const WORDS: Record<Words, string> = {
-  user: 'The user said the words that go in it: what to write after "saying", "called", "with" and the like, or a value they named, such as a search, a name, a place, a number or a date.',
-  stanley: "Stanley has to come up with the words: the user only described what to write (a tone, an idea, a gist), or hasn't said yet what goes in it.",
-}
-export const WORDS_INSTRUCTIONS = 'If Stanley types into a field next, whose words go in it?'
 const withNote = (instructions: string, note?: string) => (note ? `${instructions} ${note}` : instructions)
 
 export const STEP_INSTRUCTIONS =
-  'If Stanley takes a step on the screen now, which one moves toward what the user asked for? Whether to take a step at all is a separate question.'
+  'If you take a step now, which one moves toward what the user asked for? A step that sends, deletes or can\'t be undone only when the user clearly asked for it. Whether to take a step at all is a separate question.'
 
 /** A deferred tick keeps the strongest reason: a step must not be lost, and `end` also covers new words. */
 const PRIORITY: Record<TickReason, number> = { words: 0, pause: 1, end: 2, action: 3 }
@@ -220,10 +222,8 @@ interface Reply {
 
 /** Where a step goes in the history. */
 type StepRecord =
-  /** Jev's: its own call and result. */
+  /** Jev's, or the writer's: its own call and result. */
   | { jev: true }
-  /** A single-step turn's call, applied: its result goes after it. */
-  | { apply: string }
   /** A thinking turn's: the SDK has its call and result, so only its meta is kept. */
   | { turn: (step: StepMeta) => void }
 
@@ -260,9 +260,11 @@ export class Agent {
    * home): it stays as it is when the task ends.
    */
   private arranged = false
+  /** What the screen shows as the history last said (`describeScreen`): a change goes into it (`layoutChange`). */
+  private layoutKnown: string | null = null
   /** Set while the thinking model owns the turn; aborted when the user says more that stops it (see `whileWorking`). */
   private thinking?: AbortController
-  /** What kind of thinking turn it is: a whole turn (`run`), or the one step that writes a field (`write`). */
+  /** What works: a whole thinking turn (`run`), or the writer writing a step's text (`write`), which hinges on exactly the user's words. */
   private thinkingMode: 'run' | 'write' = 'run'
   /** What thinking is doing right now, for judging words said while it works. */
   private doing = ''
@@ -320,7 +322,8 @@ export class Agent {
   private world: World
   private jev: DecisionClient
   private thinker: Thinker
-  private effects: EffectJudge
+  /** Ranks the steps on offer by meaning, when there is an embedding model. */
+  private relevance?: Relevance
   private web?: WebTools
   private files?: FileTools
   private events: Partial<AgentEvents>
@@ -339,7 +342,7 @@ export class Agent {
     this.events = deps.events ?? {}
     this.config = deps.config ?? defaultConfig
     this.jevNotes = deps.jevNotes
-    this.effects = deps.effects ?? createEffectJudge(deps.jev, this.config.commits)
+    this.relevance = deps.embed && new Relevance(deps.embed)
     this.history = new Conversation(deps.sink)
     this.clock = deps.clock ?? (() => new Date())
     this.name = deps.name ?? (() => DEFAULT_AGENT_NAME)
@@ -353,7 +356,7 @@ export class Agent {
         files: deps.files,
         preview: deps.world.preview?.bind(deps.world),
         // The quicker model thinking types fields with puts each brief in a sentence for the status bar.
-        gist: deps.thinker.quick && ((task, signal) => deps.thinker.quick!(GIST_PROMPT, task, signal)),
+        gist: deps.thinker.quick && ((task, signal) => deps.thinker.quick!(named(GIST_PROMPT, this.name()), task, signal)),
         instructions: () => taskInstructions({ web: !!this.web, files: this.files?.root, page: this.pageSize(), today: this.started, name: this.name() }),
         max: this.config.background.max,
         steps: this.config.background.steps,
@@ -382,7 +385,7 @@ export class Agent {
     this.sessionPage ??= this.pageSize()
     this.pageKnown ??= this.sessionPage
     const memory = this.files?.read ? (this.sessionMemory ?? '') : undefined
-    return instructions({ web: !!this.web, files: this.files?.root, skills, memory, today: this.started, name: this.name(), page: this.sessionPage, background: !!this.background })
+    return instructions({ web: !!this.web, files: this.files?.root, skills, memory, today: this.started, name: this.name(), page: this.sessionPage, background: !!this.background, layout: this.laysOut() })
   }
 
   /** An utterance is open: the user is speaking, or paused without having finished. */
@@ -392,13 +395,23 @@ export class Agent {
 
   /** The conversation and screen as Jev reads them right now. */
   async context(): Promise<string> {
-    return narrate(this.view(), await this.world.screen(), this.live(), this.config.jevTurns, this.name())
+    return narrate(this.view(), await this.world.screen(), this.live(), this.config.jevTurns, this.others())
   }
 
   /** The conversation alone, without the screen, and without reply `except` (the one being said). */
   conversation(except?: number): string {
     const entries = this.view().filter((e) => !(e.meta.kind === 'said' && e.meta.replyId === except))
-    return narrate(entries, null, this.live(), this.config.jevTurns, this.name())
+    return narrate(entries, null, this.live(), this.config.jevTurns)
+  }
+
+  /**
+   * What Jev reads when the user speaks over Stanley: the state every decision reads, without the
+   * screen (which it can't wait for) and without reply `except`, the one being said.
+   */
+  talkingState(except?: number): string {
+    const extra = [...(this.files ? [JEV_FILES] : []), ...(this.skillsKnown.skills.length ? [JEV_SKILLS] : [])]
+    const preamble = jevPreamble({ name: this.name(), today: this.clock(), extra, memory: this.sessionMemory, layout: this.laysOut() })
+    return `${preamble}\n\n${this.conversation(except)}`
   }
 
   /**
@@ -460,6 +473,7 @@ export class Agent {
     this.taskUnsure = false
     this.arranged = false
     this.history.stage({ kind: 'event', event: 'task-start' })
+    this.noteLayout()
   }
 
   /** `words` carry speech recognition's confidence; unsure ones are marked `(?)` where the models read them. */
@@ -522,8 +536,8 @@ export class Agent {
 
   /** The person clicked or typed in an app directly. */
   recordUserStep(target: StepTarget, result: StepResult, text?: string): void {
-    const step: StepMeta = { id: `user-${++this.stepCount}`, by: 'user', target, text, summary: result.summary, observation: result.observation }
-    this.history.stage({ kind: 'note', by: 'user', results: [{ step }] }, note(`In the app, the user ${describeStep(step, this.name()).replace(/^User /, '')}`))
+    const step: StepMeta = { id: `user-${++this.stepCount}`, by: 'user', target, text, summary: result.summary, observation: result.observation, layout: this.layoutChange() }
+    this.history.stage({ kind: 'note', by: 'user', results: [{ step }] }, note(`In the app, the user ${describeStep(step).replace(/^User /, '')}`))
   }
 
   cancel(): void {
@@ -578,8 +592,8 @@ export class Agent {
   }
 
   /**
-   * The user said more while thinking works. A step thinking decides alone (what to type, whether
-   * to send) hinges on exactly their words, so it is out of date. A whole turn may not be: Jev
+   * The user said more while thinking works. A step the writer writes (what to type, what to search
+   * for) hinges on exactly their words, so it is out of date. A whole turn may not be: Jev
    * judges whether the words stop it ("no, the other one", "never mind") or wait for it to finish
    * ("and make it blue"), and it goes on meanwhile. More words are judged again.
    */
@@ -595,11 +609,13 @@ export class Agent {
     const heard = this.saidSince()
     const trace = (action: 'judged' | 'stop' | 'hold', extra: { verdict?: { choice: string; probabilities: Record<string, number>; latencyMs: number }; reason?: string }) =>
       this.events.debug?.({ type: 'working', action, heard, ...extra })
-    const state = [named(WORKING_PROMPT, name), this.conversation(), `## What ${name} is doing`, `Working on what the user asked, not finished yet. Right now: ${this.doing}`, '## What the user said while it works', `"${heard}"`].join('\n\n')
     judging.asking = true
     const started = performance.now()
     try {
-      const result = await this.jev.choose({ state, instructions: named(WORKING_INSTRUCTIONS, name), options: namedOptions(WORKING, name), signal: judging.thinking.signal })
+      // The state every decision reads, and the question of the words said while it works.
+      const screen = await this.world.screen()
+      const state = this.jevState(screen, this.screenAsk(screen), await this.jevExtra())
+      const result = await this.jev.choose({ state, instructions: named(workingInstructions(this.doing, heard), name), options: namedOptions(WORKING, name), signal: judging.thinking.signal })
       const verdict = { choice: result.choice, probabilities: result.probabilities, latencyMs: performance.now() - started }
       trace('judged', { verdict })
       // It finished while Jev judged: the deferred tick has the words.
@@ -645,10 +661,77 @@ export class Agent {
 
   /**
    * The steps on offer on `screen`: up to `limit` elements, `pages` and `files`, then `skills`, the
-   * apps and navigation. Thinking gets no `files` or `skills`: it has bash.
+   * apps and navigation. Thinking gets no `files`, `skills`, `search` or `respond`: it has bash, its
+   * own search, and says what it writes.
    */
-  private options(screen: Screen, limit: number, pages: KnownPage[] = [], files?: KnownFile[], skills: Skill[] = [], arrange = false): OptionSet {
-    return stepOptions(screen, this.world.appList(), limit, this.focus(), pages, !!this.world.lock, files, skills, arrange)
+  private async options(screen: Screen, limit: number, pages: KnownPage[] = [], files?: KnownFile[], skills: Skill[] = [], arrange = false, search = false, respond = false): Promise<OptionSet> {
+    const others = this.others()
+    const ranking = await this.ranking(screen, others, limit, pages, files)
+    return stepOptions(screen, this.world.appList(), limit, this.focus(), pages, !!this.world.lock, files, skills, arrange, search, respond, { others, ranking })
+  }
+
+  /** The other apps open, on the screen and in the background: their elements are on offer, and what they show is read. */
+  private others(): Screen[] {
+    return this.world.others?.() ?? []
+  }
+
+  /**
+   * How the elements of every open app are ranked by what the user is asking (see options.ts):
+   * their meaning is scored only when it decides something, with more than `limit` of them or
+   * ordered by relevance.
+   */
+  private async ranking(screen: Screen, others: Screen[], limit: number, pages: KnownPage[], files?: KnownFile[]): Promise<Ranking> {
+    const { order, weights } = this.config.ranking
+    const candidates = candidatesOf(screen, others, pages, files)
+    const decides = order === 'relevance' || candidates.length > limit
+    const meaning = decides && this.relevance ? await this.relevance.score(this.focus(), candidates.map(candidateText)) : undefined
+    return { meaning, weights, order }
+  }
+
+  /** The steps on offer to thinking on `screen`: Jev's, with up to `thinkingElements` elements, and without files or skills. */
+  private thinkingOptions(screen: Screen): Promise<OptionSet> {
+    return this.options(screen, this.config.thinkingElements, [], undefined, [], this.laysOut())
+  }
+
+  /** Stanley lays the screen out: Jev and thinking can arrange it, and the history says what it shows. */
+  private laysOut(): boolean {
+    const w = this.world
+    return !!(w.arrange && w.sides && w.placeable)
+  }
+
+  /** What the screen shows when it changed since the history last said, which it now does; undefined when it didn't. */
+  private layoutChange(): string | undefined {
+    if (!this.laysOut()) return undefined
+    const now = this.shownText(this.world.sides!())
+    if (now === this.layoutKnown) return undefined
+    this.layoutKnown = now
+    return now
+  }
+
+  /** A change to what the screen shows that no step made (the task's end laying it out, the first look) goes into the history as a note. */
+  private noteLayout(): void {
+    const layout = this.layoutChange()
+    if (layout) this.history.stage({ kind: 'note', by: 'agent', layout }, note(layoutLine(layout)))
+  }
+
+  /** Thinking's `screen` for [arrange the screen], as the sides it makes; or what is wrong with it. */
+  private sidesOf(screen: string[][] | undefined): Sides | string {
+    const apps = this.world.placeable?.() ?? []
+    const names = apps.map((a) => `"${a.title}"`).join(', ')
+    if (!screen) return `Pass \`screen\`, the apps on the screen, from ${names}.`
+    const idOf = (name: string) => apps.find((a) => a.id === name.trim() || a.title.toLowerCase() === name.trim().toLowerCase())?.id
+    const unknown = screen.flat().filter((n) => !idOf(n))
+    if (unknown.length) return `There is no app ${unknown.map((n) => `"${n}"`).join(', ')} to put on the screen. The apps: ${names}.`
+    const sides = screen.map((side) => side.map((n) => idOf(n)!))
+    if (!validSides(sides)) return "The screen can't show that: one app alone, or two sides of one or two apps, three at most, none twice."
+    return sides
+  }
+
+  /** What thinking's call runs on: an arrangement gets the sides it named. Returns what is wrong instead, when it can't run. */
+  private thinkingTarget(target: Target, call: ActCall): Target | string {
+    if (target.kind !== 'arrange') return target
+    const sides = this.sidesOf(call.screen)
+    return typeof sides === 'string' ? sides : { kind: 'arrange', sides }
   }
 
   /**
@@ -707,9 +790,10 @@ export class Agent {
   private async knownFiles(): Promise<KnownFile[] | undefined> {
     if (!this.files) return undefined
     const paths = await this.files.paths().catch(() => [])
+    const read = new Set(filesOf(this.task()).flatMap((f) => (f.kind === 'read' && !f.error ? [f.path] : [])))
     return knownFiles(recentEntries(this.view(), this.config.jevTurns), paths).map((f) => {
       const url = f.path.endsWith('/') ? undefined : this.world.fileUrl?.(f.path)
-      return url ? { ...f, url } : f
+      return { ...f, ...(url && { url }), ...(read.has(f.path) && { read: true }) }
     })
   }
 
@@ -747,16 +831,18 @@ export class Agent {
       const screen = await this.world.screen()
       const skills = await this.scanSkills()
       await this.memoryReady
+      this.noteLayout()
       const ask = this.screenAsk(screen)
-      const options = this.options(screen, this.config.maxElements, this.pages(), await this.knownFiles(), this.unread(skills), !!ask)
-      this.warmEffects(screen, options)
+      const unread = this.unread(skills)
+      const options = await this.options(screen, this.config.maxElements, this.pages(), await this.knownFiles(), [], !!ask, !!this.web && this.writes(), true)
       const name = this.name()
-      const state = this.jevState(screen, ask, await this.jevExtra(skills))
+      const state = this.jevState(screen, ask, await this.jevExtra(skills), options)
       const questions: Record<string, Question> = {
         next: { instructions: named(withNote(NEXT_INSTRUCTIONS, this.jevNotes?.next), name), options: namedOptions(NEXT, name) },
         step: { instructions: named(withNote(STEP_INSTRUCTIONS, this.jevNotes?.step), name), options: options.criteria },
         heard: { instructions: named(HEARD_INSTRUCTIONS, name), options: namedOptions(HEARD, name) },
-        words: { instructions: named(WORDS_INSTRUCTIONS, name), options: namedOptions(WORDS, name) },
+        // Whether one of the user's skills is for what they ask: a decision of its own, not one of the steps.
+        ...(unread.length && { skill: { instructions: named(SKILL_INSTRUCTIONS, name), options: skillOptions(unread) } }),
         // What the screen shows when this is done: used by the tick that finishes the task, or arranges the screen.
         ...(ask && { show: { instructions: named(ask.show.instructions, name), options: ask.show.options }, left: { instructions: named(ask.left.instructions, name), options: ask.left.options } }),
       }
@@ -793,7 +879,7 @@ export class Agent {
         if (heard !== null) this.heard = { seen, p: heard }
         this.scheduleEnd()
       }
-      effective = await this.handle(id, result, options, screen, seenEnded, stale, changed, ask)
+      effective = await this.handle(id, result, options, screen, seenEnded, stale, changed, ask, unread)
       this.events.debug?.({ type: 'tick-end', tickId: id, effective, ...(this.outcome ?? { outcome: 'executed' }) })
     } catch (err) {
       // A failed call or step must not leave the loop stuck in `thinking`/`acting`.
@@ -851,6 +937,8 @@ export class Agent {
     changed: () => boolean,
     /** The screen questions this decision answered, if it was asked them. */
     ask: ScreenAsk | null = null,
+    /** The skills the decision was asked about (`skill`). */
+    skills: Skill[] = [],
   ): Promise<string> {
     const c = this.config
     const next = d.answers.next!
@@ -858,9 +946,13 @@ export class Agent {
     const option = step.choice
     const target = options.targets.get(option)
     if (!target) throw new Error(`Jev chose "${option}", which is not an option`)
-    let mode = next.choice as Next
+    // A press that sends or can't be undone is Jev's own call (`submit`), or the app marks it
+    // destructive. Submitting anything else (a field, a place) is just taking that step.
+    const press = target.kind === 'element' && target.node.kind === 'action' ? target.node : null
+    const commits = !!press && (next.choice === 'submit' || !!press.destructive)
+    let mode = (next.choice === 'submit' ? 'act' : next.choice) as Mode
     let gated = false
-    const gate = (rule: GateRule, detail: string, to: Next) => {
+    const gate = (rule: GateRule, detail: string, to: Mode) => {
       this.gate(id, rule, detail)
       gated = true
       mode = to
@@ -868,7 +960,7 @@ export class Agent {
 
     // New words arrived during the call. A navigation Jev is sure of still runs; so does a button
     // it is sure of that doesn't commit, when the new words only add to the ones it decided on.
-    const button = mode === 'act' && target.kind === 'element' && target.node.kind === 'action' ? target.node : null
+    const button = mode === 'act' ? press : null
     const added = () => this.seenUtterance === this.utteranceId && !!this.seen && extendsWords(this.transcript, this.seen)
     const sureStep = mode === 'act' && step.confidence >= c.staleNavConfidence
     if (stale && mode === 'done') {
@@ -881,58 +973,53 @@ export class Agent {
     if (stale) {
       // Not laying the screen out: what to show is the very thing new words can change.
       const confidentNav = sureStep && navigates(target) && target.kind !== 'arrange'
-      if (mode !== 'listen' && !confidentNav && !(sureStep && button && added())) {
+      if (mode !== 'listen' && !confidentNav && !(sureStep && button && !commits && added())) {
         this.gate(id, 'stale', `new words arrived during the call; only a navigation or a button at ≥ ${c.staleNavConfidence} survives`)
         this.report(id, d, 'stale', 'stale-discarded')
         return 'stale'
       }
     }
 
-    // Reading a skill only looks, and what comes next is better decided with it in view: Jev sure of
-    // one reads it, even when it would still listen ("time for a…") or hand over to thinking.
-    if (target.kind === 'skill' && mode !== 'done' && step.confidence >= c.skillStep) {
-      if (mode !== 'act') this.gate(id, 'skill', `the step is sure of "${option}" (${step.confidence.toFixed(2)}): reading it before deciding what comes next`)
+    // A skill is for what the user asks: it is read first, even while they speak, since reading only
+    // looks, and what comes next is decided with it in view.
+    const skill = skillOf(d, skills)
+    if (skill && mode !== 'done' && skill.p >= c.skillRead) {
+      const option = `use skill: ${skill.skill.name}`
+      this.gate(id, 'skill', `P(skill "${skill.skill.name}") ${skill.p.toFixed(2)} ≥ skillRead ${c.skillRead}: reading it before deciding what comes next`)
       this.report(id, d, option, 'executed')
       this.events.status?.('acting')
-      await this.look(id, option, target)
+      await this.look(id, option, { kind: 'skill', skill: skill.skill })
       this.request('action')
       return option
     }
 
-    // What pressing a button does decides when it may run, so it is judged first (once per kind of
-    // button). Not when the decision is too unsure to act either way.
-    const sure = next.confidence >= (this.thoughtDone() ? c.act : Math.min(c.speakingAct, c.speakingChange, c.speakingNav.act))
-    const effect = button && sure ? (await this.judge(id, option, button, screen)).effect : null
-    if (effect && changed() && (effect === 'commits' || !sureStep || !added())) {
-      this.gate(id, 'stale', 'new words arrived while judging the button')
-      this.report(id, d, 'stale', 'stale-discarded')
-      return 'stale'
-    }
-
     // Unsure while the user is still talking: listen for more. Unsure after they finish: think.
     const finished = this.thoughtDone()
-    const unsure: Next = finished ? 'think' : 'listen'
+    const unsure: Mode = finished ? 'think' : 'listen'
     if (mode === 'act') {
       // Going somewhere Jev is sure of is cheap to get wrong, so it needs less certainty that now is the time.
-      const goes = (navigates(target) || effect === 'looks') && step.confidence >= c.speakingNav.step && (heardOf(d) ?? 0) >= c.speakingNav.heard
-      const [name, min] = finished ? ['act', c.act] : effect === 'changes' ? ['speakingChange', c.speakingChange] : goes ? ['speakingNav', c.speakingNav.act] : ['speakingAct', c.speakingAct]
+      const goes = navigates(target) && step.confidence >= c.speakingNav.step && (heardOf(d) ?? 0) >= c.speakingNav.heard
+      const [name, min] = finished ? ['act', c.act] : button && !commits ? ['speakingChange', c.speakingChange] : goes ? ['speakingNav', c.speakingNav.act] : ['speakingAct', c.speakingAct]
       if (next.confidence < min) gate('act-confidence', `P(act) ${next.confidence.toFixed(2)} < ${name} ${min} → ${unsure}`, unsure)
       else if (step.confidence < c.stepConfidence) gate('step-confidence', `step "${option}" at ${step.confidence.toFixed(2)} < stepConfidence ${c.stepConfidence} → ${unsure}`, unsure)
+      // A press before the user finishes is a guess: only one Jev is sure of runs, whatever it does.
+      else if (button && !finished && step.confidence < c.speakingPress) gate('step-confidence', `press "${option}" at ${step.confidence.toFixed(2)} < speakingPress ${c.speakingPress} while the user is speaking → listen`, 'listen')
     }
-    // Anything that only looks runs while the user speaks. So does a change that can be changed
-    // back, as soon as Jev is sure and has heard what it needs ("add one called…" hasn't): no
-    // need to wait for the voice. Type the user's words at a pause, since a field can be retyped.
-    // Commit or hand over only once they finish the thought: thinking only ever gets whole turns.
+    // Going somewhere runs while the user speaks. So does a press that can be undone, as soon as
+    // Jev is sure and has heard what it needs ("add one called…" hasn't): no need to wait for the
+    // voice. Type the user's words at a pause, since a field can be retyped.
+    // Commit, search, respond or hand over only once they finish the thought: thinking only ever gets
+    // whole turns, and what to search for or say hinges on all their words.
     const field = target.kind === 'element' && target.node.kind === 'input'
-    const unheard = effect === 'changes' && (heardOf(d) ?? 0) < c.finished.heard
-    const waits = mode === 'think' || (mode === 'act' && (field || effect === 'commits' || unheard))
+    const unheard = !!button && !commits && (heardOf(d) ?? 0) < c.finished.heard
+    const waits = mode === 'think' || (mode === 'act' && (field || target.kind === 'search' || target.kind === 'respond' || commits || unheard))
     if (waits && !finished) {
       if (this.voiceOn || this.midWord()) {
         gate('mid-speech', mode === 'think' ? 'thinking waits until the user pauses' : `"${option}" is held until the user pauses`, 'listen')
       } else if (!(mode === 'act' && field)) {
         this.report(id, d, mode === 'think' ? 'think' : option, 'gated')
         const what = mode === 'think' ? 'thinking' : `"${option}"`
-        return this.hold(id, 'thought', 'thought-open', `${what} waits until the user finishes the thought`, () => this.handle(id, d, options, screen, this.utteranceEnded, false, changed, ask))
+        return this.hold(id, 'thought', 'thought-open', `${what} waits until the user finishes the thought`, () => this.handle(id, d, options, screen, this.utteranceEnded, false, changed, ask, skills))
       }
     }
 
@@ -958,7 +1045,7 @@ export class Agent {
     if (mode === 'done' && finished && next.confidence < c.done && !this.onlyNavigated()) {
       this.report(id, d, 'think', 'gated')
       this.gate(id, 'done-confidence', `P(done) ${next.confidence.toFixed(2)} < done ${c.done} → think`)
-      return this.think(id, `Jev was unsure it was done (P(done) ${next.confidence.toFixed(2)})`, DONE_CHECK)
+      return this.think(id, `Jev was unsure it was done (P(done) ${next.confidence.toFixed(2)})`)
     }
 
     // A button pressed before the user finished was a guess. Before closing the task, thinking
@@ -967,7 +1054,7 @@ export class Agent {
     if (mode === 'done' && this.utteranceEnded && next.confidence < c.earlyGuessDone && this.guessedEarly()) {
       this.report(id, d, 'think', 'gated')
       this.gate(id, 'early-guess', 'a button was pressed before the user finished; thinking checks it against what they said')
-      return this.think(id, 'a button was pressed before the user finished: check it against what they said', named(EARLY_GUESS, this.name()))
+      return this.think(id, 'a button was pressed before the user finished: check it against what they said')
     }
 
     if (mode === 'done') {
@@ -979,14 +1066,11 @@ export class Agent {
       return 'done'
     }
 
-    // Thinking about a field Jev is sure of is writing: one call instead of a tool loop. The writer
-    // still decides whose words they are, and can ask or say something instead.
-    const writing = target.kind === 'element' && target.node.kind === 'input' && step.confidence >= c.writeStep
-    if (mode === 'think' && !gated && writing) mode = 'act'
-
+    // Too unsure of the step, or of acting now, once the user has finished: thinking takes the turn.
     if (mode === 'think') {
-      this.report(id, d, 'think', gated ? 'gated' : 'executed')
-      return this.think(id, gated ? 'no step stood out clearly' : 'Jev chose think')
+      const chosen = next.choice === 'think' && !gated
+      this.report(id, d, 'think', chosen ? 'executed' : 'gated')
+      return this.think(id, chosen ? 'Jev chose think' : 'no step stood out clearly')
     }
 
     const decision: DecisionMeta = {
@@ -1012,6 +1096,12 @@ export class Agent {
     }
 
     if (target.kind === 'arrange') return this.arrangeStep(id, option, d, ask, decision, changed)
+    if (target.kind === 'search') return this.searchStep(id, option, d)
+    // What to say is written from the state as it is, like any turn of the larger model's.
+    if (target.kind === 'respond') {
+      this.report(id, d, option, 'executed')
+      return this.think(id, 'Jev chose respond')
+    }
 
     if (target.kind === 'folder' || target.kind === 'file' || target.kind === 'skill') {
       this.report(id, d, option, 'executed')
@@ -1021,20 +1111,18 @@ export class Agent {
       return option
     }
 
-    // The user's own words are tidied into the field by the quick model; anything else is thinking's to write or ask.
+    // What goes in a field, the writer writes.
     if (target.kind === 'element' && target.node.kind === 'input') {
       this.report(id, d, option, 'executed')
-      const dictated = dictatedOf(d)
-      if (this.thinker.quick && dictated !== null && dictated >= c.dictated) return this.dictate(id, option, target, decision)
-      return this.write(id, option, target, decision)
+      return this.type(id, option, target, decision)
     }
 
     // Sending, deleting or paying can't be taken back, so it waits for the whole turn, and runs only
     // when Jev, asked just that, is sure the user asked for it. Otherwise thinking gets the go-ahead.
-    if (effect === 'commits') {
+    if (commits) {
       if (!this.utteranceEnded) {
         this.report(id, d, option, 'gated')
-        return this.hold(id, 'turn', 'turn-open', `"${option}" commits, so it waits until the user's turn ends`, () => this.handle(id, d, options, screen, this.utteranceEnded, false, changed, ask))
+        return this.hold(id, 'turn', 'turn-open', `"${option}" commits, so it waits until the user's turn ends`, () => this.handle(id, d, options, screen, this.utteranceEnded, false, changed, ask, skills))
       }
       // What it would send holds the user's words, and speech recognition wasn't sure of some of
       // them: nothing that can't be taken back goes out until they have heard them.
@@ -1042,7 +1130,7 @@ export class Agent {
       if (unsureWords) {
         this.report(id, d, 'think', 'gated')
         this.gate(id, 'unsure-words', `the user's words for it were partly unsure (?): thinking reads them back before "${option}" is pressed`)
-        return this.think(id, `[${option}] would send words that were partly unsure`, unsureNote(option, unsureWords))
+        return this.think(id, `[${option}] would send words that were partly unsure: "${unsureWords}"`)
       }
       const asked = await this.consent(id, option)
       if (changed()) {
@@ -1053,7 +1141,7 @@ export class Agent {
       if (asked < c.consent) {
         this.report(id, d, 'think', 'gated')
         this.gate(id, 'consent', `P(the user asked for "${option}") ${asked.toFixed(2)} < consent ${c.consent} → think`)
-        return this.think(id, `[${option}] can't be taken back, and Jev wasn't sure the user asked for it`, goAheadNote(option))
+        return this.think(id, `[${option}] can't be taken back, and Jev wasn't sure the user asked for it`)
       }
     }
 
@@ -1080,7 +1168,7 @@ export class Agent {
 
   /**
    * Jev chose to lay the screen out: its `show` and `left` answers from the same decision say how
-   * (see screen.ts). Unsure, thinking takes the turn: it can ask, though it can't lay the screen out.
+   * (see screen.ts). Unsure, thinking takes the turn: it can lay the screen out itself, or ask.
    * The screen must be as it was when Jev decided: the user may have changed it.
    */
   private async arrangeStep(id: number, option: string, d: MultiChoiceResult, ask: ScreenAsk | null, decision: DecisionMeta, changed: () => boolean): Promise<string> {
@@ -1106,8 +1194,7 @@ export class Agent {
     this.events.debug?.({ type: 'screen', tickId: id, source: 'step', before, after: sidesKey(choice.sides), confidence: choice.confidence, left: choice.left })
     // Still wanted once the apps it shows are open: no new words, and the screen as Jev saw it.
     const fresh = () => !changed() && sameSides(this.world.sides!(), ask.before)
-    const done = await this.attempt(id, option, { kind: 'arrange', sides: choice.sides, fresh }, {}, 'jev', { jev: true }, decision)
-    if (done) this.arranged = true
+    await this.attempt(id, option, { kind: 'arrange', sides: choice.sides, fresh }, {}, 'jev', { jev: true }, decision)
     this.request('action')
     return option
   }
@@ -1120,113 +1207,98 @@ export class Agent {
 
   /**
    * What Jev reads: the prompt (with `extra` sections, and what the user asked it to remember),
-   * today, the screen's layout when Stanley lays it out, and the conversation with the screen.
+   * today, the screen's layout when Stanley lays it out, and the conversation with the screen and,
+   * when it chooses a step, the steps on offer: its questions are answered apart, so each reads them here.
    */
-  private jevState(screen: Screen, ask: ScreenAsk | null, extra: string[] = []): string {
+  private jevState(screen: Screen, ask: ScreenAsk | null, extra: string[] = [], options?: OptionSet): string {
     const name = this.name()
-    const preamble = jevPreamble({ name, today: this.clock(), extra, memory: this.sessionMemory, shown: ask ? this.shownText(ask.before) : undefined })
-    return `${preamble}\n\n${narrate(this.view(), screen, this.live(), this.config.jevTurns, name)}`
+    const preamble = jevPreamble({ name, today: this.clock(), extra, memory: this.sessionMemory, layout: !!ask })
+    return `${preamble}\n\n${narrate(this.view(), screen, this.live(), this.config.jevTurns, this.others(), options)}`
+  }
+
+  /** There is a writer: a quick model that writes the text of a step (write.ts). */
+  private writes(): boolean {
+    return !!this.thinker.quick
+  }
+
+  /** The writer's instructions and earlier turns, under the name the user calls the assistant now, and today. */
+  private writer(): { instructions: string; examples: QuickExample[] } {
+    const today = this.clock()
+    return { instructions: writerInstructions({ name: this.name(), today }), examples: writerExamples(today) }
+  }
+
+  /** Has the writer read its instructions and earlier turns ahead of time, so its first step is as quick as the rest. */
+  warmWriter(): void {
+    const { instructions, examples } = this.writer()
+    void this.thinker.warm?.(instructions, examples)
   }
 
   /**
-   * Jev chose a field: thinking decides what goes in it, in one step, and whose words they are.
-   * Then Jev carries on (Enter, Send, done). Words Stanley wrote itself are read back, which ends
-   * the task, so nothing sends them before the user has heard them.
+   * The writer takes the turn: the text of the step being taken, from the end of the conversation
+   * as Jev reads it. More words from the user drop it at once, since it hinges on exactly their
+   * words: null then.
    */
-  private async write(id: number, option: string, target: Target, decision: DecisionMeta): Promise<string> {
-    this.events.status?.('writing')
-    const reply = this.begin()
-    const turn = await this.thinkOn(id, 'write', `Jev chose to type into [${option}]`, reply, { kind: 'write', option })
-    if (!turn) return this.stale(id, reply, 'writing')
-    const { result, options } = turn
-    const call = result.calls.find((c) => c.tool === 'act')
-    if (call && resolveOption(options, String(call.input.option)) === option && result.calls.length === 1) {
-      const input = call.input as unknown as ActCall
-      return this.applyWrite(id, option, target, decision, { source: input.wrote ?? 'user', text: input.text ?? '', say: result.text }, reply, call.toolCallId)
-    }
-    // Several steps (tick this, then type that) run as they are; a lookup needs a whole turn.
-    if (result.calls.length) {
-      for (const c of result.calls) this.history.dropCall(c.toolCallId)
-      const ran = await this.runCalls(id, result, reply)
-      if (ran) return ran
-      return this.think(id, `asked to type into [${option}], thinking chose ${result.calls.map((c) => `${c.tool} ${JSON.stringify(c.input)}`).join(', ')}`)
-    }
-    // Text without a call asks; neither means nothing to type yet.
-    return this.applyWrite(id, option, target, decision, result.text ? { source: 'unclear', text: '', say: result.text } : { source: 'missing', text: '', say: '' }, reply)
-  }
-
-  /** Has the quick model read how to tidy dictated words ahead of time, under the name the user calls the assistant now. */
-  warmDictation(): void {
-    void this.thinker.warm?.(named(DICTATE_PROMPT, this.name()), DICTATE_EXAMPLES)
-  }
-
-  /**
-   * Jev is sure the user said the words for the field: the quick model tidies them out of the end
-   * of the conversation, with no history or tools. Nothing yet goes the way of an empty write.
-   */
-  private async dictate(id: number, option: string, target: Target, decision: DecisionMeta): Promise<string> {
-    this.events.status?.('writing')
-    const reply = this.begin()
-    const name = this.name()
-    const value = target.kind === 'element' ? (target.node.value ?? '') : ''
-    const text = dictation(narrate(this.view(), null, this.live(), DICTATION_TURNS, name), option, value)
-    // Like a write, more words from the user drop it at once: it hinges on exactly their words.
+  private async writeStep(step: WriteStep): Promise<{ text: string; input: string; latencyMs: number } | null> {
+    const input = writerInput(narrate(this.view(), null, this.live(), WRITER_TURNS), step)
+    const { instructions, examples } = this.writer()
     const controller = new AbortController()
     this.thinking = controller
     this.thinkingMode = 'write'
     const started = performance.now()
-    let typed: string
     try {
-      typed = await this.thinker.quick!(named(DICTATE_PROMPT, name), text, controller.signal, DICTATE_EXAMPLES)
+      const reply = await this.thinker.quick!(instructions, input, controller.signal, examples)
+      return { text: written(reply), input, latencyMs: performance.now() - started }
     } catch (err) {
       if (!controller.signal.aborted) throw err
-      return this.stale(id, reply, 'writing')
+      return null
     } finally {
-      this.thinking = undefined
+      if (this.thinking === controller) this.thinking = undefined
     }
-    typed = typed.trim().replace(/^["“](.*)["”]$/s, '$1')
-    this.events.debug?.({ type: 'dictate', tickId: id, option, input: text, text: typed, latencyMs: performance.now() - started })
-    return this.applyWrite(id, option, target, decision, typed ? { source: 'user', text: typed, say: '' } : { source: 'missing', text: '', say: '' }, reply)
   }
 
   /**
-   * Types what thinking wrote. The user's own words go in at once, even mid-thought: a field can be
-   * retyped as they go on, which is live dictation. Words Stanley composed wait until the user
-   * finishes the thought, since more words would change them. `toolCallId` is thinking's call,
-   * which typing answers; anything else drops it.
+   * Jev chose a field: the writer writes what goes in it, the user's words or its own. Then Jev
+   * carries on (Enter, Send, done). Without a writer, thinking takes the turn once the user has
+   * finished.
    */
-  private async applyWrite(id: number, option: string, target: Target, decision: DecisionMeta, w: Writing, reply: Reply, toolCallId?: string): Promise<string> {
-    const text = w.source === 'missing' || w.source === 'unclear' ? '' : unmarked(w.text).replace(/\s+/g, ' ').trim()
-    const drop = () => toolCallId && this.history.dropCall(toolCallId)
-    // Words thinking isn't sure of are never typed: it asks what was meant, quoting what was heard.
-    if (w.source === 'unclear') {
-      drop()
-      this.steps--
-      this.recent = this.recent.slice(0, -1)
-      if (!this.thoughtDone()) {
-        this.drop(reply)
-        this.halt('listening')
-        return 'listen'
-      }
-      this.finish(reply, w.say.trim() || `Sorry, I didn't catch what to put in ${option.split(' › ').at(-1)}. Could you say it again?`)
-      await this.finishTask('done')
-      return 'asked'
+  private async type(id: number, option: string, target: Target, decision: DecisionMeta): Promise<string> {
+    if (!this.writes()) {
+      if (this.thoughtDone()) return this.think(id, `the next step is typing into [${option}], and there is no quick model to write it`)
+      this.halt('listening')
+      return 'listen'
     }
-    if (text && w.source === 'stanley' && !this.thoughtDone()) {
-      return this.hold(id, 'thought', 'thought-open', `words Stanley wrote for [${option}] wait until the user finishes the thought`, () => this.applyWrite(id, option, target, decision, w, reply, toolCallId))
+    this.events.status?.('writing')
+    const reply = this.begin()
+    const value = target.kind === 'element' ? (target.node.value ?? '') : ''
+    const wrote = await this.writeStep({ kind: 'field', field: option, value })
+    if (!wrote) return this.stale(id, reply, 'writing')
+    this.events.debug?.({ type: 'dictate', tickId: id, option, input: wrote.input, text: wrote.text, latencyMs: wrote.latencyMs })
+    return this.applyWrite(id, option, target, decision, wrote.text, reply)
+  }
+
+  /**
+   * Types what the writer wrote. The user's own words go in at once, even mid-thought: a field can
+   * be retyped as they go on, which is live dictation. Words of Stanley's own (`ownWords`) wait
+   * until the user finishes the thought, since more words would change them, and prose is read back
+   * before anything can send it. Nothing to type yet: listen, or thinking takes the turn once the
+   * user has finished.
+   */
+  private async applyWrite(id: number, option: string, target: Target, decision: DecisionMeta, wrote: string, reply: Reply): Promise<string> {
+    const text = unmarked(wrote).replace(/\s+/g, ' ').trim()
+    const before = target.kind === 'element' ? (target.node.value ?? '') : ''
+    const own = !!text && ownWords(text, this.heardThisTask(), before)
+    if (own && !this.thoughtDone()) {
+      return this.hold(id, 'thought', 'thought-open', `words of Stanley's own for [${option}] wait until the user finishes the thought`, () => this.applyWrite(id, option, target, decision, wrote, reply))
     }
-    let say = w.say.trim()
-    // Prose Stanley composed is read back word for word before anything can send it. A value
-    // (a number, a choice from a list, a word or two) is just filling in what was asked.
+    // A value (a number, a choice from a list, a word or two) is just filling in what was asked.
     const prose = target.kind === 'element' && target.role !== 'combobox' && text.split(/\s+/).length > 3
-    if (w.source === 'stanley' && prose && !say.includes(text)) say = `${say ? `${say} ` : ''}I wrote: "${text}"${say.endsWith('?') ? '' : ' Should I go ahead?'}`
+    const say = own && prose ? `I wrote: "${text}" Should I go ahead?` : ''
     // Re-deciding after more words often lands on the same text: retyping it isn't a step.
-    const unchanged = !!text && target.kind === 'element' && text === (target.node.value ?? '')
+    const unchanged = !!text && text === before
     if (text && !unchanged) {
       this.events.status?.('acting')
-      const record: StepRecord = toolCallId ? { apply: toolCallId } : { jev: true }
-      await this.attempt(id, option, target, { text }, 'thinking', record, decision, w.source === 'stanley' ? 'stanley' : 'user')
-    } else drop()
+      await this.attempt(id, option, target, { text }, 'writer', { jev: true }, decision, own ? 'you' : 'user')
+    }
     this.finish(reply, say)
     if (say) {
       await this.finishTask('done')
@@ -1247,45 +1319,10 @@ export class Agent {
     return option
   }
 
-  /**
-   * A single step that thinking answered with several (tick this, then type that): they run in
-   * order, as thinking's own, instead of a whole turn deciding them again. Only `act` calls on
-   * options still on screen, typing only the user's own words, and nothing that commits before the
-   * user's turn is over or with words they may not have said. Where one can't run, what ran stays
-   * and the rest is left: to a whole turn when nothing ran, else to Jev, which carries on.
-   * Returns what took effect, or null when nothing ran. The calls must already be dropped.
-   */
-  private async runCalls(id: number, result: ThinkResult, reply: Reply): Promise<string | null> {
-    if (!result.calls.every((c) => c.tool === 'act')) return null
-    let last: string | null = null
-    for (const call of result.calls) {
-      const input = call.input as unknown as ActCall
-      const options = this.options(await this.world.screen(), this.config.thinkingElements)
-      const option = resolveOption(options, String(input.option))
-      const target = option && options.targets.get(option)
-      if (!option || !target || target.kind === 'lock' || target.kind === 'folder' || target.kind === 'file' || target.kind === 'skill') break
-      const field = target.kind === 'element' && target.node.kind === 'input'
-      if (field && (input.wrote !== 'user' || !input.text?.trim())) break
-      if (target.kind === 'element' && target.node.kind === 'action') {
-        const { effect } = await this.judge(id, option, target.node, await this.world.screen())
-        if (effect === 'commits' && (!this.utteranceEnded || this.unsureDictation())) break
-      }
-      const args: ActionArgs = field ? { text: unmarked(input.text!).replace(/\s+/g, ' ').trim() } : {}
-      this.events.status?.(field ? 'writing' : 'acting')
-      const done = await this.attempt(id, option, target, args, 'thinking', { apply: call.toolCallId }, undefined, field ? 'user' : undefined)
-      if (!done) break
-      last = option
-    }
-    if (!last) return null
-    this.events.debug?.({ type: 'gate', tickId: id, rule: 'ran-calls', detail: `ran thinking's steps up to "${last}" without a whole turn` })
-    const say = result.text.trim()
-    this.finish(reply, say)
-    if (say) {
-      await this.finishTask('done')
-      return last
-    }
-    this.request('action')
-    return last
+  /** The user's words this task, as heard: what tells Stanley's own words in a field from theirs. */
+  private heardThisTask(): string {
+    const words = this.task().flatMap((e) => (e.meta.kind === 'words' && typeof e.message?.content === 'string' ? [e.message.content] : []))
+    return [...words, fullText(this.transcript)].join(' ')
   }
 
   /** New words made what thinking was doing out of date: it says nothing, and Jev decides again with them. */
@@ -1296,41 +1333,16 @@ export class Agent {
     return 'stale'
   }
 
-  /**
-   * Judges what each kind of button on the screen does, in the background, so a press waits for
-   * the judgement only when it comes before the screen's first decision is back.
-   */
-  private warmEffects(screen: Screen, options: OptionSet): void {
-    if (!this.config.warmEffects) return
-    const appId = screen.id.split(':')[0] ?? screen.id
-    const text = `## Screen: ${screen.title}\n${screen.markdown}`
-    const kinds = new Set<string>()
-    for (const [option, target] of options.targets) {
-      if (target.kind !== 'element' || target.node.kind !== 'action') continue
-      const kind = option.split(' › ').at(-1)!
-      if (kinds.has(kind)) continue
-      kinds.add(kind)
-      this.effects.judge({ option, node: target.node, appId, screen: text }).catch(() => {})
-    }
-  }
-
   /** Jev's P(the user asked for what pressing a button that commits does), from the conversation and the screen as it is now. */
   private async consent(id: number, option: string): Promise<number> {
     const started = performance.now()
     const name = this.name()
     const screen = await this.world.screen()
-    const state = `${named(CONSENT_PROMPT, name)}\n\n${narrate(this.view(), screen, this.live(), this.config.jevTurns, name)}`
+    // The state every decision reads, and the question of this press.
+    const state = this.jevState(screen, this.screenAsk(screen), await this.jevExtra())
     const result = await this.jev.choose({ state, instructions: named(consentInstructions(option), name), options: namedOptions(CONSENT, name) })
     this.events.debug?.({ type: 'consent', tickId: id, option, probabilities: result.probabilities, latencyMs: performance.now() - started })
     return result.probabilities.asked ?? 0
-  }
-
-  private async judge(id: number, option: string, node: AgentNode, screen: Screen): Promise<EffectVerdict> {
-    const started = performance.now()
-    const appId = screen.id.split(':')[0] ?? screen.id
-    const verdict = await this.effects.judge({ option, node, appId, screen: `## Screen: ${screen.title}\n${screen.markdown}` })
-    this.events.debug?.({ type: 'effect', tickId: id, option, latencyMs: performance.now() - started, ...verdict })
-    return verdict
   }
 
   /**
@@ -1355,23 +1367,65 @@ export class Agent {
         : target.kind === 'folder'
         ? { kind: 'list', path: target.path, entries: error ? [] : result.output.split('\n').filter((l) => l.trim()), ...(error && { error }), utteranceId }
         : { kind: 'read', path: target.path, excerpt: error ? '' : result.output.slice(0, 1000), ...(error && { error }), utteranceId }
-    const toolCallId = `jev_file-${++this.stepCount}`
+    const toolCallId = `call_file-${++this.stepCount}`
     this.history.stagePair({ toolCallId, tool: 'bash', input: { command }, by: 'jev' }, { type: 'text', value: bashText(result) }, { toolCallId, file })
     this.events.debug?.({ type: 'act', tickId, option, summary: error ? `failed: ${error}` : `ran ${command}`, observation: bashText(result), latencyMs: performance.now() - started })
   }
 
+  /**
+   * Jev chose to search the web: the writer writes what to search for, and the search goes into the
+   * history as Stanley's own, as thinking's do. Jev then decides with what it found: open a page, or
+   * let thinking answer from it. More words from the user drop it. With nothing to search for yet,
+   * thinking takes the turn.
+   */
+  private async searchStep(id: number, option: string, d: MultiChoiceResult): Promise<string> {
+    this.report(id, d, option, 'executed')
+    this.events.status?.('acting')
+    const started = performance.now()
+    const stale = () => {
+      this.gate(id, 'stale', 'new words arrived while searching; re-deciding with them')
+      this.outcome = { outcome: 'stale-discarded' }
+      return 'stale'
+    }
+    const wrote = await this.writeStep({ kind: 'search' })
+    if (!wrote) return stale()
+    const query = wrote.text
+    this.events.debug?.({ type: 'query', tickId: id, input: wrote.input, text: query, latencyMs: wrote.latencyMs })
+    if (!query) return this.think(id, 'Jev chose to search the web, but there was nothing to search for yet')
+    this.doing = `searching the web for "${query}".`
+    const controller = new AbortController()
+    this.thinking = controller
+    this.thinkingMode = 'write'
+    let results: WebResult[] = []
+    let error: string | undefined
+    try {
+      results = await this.web!.search(query, controller.signal)
+    } catch (err) {
+      if (controller.signal.aborted) return stale()
+      error = err instanceof Error ? err.message : String(err)
+    } finally {
+      if (this.thinking === controller) this.thinking = undefined
+    }
+    const output = error ? { type: 'error-text' as const, value: `The search failed: ${error}` } : { type: 'json' as const, value: json({ query, results } satisfies SearchOutput) }
+    const toolCallId = `call_search-${++this.stepCount}`
+    this.history.stagePair({ toolCallId, tool: 'search', input: { query }, by: 'jev' }, output, { toolCallId, lookup: { kind: 'search', query, results, ...(error && { error }), utteranceId: this.utteranceId || undefined } })
+    const found = results.map((r, i) => `${i + 1}. "${r.title}"\n   ${r.url}\n   ${r.excerpt}`).join('\n')
+    this.events.debug?.({ type: 'act', tickId: id, option, summary: error ? `failed: ${error}` : `searched the web for "${query}": ${results.length} found`, observation: found || undefined, latencyMs: performance.now() - started })
+    this.request('action')
+    return option
+  }
+
   /** Runs one step and records it (see `StepRecord`). A failure is recorded as its result, then rethrown. */
-  private async step(tickId: number, option: string, target: Target, args: ActionArgs, by: Actor, record: StepRecord, decision?: DecisionMeta, wrote?: 'user' | 'stanley'): Promise<StepResult> {
+  private async step(tickId: number, option: string, target: Target, args: ActionArgs, by: Actor, record: StepRecord, decision?: DecisionMeta, wrote?: 'user' | 'you'): Promise<StepResult> {
     const started = performance.now()
     // The words the decision was made on: a change made before the user finished splits their turn.
     const basis = this.seen && this.seenUtterance === this.utteranceId ? this.seen : this.transcript
     const heardWords = fullText(basis).trim().split(/\s+/).filter(Boolean).length
     const meta: StepMeta = { id: `step-${++this.stepCount}`, by, target: stepTarget(option, target), text: args.text, wrote, utteranceId: this.utteranceId, heardWords, decision, summary: '' }
     const save = (step: StepMeta) => {
-      const output = step.error ? { type: 'error-text' as const, value: step.summary } : { type: 'text' as const, value: step.summary }
-      const input = { option, ...(args.text !== undefined && { text: args.text }), ...(wrote && { wrote }) }
-      if ('jev' in record) this.history.stagePair({ toolCallId: `jev_${step.id}`, tool: 'act', input, by }, output, { toolCallId: `jev_${step.id}`, step })
-      else if ('apply' in record) this.history.applyCall(record.apply, { tool: 'act', input }, output, { toolCallId: record.apply, step })
+      const output = step.error ? { type: 'error-text' as const, value: step.summary } : { type: 'text' as const, value: stepResult(step) }
+      const input = { option, ...(args.text !== undefined && { text: args.text }) }
+      if ('jev' in record) this.history.stagePair({ toolCallId: `call_${step.id}`, tool: 'act', input, by }, output, { toolCallId: `call_${step.id}`, step })
       else record.turn(step)
     }
     let result: StepResult
@@ -1384,6 +1438,8 @@ export class Agent {
         result = await this.world.arrange!(target.sides, target.fresh)
       }
       else if (target.kind === 'folder' || target.kind === 'file' || target.kind === 'skill') throw new Error('Files are looked at in the background, not opened')
+      else if (target.kind === 'search') throw new Error('Searches run in the background, not on the screen')
+      else if (target.kind === 'respond') throw new Error('Responding is thinking writing what to say, not a step on the screen')
       else if (target.kind === 'lock') {
         // The session ends with it: this agent is cancelled, and what it reports from here is ignored.
         await this.world.lock!()
@@ -1403,10 +1459,12 @@ export class Agent {
     }
     // A page is recorded under the title it opened with, which the address alone doesn't give.
     if (meta.target.kind === 'page' && result.title) meta.target = { ...meta.target, title: result.title }
-    save({ ...meta, summary: result.summary, observation: result.observation })
+    // What the screen shows then, when the step changed it; arranging says it either way.
+    const layout = this.layoutChange() ?? (target.kind === 'arrange' ? (this.layoutKnown ?? undefined) : undefined)
+    save({ ...meta, summary: result.summary, observation: result.observation, layout })
     // Full screen lays the screen out as surely as arranging it: the end of the task leaves it. Going
     // somewhere after that (home, then Tasks) leaves the screen to the end of the task again.
-    if (target.kind === 'element' && target.node.id.endsWith(FULLSCREEN)) this.arranged = true
+    if (target.kind === 'arrange' || (target.kind === 'element' && target.node.id.endsWith(FULLSCREEN))) this.arranged = true
     else if (target.kind === 'app' || target.kind === 'page' || target.kind === 'back' || (target.kind === 'element' && target.node.kind === 'location')) this.arranged = false
     const nodeId = target.kind === 'element' ? target.node.id : undefined
     this.events.debug?.({ type: 'act', tickId, option, nodeId, args, ...result, latencyMs: performance.now() - started })
@@ -1418,12 +1476,12 @@ export class Agent {
   /**
    * Hands the turn to thinking, which continues the history. It acts on the same options, and
    * whatever it writes is said to the user. Then the task ends and the next turn starts with Jev
-   * again. `handover` is why, for the debug window; `note`, if any, is what thinking is told.
+   * again. `handover` is why, for the debug window only: thinking reads the state, as every turn does.
    */
-  private async think(id: number, handover: string, note?: string): Promise<string> {
+  private async think(id: number, handover: string): Promise<string> {
     this.events.status?.('thinking')
     const reply = this.begin()
-    const turn = await this.thinkOn(id, 'run', handover, reply, undefined, note)
+    const turn = await this.thinkOn(id, handover, reply)
     if (!turn) {
       // Out of date, so it says nothing more. Steps it already took stay done, and in the history.
       return this.stale(id, reply, 'thinking')
@@ -1440,33 +1498,26 @@ export class Agent {
   }
 
   /**
-   * A thinking call: the screen goes in as the observation (with `single`'s note), the turn runs
-   * on the whole history, and what it did is appended exactly as it was sent. Returns null when
-   * new words aborted it; a turn cut short still leaves the steps it took.
+   * A thinking call: the screen goes in as the observation, the turn runs on the whole history, and
+   * what it did is appended exactly as it was sent. Returns null when new words aborted it; a turn
+   * cut short still leaves the steps it took.
    */
-  private async thinkOn(
-    id: number,
-    mode: 'run' | 'write',
-    handover: string,
-    reply: Reply,
-    single?: { kind: 'write'; option: string },
-    note?: string,
-  ): Promise<{ result: ThinkResult; options: OptionSet; steps: number } | null> {
+  private async thinkOn(id: number, handover: string, reply: Reply): Promise<{ result: ThinkResult; options: OptionSet; steps: number } | null> {
     const screen = await this.world.screen()
-    const options = this.options(screen, this.config.thinkingElements)
-    const next = single ? writeNote(single.option, !!this.files) : note
+    const options = await this.thinkingOptions(screen)
     const news = await this.skillNews()
     await this.memoryReady
     const files = await this.topFiles()
-    const working = mode === 'run' ? (this.background?.working() ?? []) : []
+    const working = this.background?.working() ?? []
     const tasks = working.length ? [`Background tasks still working: ${working.map((t) => `${t.id}, "${t.title}"`).join('; ')}.`] : []
-    const sent = this.history.send(this.observe(screen, options, files, [...(news ? [news] : []), ...tasks, ...(next ? [next] : [])]), this.live())
-    // A whole turn has every result noted in the history: it tells the user, so none is told again.
-    if (mode === 'run') this.background?.sent()
-    this.events.debug?.({ type: 'think-start', tickId: id, mode, handover, option: single?.option, entries: sent.entries, cacheAt: sent.cacheAt })
+    this.noteLayout()
+    const sent = this.history.send(this.observe(screen, options, files, [...(news ? [news] : []), ...tasks]), this.live())
+    // A turn has every result noted in the history: it tells the user, so none is told again.
+    this.background?.sent()
+    this.events.debug?.({ type: 'think-start', tickId: id, mode: 'run', handover, entries: sent.entries, cacheAt: sent.cacheAt })
     const controller = new AbortController()
     this.thinking = controller
-    this.thinkingMode = mode
+    this.thinkingMode = 'run'
     this.doing = 'working out what to do or say.'
     const started = performance.now()
     const ran = new Map<string, Ran>()
@@ -1475,14 +1526,13 @@ export class Agent {
     const end = (fields: { text: string; aborted: boolean; result?: ThinkResult }) => {
       const u = fields.result?.usage
       const usage = u && { inputTokens: u.inputTokens, outputTokens: u.outputTokens, cacheReadTokens: u.inputTokenDetails?.cacheReadTokens, cacheWriteTokens: u.inputTokenDetails?.cacheWriteTokens, lastInputTokens: fields.result?.lastInputTokens }
-      this.events.debug?.({ type: 'think-end', tickId: id, text: fields.text, steps, latencyMs: performance.now() - started, aborted: fields.aborted, ...(fields.result?.calls.length && { calls: fields.result.calls }), ...(usage && { usage }) })
+      this.events.debug?.({ type: 'think-end', tickId: id, text: fields.text, steps, latencyMs: performance.now() - started, aborted: fields.aborted, ...(usage && { usage }) })
     }
     try {
       const result = await this.thinker.run({
         instructions: this.instructions,
         messages: sent.messages,
         cacheAt: sent.cacheAt,
-        single,
         maxSteps: this.config.thinkingSteps,
         signal,
         onText: (delta) => this.stream(reply, delta),
@@ -1508,7 +1558,7 @@ export class Agent {
       })
       const { final, toolCallIds } = this.history.appendTurn(result.messages, result.sent, ran, id)
       this.saw(ran, toolCallIds)
-      if (!single) reply.final = final
+      reply.final = final
       end({ text: result.text, aborted: false, result })
       return { result, options, steps }
     } catch (err) {
@@ -1537,7 +1587,7 @@ export class Agent {
    * thinking last saw the same; the top of the folder (`files`, two levels) when it changed; then notes.
    */
   private observe(screen: Screen, options: OptionSet, files: string, notes: string[]): string {
-    const view = screenText(screen, options)
+    const view = screenText(screen, options, this.others())
     const body = view === this.lastSeen ? '<screen unchanged/>' : view
     this.lastSeen = view
     const listing = files && files !== this.lastFiles ? [files] : []
@@ -1562,17 +1612,19 @@ export class Agent {
   /** One `act` call by thinking. Returns what it sees next. */
   private async thinkStep(id: number, call: ActCall, toolCallId: string, signal: AbortSignal, ran: Map<string, Ran>): Promise<string> {
     signal.throwIfAborted()
-    const { text, wrote } = call
+    const { text } = call
     let option = call.option
-    const options = this.options(await this.world.screen(), this.config.thinkingElements)
+    const options = await this.thinkingOptions(await this.world.screen())
     const done = (result: string) => {
       this.events.debug?.({ type: 'think-step', tickId: id, option, text, result })
       return result
     }
     const name = resolveOption(options, option)
-    const target = name && options.targets.get(name)
-    if (!name || !target) return done(`There is no option [${option}] right now. Use a name exactly as listed.\n\n${await this.screenText(options)}`)
+    const listed = name && options.targets.get(name)
+    if (!name || !listed) return done(`There is no option [${option}] right now. Use a name exactly as listed.\n\n${await this.screenText(options)}`)
     option = name
+    const target = this.thinkingTarget(listed, call)
+    if (typeof target === 'string') return done(target)
     this.doing = `a step on the screen, [${option}]${text ? `, typing "${text}"` : ''}.`
     const args: ActionArgs = {}
     const field = target.kind === 'element' && target.node.kind === 'input'
@@ -1584,7 +1636,10 @@ export class Agent {
     let step: StepMeta | undefined
     let outcome: string
     try {
-      outcome = (await this.step(id, option, target, args, 'thinking', { turn: (s) => (step = s) }, undefined, field ? wrote : undefined)).summary
+      const before = target.kind === 'element' ? (target.node.value ?? '') : ''
+      const wrote = field && args.text ? (ownWords(args.text, this.heardThisTask(), before) ? 'you' : 'user') : undefined
+      await this.step(id, option, target, args, 'thinking', { turn: (s) => (step = s) }, undefined, wrote)
+      outcome = stepResult(step!)
     } catch (err) {
       outcome = `That failed: ${err instanceof Error ? err.message : String(err)}`
     }
@@ -1859,11 +1914,11 @@ export class Agent {
     const id = ++this.tickId
     this.openTask()
     const screen = await this.world.screen().catch(() => null)
-    this.events.debug?.({ type: 'tick-start', tickId: id, reason: 'task', utteranceId: this.utteranceId, transcript: this.transcript, utteranceEnded: this.utteranceEnded, screenId: screen?.id ?? '', state: narrate(this.view(), screen, this.live(), this.config.jevTurns, this.name()), questions: {} })
+    this.events.debug?.({ type: 'tick-start', tickId: id, reason: 'task', utteranceId: this.utteranceId, transcript: this.transcript, utteranceEnded: this.utteranceEnded, screenId: screen?.id ?? '', state: narrate(this.view(), screen, this.live(), this.config.jevTurns, this.others()), questions: {} })
     for (const task of waiting) this.events.debug?.({ type: 'task', action: 'deliver', taskId: task.id, title: task.title, tickId: id })
     let effective = 'error'
     try {
-      effective = await this.think(id, `background task ${waiting.map((t) => t.id).join(', ')} ended`, named(TASK_DONE, this.name()))
+      effective = await this.think(id, `background task ${waiting.map((t) => t.id).join(', ')} ended`)
       this.events.debug?.({ type: 'tick-end', tickId: id, effective, ...(this.outcome ?? { outcome: 'executed' }) })
     } catch (err) {
       this.fail(id, null, err)
@@ -1891,7 +1946,7 @@ export class Agent {
 
   private async screenText(options?: OptionSet): Promise<string> {
     const screen = await this.world.screen()
-    return screenText(screen, options ?? this.options(screen, this.config.thinkingElements))
+    return screenText(screen, options ?? (await this.thinkingOptions(screen)), this.others())
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────────
@@ -1907,6 +1962,7 @@ export class Agent {
     if (this.taskOpen) this.history.stage({ kind: 'event', event: 'task-end' })
     this.taskOpen = false
     await this.settleScreen(end, arranged)
+    this.noteLayout()
     this.halt(status)
   }
 
@@ -2157,11 +2213,9 @@ export class Agent {
     const step = d?.answers.step
     this.outcome = { outcome, detail }
     const heard = d ? heardOf(d) : null
-    const dictated = d ? dictatedOf(d) : null
     this.events.tick?.({
       id,
       ...(heard !== null && { heard }),
-      ...(dictated !== null && { dictated }),
       next: d?.answers.next ? { ...brief(d.answers.next)!, probabilities: d.answers.next.probabilities } : null,
       step: step
         ? {
@@ -2180,14 +2234,6 @@ export class Agent {
   }
 }
 
-/** What goes in a field: the user's words, Stanley's, nothing yet, or a question instead. */
-interface Writing {
-  source: 'user' | 'stanley' | 'missing' | 'unclear'
-  text: string
-  /** What to say to the user: '' for nothing. */
-  say: string
-}
-
 /** A web page: written, it is drawn on screen. */
 const PAGE = /\.html?$/i
 
@@ -2197,28 +2243,28 @@ const errorText = (err: unknown) => (err instanceof Error ? err.message : String
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as JSONValue
 
 /** The screen and its options, as thinking reads them. */
-function screenText(screen: Screen, options: OptionSet): string {
+/**
+ * The screens and their options, as thinking reads them: the one Stanley works on, the other apps
+ * in front of the user, and a line for each app in the background, as Jev reads them (`narrate`).
+ */
+function screenText(screen: Screen, options: OptionSet, others: Screen[] = []): string {
   const where = screen.visible ? 'in front of the user' : 'in the background'
-  return `<screen title="${screen.title}" where="${where}">\n${screen.markdown}\n</screen>\n<options>\n${optionList(options)}\n</options>`
+  const shown = others.filter((o) => o.visible).map((o) => `\n<screen title="${o.title}" where="also in front of the user">\n${o.markdown}\n</screen>`)
+  const hidden = background(others)
+  return `<screen title="${screen.title}" where="${where}">\n${screen.markdown}\n</screen>${shown.join('')}${hidden.length ? `\n<background>\n${hidden.join('\n')}\n</background>` : ''}\n<options>\n${optionList(options)}\n</options>`
 }
 
-/** How many of the user's turns the quick model reads for a dictated field. */
-const DICTATION_TURNS = 3
-
-/** P(the user said the words) from Jev's `words` answer, or null when the decision didn't include it. */
-function dictatedOf(d: MultiChoiceResult): number | null {
-  const words = d.answers.words
-  if (!words) return null
-  return words.probabilities.user ?? (words.choice === 'user' ? words.confidence : 1 - words.confidence)
-}
+/** How many of the user's turns the writer reads: enough for what goes in the step, few enough to answer at once. */
+const WRITER_TURNS = 3
 
 /**
  * What Jev reads ahead of the conversation: the prompt (with `extra` sections, and what the user
- * asked it to remember), today, and how the screen is laid out (`shown`), when Stanley lays it out.
+ * asked it to remember), how the screen works when Stanley lays it out (`layout`), and today, in
+ * the order thinking's instructions have them. What the screen shows is in the conversation.
  */
-export function jevPreamble(o: { name: string; today: Date; extra?: string[]; memory?: string; shown?: string }): string {
-  const prompt = [SYSTEM_PROMPT, ...(o.extra ?? []), ...(o.memory?.trim() ? [jevMemory(o.memory)] : [])].join('\n\n')
-  return [named(prompt, o.name), `Today is ${longDate(o.today)}.`, ...(o.shown ? [named(layoutText(o.shown), o.name)] : [])].join('\n\n')
+export function jevPreamble(o: { name: string; today: Date; extra?: string[]; memory?: string; layout?: boolean }): string {
+  const prompt = [SYSTEM_PROMPT, ...(o.extra ?? []), ...(o.memory?.trim() ? [jevMemory(o.memory)] : []), ...(o.layout ? [SCREEN_PROMPT] : [])].join('\n\n')
+  return [named(prompt, o.name), `Today is ${longDate(o.today)}.`].join('\n\n')
 }
 
 /** How a task ended, for what the screen shows then (see `settleScreen`). */
@@ -2232,6 +2278,21 @@ interface ScreenEnd {
 }
 
 /** P(finished) from Jev's `heard` answer, or null when the decision didn't include it. */
+/** Whether one of the user's skills is for what they ask now. */
+export const SKILL_INSTRUCTIONS = 'Is one of your skills for what the user is asking now? Which one?'
+
+/** The `skill` question's options: each skill by when it is for, and none. */
+function skillOptions(skills: Skill[]): Record<string, string> {
+  return { none: 'None of your skills is for what the user is asking now.', ...Object.fromEntries(skills.map((s) => [s.name, s.description])) }
+}
+
+/** The skill Jev's `skill` answer chose and its probability, or null for none or no question. */
+function skillOf(d: MultiChoiceResult, skills: Skill[]): { skill: Skill; p: number } | null {
+  const answer = d.answers.skill
+  const skill = answer && skills.find((s) => s.name === answer.choice)
+  return skill ? { skill, p: answer.probabilities[skill.name] ?? answer.confidence } : null
+}
+
 function heardOf(d: MultiChoiceResult): number | null {
   const heard = d.answers.heard
   if (!heard) return null
@@ -2245,16 +2306,12 @@ export function stepTarget(option: string, target: Target): StepTarget {
   if (target.kind === 'page') return { kind: 'page', url: target.url, title: target.title }
   if (target.kind === 'arrange') return { kind: 'arrange' }
   if (target.kind === 'folder' || target.kind === 'file' || target.kind === 'skill') throw new Error('Files are looked at in the background, not opened')
+  if (target.kind === 'search') throw new Error('Searches run in the background, not on the screen')
+  if (target.kind === 'respond') throw new Error('Responding is thinking writing what to say, not a step on the screen')
   return { kind: target.kind }
 }
 
 /** One option per line, the name in brackets as the conversation writes elements. */
-function optionList(options: OptionSet): string {
-  return Object.entries(options.criteria)
-    .map(([name, description]) => `- [${name}]${description ? ` ${description}` : ''}`)
-    .join('\n')
-}
-
 /**
  * The option a language model meant. Exact first; then without brackets, quotes and case; then the
  * one option whose name ends with or contains what it wrote. Models paraphrase long names.

@@ -103,7 +103,7 @@
     {/if}
     {#if config}
       <span class="ml-1.5 text-xs text-muted-foreground" title="Agent guardrail config for this session">
-        act {config.act} · speaking {config.speakingAct} · done {config.done} · step {config.stepConfidence} · commits {config.commits} · stale nav {config.staleNavConfidence} ·
+        act {config.act} · speaking {config.speakingAct} · done {config.done} · step {config.stepConfidence} · stale nav {config.staleNavConfidence} ·
         steps {config.maxStepsPerUtterance} · oscillation {config.oscillation.repeats}/{config.oscillation.window} · elements {config.maxElements}
       </span>
     {/if}

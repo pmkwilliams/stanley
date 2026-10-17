@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentNode } from '@stanley/app-sdk'
 import { resolveOption } from '../src/agent'
-import { findElement, navigates, stepOptions } from '../src/options'
+import { findElement, navigates, stepOptions, type Ranking } from '../src/options'
 import type { Screen } from '../src/world'
 
 const article: AgentNode = {
@@ -125,5 +125,34 @@ describe('resolveOption', () => {
     expect(resolveOption(options, 'archive')).toBe('Archive')
     expect(resolveOption(options, 'rchive')).toBeUndefined()
     expect(resolveOption(options, 'Send')).toBeUndefined()
+  })
+})
+
+describe('stepOptions across apps', () => {
+  const music: Screen = { id: 'music:player', title: 'Music', visible: false, markdown: '# Music\nPlaying: "Tura" by Hulk Hodn', elements: [{ id: 'music:toggle', kind: 'action', label: 'Pause' }, { id: 'music:next', kind: 'action', label: 'Next' }] }
+  const tasks: Screen = { id: 'tasks:list', title: 'Tasks', visible: true, markdown: '# Tasks', elements: [{ id: 'tasks:title', kind: 'input', label: 'New task' }] }
+  const weights: Ranking['weights'] = { meaning: 1, word: 0.1, tier: { focused: 0.06, visible: 0.03, background: 0 }, near: 0.02 }
+  /** What the embedding model makes of "stop the song": the music closest. */
+  const meaning = (text: string) => (text.startsWith('Music › Pause') ? 0.69 : text.startsWith('Music › Next') ? 0.61 : 0.45)
+  const ranked = (order: Ranking['order'], limit = 50) => {
+    const all = stepOptions(screen, apps, 999, '', [], false, undefined, [], false, false, false, { others: [tasks, music] })
+    const texts = new Map(Object.entries(all.criteria).map(([name, description]) => [name, `${name}, ${description}`]))
+    return stepOptions(screen, apps, limit, 'stop the song', [], false, undefined, [], false, false, false, { others: [tasks, music], ranking: { meaning: new Map([...texts.values()].map((t) => [t, meaning(t)])), weights, order } })
+  }
+
+  it("offers the other apps' elements after the screen's, named by their app and said where they are", () => {
+    const options = stepOptions(screen, apps, 50, '', [], false, undefined, [], false, false, false, { others: [tasks, music] })
+    expect(Object.keys(options.criteria).slice(4, 8)).toEqual(['Archive', 'Tasks › New task', 'Music › Pause', 'Music › Next'])
+    expect(options.criteria['Tasks › New task']).toBe('field, empty, in Tasks, on screen')
+    expect(options.criteria['Music › Pause']).toBe('button, in Music, in the background')
+    expect(options.targets.get('Music › Pause')).toMatchObject({ kind: 'element', app: music })
+  })
+
+  it('keeps what the request means when there are more than fit, in screen order', () => {
+    expect(Object.keys(ranked('screen', 3).criteria).slice(0, 3)).toEqual(['Inbox (5)', 'Music › Pause', 'Music › Next'])
+  })
+
+  it('puts the most relevant first when ordered by relevance', () => {
+    expect(Object.keys(ranked('relevance').criteria).slice(0, 3)).toEqual(['Music › Pause', 'Music › Next', 'Inbox (5)'])
   })
 })

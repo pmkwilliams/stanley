@@ -43,7 +43,6 @@ describe('createThinker', () => {
     expect(result.sent).toBe(2)
     expect(result.messages.map((x) => x.role)).toEqual(['assistant', 'tool', 'assistant'])
     expect(result.usage?.inputTokenDetails.cacheReadTokens).toBe(16)
-    expect(result.calls).toEqual([])
   })
 
   it('never speaks the silence marker, even split across deltas', async () => {
@@ -114,31 +113,6 @@ describe('createThinker', () => {
     const m = model([[...say('Sorting.'), call('c1', { option: 'Sort' }), finish('tool-calls')], [...say('Done by date.'), finish('stop')]])
     const result = await createThinker({ model: m }).run(request())
     expect(result.text).toBe('Sorting. Done by date.')
-  })
-
-  it("brings a single step's call back unrun, and holds its text until the end", async () => {
-    const spoken: string[] = []
-    let acted = false
-    const m = model([[...say('Typing it.'), call('w1', { option: 'Add a task', text: 'Eggs', wrote: 'user' }), finish('tool-calls')]])
-    const result = await createThinker({ model: m }).run(request({ single: { kind: 'write', option: 'Add a task' }, onText: (d) => spoken.push(d), act: async () => ((acted = true), '') }))
-    expect(acted).toBe(false)
-    expect(spoken).toEqual([])
-    expect(result.text).toBe('Typing it.')
-    expect(result.calls).toEqual([{ tool: 'act', input: { option: 'Add a task', text: 'Eggs', wrote: 'user' }, toolCallId: 'w1' }])
-    expect(result.sent).toBe(0)
-    expect(m.doStreamCalls[0]!.tools?.map((t) => t.name)).toEqual(['act'])
-  })
-
-  it('lets a single step look at the files first, then brings its decision back unrun', async () => {
-    const ran: string[] = []
-    const bash = { type: 'tool-call', toolCallId: 'b1', toolName: 'bash', input: JSON.stringify({ command: 'cat .agents/skills/email-style/SKILL.md' }) } as Part
-    const m = model([[bash, finish('tool-calls')], [call('w1', { option: 'Reply', text: 'sounds good — pat', wrote: 'stanley' }), finish('tool-calls')]])
-    const result = await createThinker({ model: m }).run(
-      request({ single: { kind: 'write', option: 'Reply' }, bash: async (command) => (ran.push(command), 'All lowercase.'), act: async () => '' }),
-    )
-    expect(ran).toEqual(['cat .agents/skills/email-style/SKILL.md'])
-    expect(result.calls).toEqual([{ tool: 'act', input: { option: 'Reply', text: 'sounds good — pat', wrote: 'stanley' }, toolCallId: 'w1' }])
-    expect(result.messages.map((x) => x.role)).toEqual(['assistant', 'tool', 'assistant'])
   })
 
   it('reads what was sent while it worked before its next step, and keeps it where it came', async () => {

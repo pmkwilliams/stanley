@@ -33,8 +33,8 @@ export interface AgentNode {
   /** Elements inside this one, on the same screen. */
   children?: AgentNode[]
   /**
-   * Optional hint that pressing this deletes data or reaches other people. The agent judges every
-   * button's effect itself, because real apps and web pages never label them; a hint only makes it
+   * Optional hint that pressing this deletes data or reaches other people. The agent decides itself
+   * when a press is a submit, because real apps and web pages never label them; a hint only makes it
    * stricter. The demo apps deliberately leave it unset.
    */
   destructive?: boolean

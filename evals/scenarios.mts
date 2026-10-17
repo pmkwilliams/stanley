@@ -8,11 +8,24 @@ export type Check = (shell: Shell, agent: Agent, files: string) => string | void
 
 export interface Scenario {
   name: string
+  /** How the apps are before the first utterance, set up directly rather than asked for. */
+  setup?: (shell: Shell) => Promise<void>
   utterances: string[]
   checks: Check[]
   /** Limits on thinking's input over the run: the share read from the cache, and the largest call. */
   cache?: { minReadRatio: number; maxInputTokens: number }
 }
+
+/** Music playing while Stanley is in the inbox, which fills the screen, or with the player beside it (`shown`). */
+const musicBesideInbox = (shown: boolean) => async (shell: Shell) => {
+  await shell.open('music')
+  await shell.performIn('music', 'toggle', {})
+  await shell.open('email')
+  await shell.arrange(shown ? [['email'], ['music']] : [['email']])
+}
+
+/** Stanley still in `appId`: what it did elsewhere, it did where it was. */
+const stayed = (appId: string): Check => (shell) => (shell.focus === appId ? undefined : `expected Stanley to stay in ${appId}, it went to ${shell.focus ?? 'home'}`)
 
 /** `appId` alone on the screen; `null`, the home screen. */
 const visible = (appId: string | null): Check => (shell) => {
@@ -112,6 +125,7 @@ const skillSays = (what: RegExp): Check => (_, __, files) => {
   if (broken.length) return `expected every skill to be usable: ${broken.join('; ')}`
   return texts.some((t) => what.test(t)) ? undefined : `expected a skill saying ~ ${what}, got ${folders.join(', ')}`
 }
+const paused = state('music', (s) => s?.playing === false, 'music paused')
 const playing = (title: RegExp): Check => state('music', (s) => s?.playing === true && title.test(s.tracks?.find((t: any) => t.id === s.currentId)?.title ?? ''), `playing ~ ${title}`)
 
 const said = (pattern = /\S/): Check => (_, agent) =>
@@ -493,10 +507,17 @@ export const scenarios: Scenario[] = [
     checks: [readSkill('break-time'), playing(/^Umbrella Season$/), fastPath, saidNothing],
   },
   {
-    // Know-how: how the user writes changes what Stanley composes for them.
+    // Know-how: how the user writes changes what Stanley writes for them, their words or its own.
+    // They gave the words, so sending it is what they asked; drafted for a read-back is right too.
     name: 'skill-know-how',
     utterances: ['open the email from Jordan', 'write back and say yes to the swap'],
-    checks: [readSkill('email-style'), state('email', (s) => { const t: string | undefined = s?.drafts?.m8; return !!t && t === t.toLowerCase() && /— ?pat\s*$/.test(t) }, 'a lowercase reply to Jordan signed "— pat"'), sentCount(0)],
+    checks: [
+      readSkill('email-style'),
+      state('email', (s) => {
+        const t: string | undefined = s?.sent?.at(-1)?.body ?? s?.drafts?.m8
+        return !!t && t === t.toLowerCase() && /yes/.test(t) && /— ?pat\s*$/.test(t)
+      }, 'a lowercase reply to Jordan saying yes, signed "— pat"'),
+    ],
   },
   {
     // Skills that don't apply stay out of the way.
@@ -652,4 +673,11 @@ export const scenarios: Scenario[] = [
     utterances: ['open my inbox', 'play some music'],
     checks: [either(visible('email'), together('email', 'music')), state('music', (s) => s?.playing === true, 'music playing')],
   },
+
+  // Another app's controls, used where they are: Stanley stays in the inbox.
+  { name: 'background-music-stop-the-song', setup: musicBesideInbox(false), utterances: ['stop the song'], checks: [paused, stayed('email'), visible('email')] },
+  { name: 'background-music-pause', setup: musicBesideInbox(false), utterances: ['pause the music'], checks: [paused, stayed('email'), visible('email')] },
+  { name: 'background-music-turn-off', setup: musicBesideInbox(false), utterances: ['turn the music off'], checks: [paused, stayed('email'), visible('email')] },
+  { name: 'background-music-skip', setup: musicBesideInbox(false), utterances: ['skip this song'], checks: [state('music', (s) => s?.playing === true && s.currentId !== s.tracks[0].id, 'playing a later track'), stayed('email'), visible('email')] },
+  { name: 'shown-music-stop-the-song', setup: musicBesideInbox(true), utterances: ['stop the song'], checks: [paused, stayed('email'), together('email', 'music')] },
 ]
