@@ -39,12 +39,20 @@ export interface AgentConfig {
   /** Elements offered to thinking: it handles more context. It opens pages by address instead. */
   thinkingElements: number
   /**
+   * How near the top of the options thinking last read of an app something that clearly matches
+   * what the user asks must be for them to stand: further down, they are sent again in the new
+   * order. Otherwise a new order alone sends nothing.
+   */
+  thinkingTop: number
+  /**
    * Which elements are offered when there are more than fit, out of every open app's, and in what
    * order (see options.ts `rank`): relevance to what the user is asking, by meaning (relevance.ts)
    * and by their words, with the app Stanley works on ahead of others on the screen, and those
    * ahead of apps in the background. `order`: as the screens list them, or the most relevant first.
+   * `clear`: the similarity in meaning at which an element clearly matches what the user asks
+   * (see `thinkingTop`).
    */
-  ranking: { order: 'screen' | 'relevance'; weights: { meaning: number; word: number; tier: { focused: number; visible: number; background: number }; near: number } }
+  ranking: { order: 'screen' | 'relevance'; clear: number; weights: { meaning: number; own: number; before: number; word: number; tier: { focused: number; visible: number; background: number }; near: number } }
   /** Tool steps per thinking turn. */
   thinkingSteps: number
   /** User turns Jev reads, the most recent ones: its input is re-read on every tick. */
@@ -105,7 +113,14 @@ export const defaultConfig: AgentConfig = {
   oscillation: { repeats: 3, window: 6 },
   maxElements: 150,
   thinkingElements: 300,
-  ranking: { order: 'relevance', weights: { meaning: 1, word: 0.1, tier: { focused: 0.06, visible: 0.03, background: 0 }, near: 0.02 } },
+  thinkingTop: 20,
+  // From 412 of Jev's steps in the app's sessions, scored by bge-base against what the user had
+  // said (as `Relevance.score` does: closer to it than to a request for nothing; an element in an
+  // item by the item's and its own, as `candidateTexts`): 1% of the steps not taken reach 0.17, so
+  // a list of 300 has about three that do by chance; lower, a long list
+  // would be sent again on nearly every new order. (The step taken reached it a fifth of the time:
+  // meaning alone separates them weakly, so words count too.) Set again for another model.
+  ranking: { order: 'relevance', clear: 0.17, weights: { meaning: 1, own: 0.25, before: 0.5, word: 0.1, tier: { focused: 0.06, visible: 0.03, background: 0 }, near: 0.02 } },
   thinkingSteps: 10,
   jevTurns: 50,
   finished: { heard: 0.6, voice: 0.5, heardAlone: 0.85 },

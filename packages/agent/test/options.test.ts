@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentNode } from '@stanley/app-sdk'
 import { resolveOption } from '../src/agent'
-import { findElement, navigates, stepOptions, type Ranking } from '../src/options'
+import { candidatesOf, candidateText, findElement, navigates, stepOptions, type Ranking } from '../src/options'
 import type { Screen } from '../src/world'
 
 const article: AgentNode = {
@@ -131,13 +131,12 @@ describe('resolveOption', () => {
 describe('stepOptions across apps', () => {
   const music: Screen = { id: 'music:player', title: 'Music', visible: false, markdown: '# Music\nPlaying: "Tura" by Hulk Hodn', elements: [{ id: 'music:toggle', kind: 'action', label: 'Pause' }, { id: 'music:next', kind: 'action', label: 'Next' }] }
   const tasks: Screen = { id: 'tasks:list', title: 'Tasks', visible: true, markdown: '# Tasks', elements: [{ id: 'tasks:title', kind: 'input', label: 'New task' }] }
-  const weights: Ranking['weights'] = { meaning: 1, word: 0.1, tier: { focused: 0.06, visible: 0.03, background: 0 }, near: 0.02 }
+  const weights: Ranking['weights'] = { meaning: 1, own: 0.25, before: 0.5, word: 0.1, tier: { focused: 0.06, visible: 0.03, background: 0 }, near: 0.02 }
   /** What the embedding model makes of "stop the song": the music closest. */
-  const meaning = (text: string) => (text.startsWith('Music › Pause') ? 0.69 : text.startsWith('Music › Next') ? 0.61 : 0.45)
+  const meaning = (text: string) => (text === 'Pause' ? 0.69 : text === 'Next' ? 0.61 : 0.45)
   const ranked = (order: Ranking['order'], limit = 50) => {
-    const all = stepOptions(screen, apps, 999, '', [], false, undefined, [], false, false, false, { others: [tasks, music] })
-    const texts = new Map(Object.entries(all.criteria).map(([name, description]) => [name, `${name}, ${description}`]))
-    return stepOptions(screen, apps, limit, 'stop the song', [], false, undefined, [], false, false, false, { others: [tasks, music], ranking: { meaning: new Map([...texts.values()].map((t) => [t, meaning(t)])), weights, order } })
+    const texts = candidatesOf(screen, [tasks, music]).map(candidateText)
+    return stepOptions(screen, apps, limit, 'stop the song', [], false, undefined, [], false, false, false, { others: [tasks, music], ranking: { meaning: new Map(texts.map((t) => [t, meaning(t)])), weights, order, clear: 0.6 } })
   }
 
   it("offers the other apps' elements after the screen's, named by their app and said where they are", () => {
@@ -148,8 +147,42 @@ describe('stepOptions across apps', () => {
     expect(options.targets.get('Music › Pause')).toMatchObject({ kind: 'element', app: music })
   })
 
+  it('marks what clearly matches what the user asks, by its own words or by meaning', () => {
+    const clear = (focus: string) => [...stepOptions(screen, apps, 50, focus, [], false, undefined, [], false, false, false, { others: [tasks, music] }).clear]
+    expect(clear('thanks')).toEqual([])
+    // Its app's name is on all of them, so it matches none.
+    expect(clear('open my music')).toEqual([])
+    expect(clear('next one')).toEqual(['Music › Next'])
+    expect([...ranked('relevance').clear]).toEqual(['Music › Pause', 'Music › Next'])
+  })
+
   it('keeps what the request means when there are more than fit, in screen order', () => {
     expect(Object.keys(ranked('screen', 3).criteria).slice(0, 3)).toEqual(['Inbox (5)', 'Music › Pause', 'Music › Next'])
+  })
+
+  it('names each element the same whatever is offered, so a step read earlier is still the step it was', () => {
+    // Two "Download"s, the first out of view: the second ranks first, and keeps the name it has when both are offered.
+    const two: Screen = { ...screen, elements: [{ id: 'a', kind: 'action', label: 'Download', offscreen: true }, { id: 'b', kind: 'action', label: 'Download' }] }
+    const offer = (limit: number) => stepOptions(two, [], limit, 'download', [], false, undefined, [], false, false, false, { ranking: { weights, order: 'relevance' } })
+    expect(offer(50).targets.get('Download (2)')).toMatchObject({ node: { id: 'b' } })
+    const one = offer(1)
+    expect(Object.keys(one.criteria)[0]).toBe('Download (2)')
+    expect(one.targets.get('Download (2)')).toMatchObject({ node: { id: 'b' } })
+  })
+
+  it('keeps an element named by a number in its place, not first', () => {
+    const pages: Screen = { ...screen, elements: [{ id: 'next', kind: 'location', label: 'Next page' }, { id: 'p2', kind: 'location', label: '2' }, { id: 'p3', kind: 'location', label: '3' }] }
+    const names = Object.keys(stepOptions(pages, [], 50).criteria)
+    expect(names.slice(0, 3)).toEqual(['Next page', '"2"', '"3"'])
+  })
+
+  it("ranks what isn't embedded yet as no closer to the request than to nothing", () => {
+    // Scores are closeness beyond a request for nothing: what isn't scored yet (0) goes below what is
+    // closer (Archive) and above what is further (Pause).
+    const meaning = new Map([['Pause', -0.1], ['Next', 0], ['Archive', 0.2]])
+    const order = Object.keys(stepOptions(screen, apps, 50, 'x', [], false, undefined, [], false, false, false, { others: [tasks, music], ranking: { meaning, weights, order: 'relevance' } }).criteria)
+    expect(order.indexOf('Inbox (5)')).toBeLessThan(order.indexOf('Music › Pause'))
+    expect(order.indexOf('Archive')).toBeLessThan(order.indexOf('Inbox (5)'))
   })
 
   it('puts the most relevant first when ordered by relevance', () => {

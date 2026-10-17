@@ -36,7 +36,7 @@ export function toNodes(elements: ExtractedElement[]): AgentNode[] {
   const out: AgentNode[] = []
   const groups = new Map<string, AgentNode>()
   for (const e of elements) {
-    const node: AgentNode = { id: e.id, kind: e.kind, role: e.role, label: e.name || e.role, description: e.state, offscreen: e.offscreen }
+    const node: AgentNode = { id: e.id, kind: e.kind, role: e.role, label: e.name || e.role, description: e.state, offscreen: e.offscreen, ...(e.about && { about: e.about }) }
     if (e.kind === 'input') {
       node.value = e.value ?? ''
       if (e.submits) node.children = [{ id: `${e.id}/enter`, kind: 'action', role: 'key', label: 'press Enter' }]
@@ -48,7 +48,7 @@ export function toNodes(elements: ExtractedElement[]): AgentNode[] {
     }
     let group = groups.get(container)
     if (!group) {
-      group = { id: `group:${container}`, kind: 'group', label: container, children: [] }
+      group = { id: `group:${container}`, kind: 'group', label: container, children: [], ...(e.contextKind === 'section' && { role: 'section' }) }
       groups.set(container, group)
       out.push(group)
     }

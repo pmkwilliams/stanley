@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>History of the bicycle – Wikifacts</title>
+<style>
+  body { font: 15px Georgia, serif; margin: 0 auto; max-width: 820px; padding: 16px; }
+  .heading { display: flex; gap: 8px; align-items: baseline; }
+  .edit { font: 12px system-ui; }
+</style>
+</head>
+<body>
+<main id="app"></main>
+<script>
+/*SITE*/
+// A long encyclopedia article: contents, sections full of links, and references, generated the same way every time.
+seed = 11
+const sections = ['Early history', 'Hobby horses', 'Pedal velocipedes', 'Boneshakers', 'High wheelers', 'Penny-farthing era', 'Tricycles', 'Safety bicycle', 'Pneumatic tyres', 'The bicycle boom', 'Women and cycling', 'Military bicycles', 'Racing', 'Derailleur gears', 'Postwar decline', 'Mountain bikes', 'BMX', 'Electric bicycles', 'Bicycle sharing', 'Infrastructure', 'In popular culture', 'See also']
+const topics = ['Karl Drais', 'Mannheim', 'Kirkpatrick Macmillan', 'Pierre Michaux', 'Pierre Lallement', 'James Starley', 'John Kemp Starley', 'Rover Company', 'John Boyd Dunlop', 'Coventry', 'Paris', 'Lyon', 'Tour de France', 'Giro d\'Italia', 'Campagnolo', 'Shimano', 'Schwinn', 'Raleigh Bicycle Company', 'Peugeot', 'Bianchi', 'Annie Londonderry', 'Susan B. Anthony', 'Rational dress', 'Bloomers', 'Columbia Bicycles', 'Albert Pope', 'League of American Wheelmen', 'Good Roads Movement', 'Wright brothers', 'Dayton, Ohio', 'Gary Fisher', 'Joe Breeze', 'Marin County', 'Repack', 'Copenhagen', 'Amsterdam', 'Vélib\'', 'Cycle track', 'Chain drive', 'Freewheel', 'Coaster brake', 'Steel frame', 'Aluminium', 'Carbon fibre', 'Spoke', 'Ball bearing', 'Tandem bicycle', 'Recumbent bicycle', 'Folding bicycle', 'Cargo bike', 'Velodrome', 'Six-day racing', 'Hour record', 'Fausto Coppi', 'Eddy Merckx', 'Velocipede', 'Ordinary bicycle', 'Bicycle helmet', 'Bicycle lighting', 'Dynamo', 'Pedelec', 'Lithium-ion battery', 'Bike lane', 'Critical Mass']
+const slug = (t) => t.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+const link = (t) => `<a href="#/open/${slug(t)}">${t}</a>`
+const sentence = () => `The ${pick(['development', 'spread', 'design', 'popularity', 'manufacture'])} of the bicycle owed much to ${link(pick(topics))} and ${link(pick(topics))}, as later accounts by ${link(pick(topics))} describe.`
+let body = '<h1>History of the bicycle</h1><nav><h2>Contents</h2>' + sections.map((s, i) => `<a href="#/section/${i}">${i + 1} ${s}</a><br>`).join('') + '</nav>'
+sections.forEach((s, i) => {
+  const paragraphs = Array.from({ length: 4 }, () => `<p>${Array.from({ length: 4 }, sentence).join(' ')}</p>`)
+  // What the evals look for, in running text.
+  if (s === 'Hobby horses') paragraphs.splice(2, 0, `<p>The running machine, known as the ${link('Draisine')}, had no pedals: riders pushed along the ground with their feet.</p>`)
+  if (s === 'Military bicycles') paragraphs.splice(1, 0, `<p>Several armies formed cyclist units; the ${link('Bersaglieri')} used folding bicycles in the First World War.</p>`)
+  body += `<section><div class="heading"><h2>${s}</h2><span class="edit">[<a href="#/edit/${i}">edit</a>]</span></div>${paragraphs.join('')}</section>`
+})
+const authors = ['Herlihy', 'Hadland', 'Lessing', 'Wilson', 'Norcliffe', 'Friss', 'Oddy', 'Ritchie', 'Clayton', 'Hallett']
+const refs = Array.from({ length: 110 }, () => `${pick(authors)}, ${pick(['A.', 'B.', 'C.', 'D.', 'M.'])} (${1960 + Math.floor(rand() * 60)}). ${pick(['The bicycle and society', 'Cycling history', 'Two wheels', 'On the road', 'Velocipede days'])}. p. ${10 + Math.floor(rand() * 300)}.`)
+refs.splice(86, 0, 'Herlihy, David V. (2004). Bicycle: The History. Yale University Press.')
+refs.splice(61, 0, 'Hadland, Tony (2014). Bicycle Design: An Illustrated History. MIT Press.')
+body += '<section><h2>References</h2><ol>' + refs.map((r, i) => `<li><a href="#/open/ref-${i}">${r}</a></li>`).join('') + '</ol></section>'
+function render() {
+  const id = opened()
+  const page = document.getElementById('app')
+  if (id) {
+    document.title = `${id} – Wikifacts`
+    page.innerHTML = `<h1>${id}</h1><p>An article.</p><a href="#/">Back to History of the bicycle</a>`
+  } else {
+    document.title = 'History of the bicycle – Wikifacts'
+    page.innerHTML = body
+  }
+}
+render()
+</script>
+</body>
+</html>

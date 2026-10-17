@@ -13,7 +13,7 @@ import type { SkillScan } from '../src/skills'
 import { scriptedTurn, type FileOutput, type ThinkRequest, type Thinker, type ThinkResult } from '../src/think'
 import { describeScreen, sidesKey, type Sides } from '../src/screen'
 import type { WebTools } from '../src/web'
-import type { World } from '../src/world'
+import type { Screen, World } from '../src/world'
 
 const elements: AgentNode[] = [
   { id: 'tasks:title', kind: 'input', label: 'Add a task', value: '', children: [{ id: 'tasks:add', kind: 'action', role: 'key', label: 'press Enter' }] },
@@ -281,6 +281,28 @@ describe('Agent loop', () => {
     }
   })
 
+  it('has thinking check an early press followed by pressing something else, however sure Jev is', async () => {
+    let ended = false
+    let pressed = false
+    const { agent, thinker, performed } = setup((_, i) => {
+      if (i === 0) return { next: 'act', step: 'Sort' }
+      if (!ended) return { next: 'listen' }
+      if (!pressed) return (pressed = true), { next: 'act', step: 'Delete' }
+      return { next: 'done', nextConfidence: 0.95 }
+    })
+    agent.utteranceStart()
+    agent.voice(true)
+    say(agent, 'sort my list')
+    await settle()
+    agent.voice(false)
+    agent.segment('sort my list no delete it')
+    ended = true
+    agent.utteranceEnd()
+    await settle()
+    expect(performed).toEqual(expect.arrayContaining(['tasks:sort', 'tasks:delete']))
+    expect(thinker.runs).toHaveLength(1)
+  })
+
   it('holds a press that commits while the user is speaking', async () => {
     const { agent, performed, debug } = setup(() => ({ next: 'submit', step: 'Delete' }))
     agent.utteranceStart()
@@ -422,7 +444,7 @@ describe('Agent loop', () => {
   })
 
   it('needs more confidence to act while the user is speaking than after they finish', async () => {
-    const { agent, performed, debug, thinker } = setup(() => ({ next: 'act', step: 'open Email', nextConfidence: 0.5, stepConfidence: 0.6 }))
+    const { agent, performed, debug, thinker } = setup((_, i) => (i < 2 ? { next: 'act', step: 'open Email', nextConfidence: 0.5, stepConfidence: 0.6 } : { next: 'done' }))
     agent.utteranceStart()
     say(agent, 'open my email')
     await settle()
@@ -513,14 +535,14 @@ describe('Agent loop', () => {
     expect(observation(thinker.runs[0]!)).not.toContain('<note>')
   })
 
-  it('stops when it keeps choosing the same step from the same screen', async () => {
-    const { agent, statuses, performed } = setup(() => ({ next: 'act', step: 'Buy milk' }))
+  it('hands to thinking when it keeps choosing the same step from the same screen', async () => {
+    const { agent, performed, thinker, debug } = setup(() => ({ next: 'act', step: 'Buy milk' }))
     agent.utteranceStart()
     agent.segment('go')
     await settle()
     expect(performed.filter((p) => p === 'tasks:item')).toHaveLength(2)
-    expect(statuses.at(-1)).toBe('stuck')
-    expect(await agent.context()).toContain('You stopped: you kept repeating the same step.')
+    expect(thinker.runs).toHaveLength(1)
+    expect(handover(debug)[0]).toContain('kept choosing "Buy milk"')
   })
 
   it('repeats a step that keeps changing the screen', async () => {
@@ -568,12 +590,12 @@ describe('Agent loop', () => {
     expect(statuses.at(-1)).toBe('done')
   })
 
-  it('stops a step that keeps failing', async () => {
-    const { agent, statuses } = setup(() => ({ next: 'act', step: 'Sort' }), { world: { failOn: 'tasks:sort' } })
+  it('hands a step that keeps failing to thinking', async () => {
+    const { agent, thinker } = setup(() => ({ next: 'act', step: 'Sort' }), { world: { failOn: 'tasks:sort' } })
     agent.utteranceStart()
     spoke(agent, 'sort')
     await settle()
-    expect(statuses.at(-1)).toBe('stuck')
+    expect(thinker.runs).toHaveLength(1)
   })
 
   it('reports an error when the decision itself fails', async () => {
@@ -1713,6 +1735,54 @@ describe('Agent history', () => {
     expect(second!.slice(first!.length)).toEqual(['call call_1', 'result call_1', 'Sorted.', 'thanks', '<screen unchanged/>'])
     // This stand-in reports no steps of its own, so the cache is read at the first call's observation.
     expect(thinker.runs[1]!.cacheAt).toBe(first!.length - 1)
+  })
+
+  it('lets thinking find what the options don\'t list, and act on it by the name found', async () => {
+    const { world, performed } = fakeWorld()
+    const music: Screen = { id: 'music:player', title: 'Music', visible: false, markdown: '# Music', elements: [{ id: 'music:pause', kind: 'action', label: 'Pause' }, { id: 'music:next', kind: 'action', label: 'Next' }, { id: 'music:shuffle', kind: 'action', label: 'Shuffle' }] }
+    world.others = () => [music]
+    let found = ''
+    let seen = ''
+    const { agent, thinker } = setup(plan({ next: 'act', step: 'respond' }), {
+      deps: { world, config: { ...defaultConfig, thinkingElements: 2 } },
+      thinker: {
+        run: async (req) => {
+          seen = observation(thinker.runs[0]!)
+          found = await req.find!('shuffle', 'Music', 'call_1')
+          const name = /\[([^\]]*Shuffle[^\]]*)\]/.exec(found)?.[1]
+          await req.act!({ option: name! }, 'call_2')
+          return { text: '' }
+        },
+      },
+    })
+    agent.utteranceStart()
+    agent.segment('mix it up')
+    agent.utteranceEnd()
+    await settle()
+    expect(seen).toMatch(/more of its elements not listed/)
+    expect(found).toContain('[Music › Shuffle]')
+    expect(performed).toContain('music:shuffle')
+  })
+
+  it('lets thinking act on what is on the screens past its limit', async () => {
+    const { world, performed } = fakeWorld()
+    const music: Screen = { id: 'music:player', title: 'Music', visible: false, markdown: '# Music\nPlaying: "Tura"', elements: [{ id: 'music:pause', kind: 'action', label: 'Pause' }, { id: 'music:next', kind: 'action', label: 'Next' }] }
+    world.others = () => [music]
+    const { agent, thinker } = setup(plan({ next: 'act', step: 'respond' }), {
+      deps: { world, config: { ...defaultConfig, thinkingElements: 1 } },
+      thinker: {
+        run: async (req) => {
+          await req.act({ option: 'Music › Next' }, 'call_1')
+          return { text: '' }
+        },
+      },
+    })
+    agent.utteranceStart()
+    agent.segment('the other one')
+    agent.utteranceEnd()
+    await settle()
+    expect(observation(thinker.runs[0]!)).not.toContain('[Music › Next]')
+    expect(performed).toContain('music:next')
   })
 
   it('calls the assistant by the name the user gave it, in every prompt, and follows a rename', async () => {

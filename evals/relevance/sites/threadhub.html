@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Best espresso machine under $500? – Threadhub</title>
+<style>
+  body { font: 14px system-ui, sans-serif; margin: 0 auto; max-width: 760px; padding: 12px; }
+  article { border-left: 2px solid #ddd; margin: 8px 0; padding-left: 8px; }
+</style>
+</head>
+<body>
+<main id="app"></main>
+<script>
+/*SITE*/
+// A long discussion thread, generated the same way every time.
+seed = 43
+const users = ['beanhead', 'latteart_lou', 'crema_queen', 'portafilter_pete', 'grind_size', 'morning_ritual', 'doubleshot', 'tamp_it_down', 'milkfroth', 'roastdate', 'pulladay', 'brewbro', 'flatwhite_fan', 'steamwand']
+const machines = ['Breville Bambino', 'De\'Longhi Dedica', 'Rancilio Silvia', 'Breville Barista Express', 'Lelit Anna', 'Flair Neo', 'Bezzera Unica']
+const says = ['I had one for two years and', 'Honestly the grinder matters more, but', 'Mine broke after a year, though', 'Got mine on sale and', 'Coming from pods,', 'After a lot of research']
+const verdict = ['it is fine for the price.', 'the steam wand is weak.', 'it heats up fast.', 'shots are inconsistent.', 'I would buy it again.', 'customer service was great.']
+const comments = Array.from({ length: 125 }, (_, i) => ({ id: `c${i}`, user: pick(users), text: `${pick(says)} the ${pick(machines)} ${pick(verdict)}` }))
+// What the evals look for, deep in the thread.
+comments.splice(97, 0, { id: 'marisol', user: 'marisol_k', text: 'Descale with citric acid every couple of months or the boiler scales up fast.' })
+comments.splice(74, 0, { id: 'gaggia', user: 'oldschool_ed', text: 'The Gaggia Classic Pro is still the one to beat at this price.' })
+comments.splice(110, 0, { id: 'scale', user: 'gram_counter', text: 'Buy a cheap coffee scale before anything else; weighing shots fixed my sour espresso.' })
+comments.splice(58, 0, { id: 'refurb', user: 'thrifty_tom', text: 'Look for refurbished machines from the maker, they come with a full warranty.' })
+function render() {
+  document.getElementById('app').innerHTML = '<h1>Best espresso machine under $500?</h1>' + comments.map((c) => `<article aria-label="${c.user}: ${c.text.slice(0, 50)}"><a href="#/u/${c.user}">${c.user}</a><p>${c.text}</p><button data-act="reply" data-id="${c.id}">Reply</button> <button data-act="like" data-id="${c.id}">${isOn('like', c.id) ? 'Liked' : 'Like'}</button> <button data-act="report" data-id="${c.id}">Report</button></article>`).join('')
+}
+render()
+</script>
+</body>
+</html>

@@ -9,6 +9,8 @@
 | `pnpm eval:web <filter>` | The same agent on fixture websites in headless Chromium | Paid (Jev + Sonnet) |
 | `pnpm eval:web --live <filter>` | Read-only scenarios on real websites (they change, so not in the default set) | Paid (Jev + Sonnet) |
 | `pnpm eval:answer <filter>` | Answering from the page with Jev alone (`answer.ts`): right answers spoken, wrong ones never, on saved real pages | 1–4 Jev calls per case |
+| `pnpm eval:relevance [filter]` | Whether the steps on offer bring in what the user asks for on a large state: six big pages (4,000+ elements), two in front and four in the background, a request for one element deep in one of them. Checks it is among Jev's steps and thinking's, and that thinking reads it next (`relevance/cases.mts`); `--holdout` for cases kept out of tuning | Free (local embedding model) |
+| `pnpm eval:large <filter>` | Jev on the same pages, live in headless Chromium: what was done, to what, and where Stanley ended up (`large/scenarios.mts`; `--holdout`). Thinking and web search stood in for, so nothing paid but Jev | Jev calls only |
 | `pnpm eval:layout <filter>` | What the screen shows once Stanley is done: which apps, and which side each is on | 1 Jev call per case |
 | `pnpm eval:dictate --model <id>` | The quick model alone writing a field from what the user said (`dictate/cases.mts`; `--holdout` for cases kept out of tuning): passes when the field holds what the user meant, by checks and GPT-6.1 Sol as judge through Codex (`--judge`); latency and cost. `local/<label>` runs a llama.cpp server, `--variant` tries other prompts (`dictate/variants.mts`); `--report` compares saved runs | 1 call per case (judge on the Codex plan) |
 | `pnpm eval:working` | Whether words said while Stanley works stop it or wait for it to finish (`WORKING`) | 15 Jev calls |
@@ -27,6 +29,9 @@ Options for `eval` and `eval:web`:
   effect, the top "what now" answers and the chosen step with its runners-up.
 - `--jev-turns N` sets how many user turns Jev reads (default 50), to compare its input size and
   latency on long scenarios (`long-session`).
+- `--no-thinking` (`eval` only) runs Jev alone: a turn handed to thinking does nothing, and there is
+  no web search. Scenarios that need thinking fail, so it isn't a pass rate of its own: it compares
+  a change to Jev's side (the steps on offer, its prompt) between two runs without paying for thinking.
 - `--set key=value` (repeatable; dotted for nested keys, e.g. `--set finished.heard=0.7`) runs with
   one config value changed, to try a threshold without editing `config.ts`.
 
@@ -75,6 +80,23 @@ would see, and `npx tsx web/peek-live.mts <url>` does the same for a real page; 
 
 Chromium comes from `$STANLEY_CHROMIUM`, else the newest Playwright headless shell in
 `~/Library/Caches/ms-playwright`, else Homebrew's `chromium`.
+
+## Relevance on a large state
+
+`relevance/sites/*.html` are large pages (a shop's results, a long article, a news front page, an
+inbox, a forum thread, a reference's sidebar), generated the same way every time and read through
+the generic extractor in headless Chromium. `relevance/state.mts` lays them out: the shop is what
+Stanley works on, the article is beside it, the rest are in the background. Each case asks for one
+element deep in one page, and passes when the agent's own ranking (`rankingFor`) puts it among Jev's
+steps and thinking's, and thinking reads it next, having last read the screens when the user said
+something else. Some cases use the element's own words; the "in other words" ones don't, so only
+its meaning can find it. It reports how many pass, how many are in Jev's first 10 and 30, and the
+mean reciprocal rank (1 when first, ½ when second, 0 when not offered), for the two kinds apart.
+
+When it ranks: by default, with the app's relevance code, all the pages opened `--after` ms before
+(500); `--opened ms`, only the page asked about opened that long before, the others embedded;
+`--warm`, every element embedded; `--no-embed`, words alone. One case at a time, as the app makes
+one decision at a time. `docs/plans/relevance.md` has what was measured with it and why.
 
 ## Answering from the page
 

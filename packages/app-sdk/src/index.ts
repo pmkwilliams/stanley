@@ -30,6 +30,11 @@ export interface AgentNode {
   value?: string
   /** Scrolled out of view: on the page, but a person would have to scroll to see it. */
   offscreen?: boolean
+  /**
+   * The text an element sits in when its own name doesn't say what it is about: a link in running
+   * text and its sentence. Read for relevance only, not shown to the models, who read the page.
+   */
+  about?: string
   /** Elements inside this one, on the same screen. */
   children?: AgentNode[]
   /**

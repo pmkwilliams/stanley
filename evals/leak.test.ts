@@ -5,9 +5,11 @@ import { describe, expect, it } from 'vitest'
 // Plain text extraction: importing scenarios.mts would pull in the whole app graph.
 const root = join(import.meta.dirname, '..')
 const scenarioFiles = ['scenarios.mts', 'web/scenarios.mts', 'answer/cases.mts'].map((f) => readFileSync(join(import.meta.dirname, f), 'utf8')).join('\n')
-const utterances = [...scenarioFiles.matchAll(/utterances: \[([^\]]*)\]/g)].flatMap((m) =>
-  [...m[1]!.matchAll(/(['"])((?:(?!\1).)*)\1/g)].map((q) => q[2]!),
-)
+const relevanceCases = ['relevance/cases.mts', 'large/scenarios.mts', 'real/cases.mts', 'real/test-cases.mts'].map((f) => readFileSync(join(import.meta.dirname, f), 'utf8')).join('\n')
+const utterances = [
+  ...[...scenarioFiles.matchAll(/utterances: \[([^\]]*)\]/g)].flatMap((m) => [...m[1]!.matchAll(/(['"])((?:(?!\1).)*)\1/g)].map((q) => q[2]!)),
+  ...[...relevanceCases.matchAll(/(?:request|utterances|before): \[?(['"])((?:(?!\1).)*)\1/g)].map((m) => m[2]!),
+]
 
 const words = (t: string) => t.toLowerCase().replace(/[^a-z0-9'\s]/g, ' ').split(/\s+/).filter(Boolean)
 const grams = (t: string, n: number) => {

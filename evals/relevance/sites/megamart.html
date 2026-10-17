@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kitchen & dining – MegaMart</title>
+<style>
+  body { font: 14px system-ui, sans-serif; margin: 0; display: grid; grid-template-columns: 220px 1fr; }
+  aside { padding: 12px; border-right: 1px solid #ddd; }
+  main { padding: 12px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  article { border: 1px solid #eee; padding: 8px; }
+  article h3 { font-size: 15px; margin: 0 0 4px; }
+  nav.pages, header { grid-column: 1 / -1; }
+</style>
+</head>
+<body>
+<aside id="filters"></aside>
+<main id="app"></main>
+<script>
+/*SITE*/
+// A long page of search results, generated the same way every time.
+seed = 7
+const colors = ['Blue', 'Red', 'Sage', 'Charcoal', 'Ivory', 'Mustard', 'Teal', 'Slate', 'Blush', 'Forest green']
+const materials = ['enamel', 'ceramic', 'stainless steel', 'bamboo', 'glass', 'linen', 'walnut', 'marble', 'stoneware', 'silicone']
+const items = ['mug', 'cutting board', 'tea towel', 'storage jar', 'salad bowl', 'spice rack', 'colander', 'butter dish', 'serving tray', 'measuring cups', 'utensil holder', 'pasta bowl', 'water pitcher', 'oven mitt', 'napkin set', 'trivet']
+const brands = ['Lodge', 'OXO', 'Le Creuset', 'Staub', 'Hearth & Home', 'Northfield', 'Kinto', 'Fellow', 'Bodum', 'Joseph Joseph', 'Nordic Ware', 'Zwilling', 'Emile Henry', 'Rösle', 'Made In', 'Caraway', 'GreenPan', 'Hario', 'Chemex', 'Smeg', 'Peugeot', 'Mauviel', 'Wüsthof', 'Victorinox', 'Pyrex', 'Anchor', 'Ball', 'Weck', 'Libbey', 'Bormioli']
+const products = []
+const seen = new Set()
+while (products.length < 280) {
+  const name = `${pick(colors)} ${pick(materials)} ${pick(items)}`
+  if (seen.has(name)) continue
+  seen.add(name)
+  products.push({ id: `p${products.length}`, name, brand: pick(brands), price: 8 + Math.floor(rand() * 90), reviews: Math.floor(rand() * 900) })
+}
+// What the evals look for, deep in the page.
+products.splice(231, 0, { id: 'dutch-oven', name: 'Cast iron dutch oven, 6 qt', brand: 'Lodge', price: 79, reviews: 2140 })
+products.splice(188, 0, { id: 'kettle', name: 'Hammered copper kettle', brand: 'Mauviel', price: 129, reviews: 311 })
+products.splice(262, 0, { id: 'steamer', name: 'Bamboo dumpling steamer, 2 tier', brand: 'Joseph Joseph', price: 24, reviews: 486 })
+products.splice(207, 0, { id: 'pizza-stone', name: 'Cordierite pizza stone with peel', brand: 'Emile Henry', price: 59, reviews: 802 })
+products.splice(244, 0, { id: 'knife-block', name: 'Magnetic acacia knife block', brand: 'Wüsthof', price: 89, reviews: 157 })
+function render() {
+  const cart = products.filter((p) => isOn('cart', p.id)).length
+  const id = opened()
+  if (id) {
+    const p = products.find((x) => x.id === id)
+    document.title = `${p.name} – MegaMart`
+    document.getElementById('app').innerHTML = `<header><h1>${p.name}</h1><p>${p.brand} · $${p.price}.00 · ${p.reviews} reviews</p><button data-act="cart" data-id="${p.id}">${isOn('cart', p.id) ? 'In cart' : 'Add to cart'}</button> <button data-act="save" data-id="${p.id}">${isOn('save', p.id) ? 'Saved' : 'Save for later'}</button> <a href="#/">Back to results</a></header>`
+    return
+  }
+  document.title = 'Kitchen & dining – MegaMart'
+  document.getElementById('filters').innerHTML = `<p><a href="#/cart">Cart (${cart})</a></p><h2>Brand</h2>` + brands.map((b) => `<label><input type="checkbox" data-act="filter" data-id="${b}" ${isOn('filter', b) ? 'checked' : ''}> ${b}</label><br>`).join('') + '<h2>Price</h2>' + ['Under $25', '$25 to $50', '$50 to $100', 'Over $100'].map((p) => `<label><input type="checkbox" data-act="filter" data-id="${p}" ${isOn('filter', p) ? 'checked' : ''}> ${p}</label><br>`).join('')
+  document.getElementById('app').innerHTML =
+    products.map((p) => `<article><h3>${p.name}</h3><p>${p.brand} · $${p.price}.00</p><a href="#/open/${p.id}">Reviews (${p.reviews})</a><br><button data-act="cart" data-id="${p.id}">${isOn('cart', p.id) ? 'In cart' : 'Add to cart'}</button> <button data-act="save" data-id="${p.id}">${isOn('save', p.id) ? 'Saved' : 'Save for later'}</button></article>`).join('') +
+    `<nav class="pages">${Array.from({ length: 12 }, (_, i) => `<a href="#/page/${i + 1}">${i + 1}</a>`).join(' ')} <a href="#/page/2">Next page</a></nav>`
+}
+render()
+</script>
+</body>
+</html>

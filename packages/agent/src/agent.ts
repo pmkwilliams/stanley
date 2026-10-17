@@ -26,14 +26,15 @@ import {
 } from './conversation'
 import { anyUnsure, markUnsure, unmarked, type HeardWord } from './heard'
 import { jevMemory, MEMORY_PATH } from './memory'
-import { background, describeStep, named, namedOptions, narrate, optionList, stepResult } from './narrate'
-import { candidateText, candidatesOf, navigates, stepOptions, type OptionSet, type Ranking, type Target } from './options'
+import { describeStep, named, namedOptions, narrate, stepResult } from './narrate'
+import { candidatesOf, candidateTexts, navigates, stepOptions, wordMatches, type Candidate, type OptionSet, type Ranking, type Target } from './options'
 import { ACTING, FIELDS, HEARING, IDENTITY, SCREEN } from './persona'
 import { Relevance, type Embed } from './relevance'
 import { chooseScreen, describeScreen, layoutLine, sameSides, SCREEN_PROMPT, screenQuestions, sidesKey, validSides, type ScreenAsk, type ScreenChoice, type Sides } from './screen'
 import { JEV_SKILLS, NO_SKILLS, skillBody, skillChanges, type Skill, type SkillScan } from './skills'
 import { createThinker, fileOutput, instructions, longDate, PartialTurn, type ActCall, type FileOutput, type PageOutput, type QuickExample, type SearchOutput, type Thinker, type ThinkResult } from './think'
 import { extendsWords, fullText, hasNewWords, letters, normalize, type TranscriptSnapshot } from './transcript'
+import { since, viewParts, viewText, type ViewPart } from './view'
 import { knownPages, sameUrl, shortUrl, type KnownPage, type WebResult, type WebTools } from './web'
 import type { PageDraft, Screen, StepResult, World } from './world'
 import { ownWords, writerExamples, writerInput, writerInstructions, written, type WriteStep } from './write'
@@ -291,8 +292,8 @@ export class Agent {
   private endTimer?: ReturnType<typeof setTimeout>
   /** When the agent last ended the user's turn itself; 0 once anything else ended or started one. */
   private endedByAgentAt = 0
-  /** The screen and options thinking last saw, to send `<screen unchanged/>` instead. */
-  private lastSeen = ''
+  /** The screens and options thinking last read, part by part, to send the parts that changed (view.ts). */
+  private screensRead = new Map<string, ViewPart>()
   /** The top of the folder (`topFiles`) as thinking last saw it, to leave out when it is the same. */
   private lastFiles = ''
   /** The date thinking was last told. */
@@ -675,17 +676,16 @@ export class Agent {
     return this.world.others?.() ?? []
   }
 
-  /**
-   * How the elements of every open app are ranked by what the user is asking (see options.ts):
-   * their meaning is scored only when it decides something, with more than `limit` of them or
-   * ordered by relevance.
-   */
-  private async ranking(screen: Screen, others: Screen[], limit: number, pages: KnownPage[], files?: KnownFile[]): Promise<Ranking> {
-    const { order, weights } = this.config.ranking
-    const candidates = candidatesOf(screen, others, pages, files)
-    const decides = order === 'relevance' || candidates.length > limit
-    const meaning = decides && this.relevance ? await this.relevance.score(this.focus(), candidates.map(candidateText)) : undefined
-    return { meaning, weights, order }
+  /** How the elements of every open app are ranked by what the user is asking (see `rankingFor`). */
+  private ranking(screen: Screen, others: Screen[], limit: number, pages: KnownPage[], files?: KnownFile[]): Promise<Ranking> {
+    return rankingFor(this.relevance, this.config.ranking, this.focus(), candidatesOf(screen, others, pages, files), limit, this.saidBefore())
+  }
+
+  /** What the user said last before what they are saying now, as heard: a request may lean on it ("archive it"). */
+  private saidBefore(): string {
+    const words = this.history.view().filter((e) => e.meta.kind === 'words' && e.meta.utteranceId !== this.utteranceId && typeof e.message?.content === 'string')
+    const last = words.at(-1)?.meta.utteranceId
+    return unmarked(words.filter((e) => e.meta.utteranceId === last).map((e) => e.message!.content as string).join(' '))
   }
 
   /** The steps on offer to thinking on `screen`: Jev's, with up to `thinkingElements` elements, and without files or skills. */
@@ -1051,7 +1051,8 @@ export class Agent {
     // A button pressed before the user finished was a guess. Before closing the task, thinking
     // checks the guesses against everything they said, and undoes any they took back, unless Jev
     // is sure it's done (which includes that nothing Stanley did goes against what they want).
-    if (mode === 'done' && this.utteranceEnded && next.confidence < c.earlyGuessDone && this.guessedEarly()) {
+    // A guess followed by pressing something else may have been taken back however sure Jev is.
+    if (mode === 'done' && this.utteranceEnded && this.guessedEarly() && (next.confidence < c.earlyGuessDone || this.guessedThenPressed())) {
       this.report(id, d, 'think', 'gated')
       this.gate(id, 'early-guess', 'a button was pressed before the user finished; thinking checks it against what they said')
       return this.think(id, 'a button was pressed before the user finished: check it against what they said')
@@ -1084,12 +1085,16 @@ export class Agent {
     const key = `${option}\n${screen.id}\n${screen.markdown}`
     this.recent = [...this.recent, key].slice(-c.oscillation.window)
     const repeats = this.recent.filter((x) => x === key).length
-    if (++this.steps > c.maxStepsPerUtterance || repeats >= c.oscillation.repeats) {
-      const looping = repeats >= c.oscillation.repeats
-      if (looping) this.gate(id, 'oscillation', `"${option}" chosen ${repeats}× from the same screen in the last ${c.oscillation.window} steps`)
-      else this.gate(id, 'step-cap', `more than ${c.maxStepsPerUtterance} steps this utterance`)
-      const detail = looping ? 'it kept repeating the same step' : 'it took too many steps'
-      this.history.stage({ kind: 'event', event: 'stuck', detail }, note(`You stopped: ${detail.replace(/^it /, 'you ')}.`))
+    // Jev going round in circles is Jev unsure what works here: thinking takes the turn.
+    if (repeats >= c.oscillation.repeats) {
+      this.gate(id, 'oscillation', `"${option}" chosen ${repeats}× from the same screen in the last ${c.oscillation.window} steps`)
+      this.report(id, d, 'think', 'gated')
+      return this.think(id, `Jev kept choosing "${option}" from the same screen without getting anywhere`)
+    }
+    if (++this.steps > c.maxStepsPerUtterance) {
+      this.gate(id, 'step-cap', `more than ${c.maxStepsPerUtterance} steps this utterance`)
+      const detail = 'it took too many steps'
+      this.history.stage({ kind: 'event', event: 'stuck', detail }, note('You stopped: you took too many steps.'))
       this.report(id, d, 'stuck', 'forced-stop')
       await this.finishTask('stuck')
       return 'stuck'
@@ -1537,6 +1542,7 @@ export class Agent {
         signal,
         onText: (delta) => this.stream(reply, delta),
         act: (call, toolCallId) => (steps++, this.thinkStep(id, call, toolCallId, signal, ran)),
+        find: (query, app) => this.find(id, query, app, signal),
         ...(this.web && {
           search: (query: string, toolCallId: string) => (steps++, this.search(id, query, toolCallId, signal, ran)),
           fetch: (url: string, toolCallId: string) => (steps++, this.read(id, url, toolCallId, signal, ran)),
@@ -1583,13 +1589,13 @@ export class Agent {
   }
 
   /**
-   * The observation for a thinking call: the screen and its options, or `<screen unchanged/>` when
-   * thinking last saw the same; the top of the folder (`files`, two levels) when it changed; then notes.
+   * The observation for a thinking call: the screens and their options, each part that changed since
+   * thinking last read it (see view.ts `since`), or `<screen unchanged/>`; the top of the folder
+   * (`files`, two levels) when it changed; then notes.
    */
   private observe(screen: Screen, options: OptionSet, files: string, notes: string[]): string {
-    const view = screenText(screen, options, this.others())
-    const body = view === this.lastSeen ? '<screen unchanged/>' : view
-    this.lastSeen = view
+    const { text: body, seen } = since(viewParts(screen, options, this.others(), { more: true }), this.screensRead, this.config.thinkingTop)
+    this.screensRead = seen
     const listing = files && files !== this.lastFiles ? [files] : []
     if (files) this.lastFiles = files
     const today = longDate(this.clock())
@@ -1601,11 +1607,11 @@ export class Agent {
     return [body, ...listing, ...all.map((n) => `<note>${n}</note>`)].join('\n')
   }
 
-  /** The last screen among the results that went into the history is the one thinking saw last. */
+  /** The screens in the last of the results that went into the history are the ones thinking read last, in full. */
   private saw(ran: Map<string, Ran>, toolCallIds: string[]): void {
     for (const id of toolCallIds) {
-      const screen = ran.get(id)?.screen
-      if (screen) this.lastSeen = screen
+      const view = ran.get(id)?.view
+      if (view) this.screensRead = new Map(view.map((p) => [p.key, p]))
     }
   }
 
@@ -1614,14 +1620,21 @@ export class Agent {
     signal.throwIfAborted()
     const { text } = call
     let option = call.option
-    const options = await this.thinkingOptions(await this.world.screen())
+    const now = await this.world.screen()
+    const options = await this.thinkingOptions(now)
     const done = (result: string) => {
       this.events.debug?.({ type: 'think-step', tickId: id, option, text, result })
       return result
     }
-    const name = resolveOption(options, option)
-    const listed = name && options.targets.get(name)
-    if (!name || !listed) return done(`There is no option [${option}] right now. Use a name exactly as listed.\n\n${await this.screenText(options)}`)
+    // What is listed first; then anything on the screens, since what is listed past the limit shifts with what the user says.
+    let name = resolveOption(options, option)
+    let listed = name && options.targets.get(name)
+    if (!listed) {
+      const all = this.everyOption(now)
+      name = resolveOption(all, option)
+      listed = name && all.targets.get(name)
+    }
+    if (!name || !listed) return done(`There is no option [${option}] right now. Use a name exactly as listed.\n\n${viewText(viewParts(now, options, this.others(), { more: true }))}`)
     option = name
     const target = this.thinkingTarget(listed, call)
     if (typeof target === 'string') return done(target)
@@ -1644,10 +1657,43 @@ export class Agent {
       outcome = `That failed: ${err instanceof Error ? err.message : String(err)}`
     }
     this.events.status?.('thinking')
-    const screen = await this.screenText()
-    const result = `${outcome}\n\n${screen}`
-    if (step) ran.set(toolCallId, { tool: 'act', input: { ...call }, output: { type: 'text', value: result }, result: { toolCallId, step }, screen })
+    const view = await this.screens()
+    const result = `${outcome}\n\n${viewText(view)}`
+    if (step) ran.set(toolCallId, { tool: 'act', input: { ...call }, output: { type: 'text', value: result }, result: { toolCallId, step }, view })
     return done(result)
+  }
+
+  /**
+   * Thinking looks for steps the options don't list: every element of every open app (of `app`
+   * alone, when given), ranked by `query` as the options are. What isn't embedded yet gets a moment
+   * to be, so a search in other words can find it. The best `FIND` come back by name, for `act`.
+   */
+  private async find(id: number, query: string, app: string | undefined, signal: AbortSignal): Promise<string> {
+    signal.throwIfAborted()
+    this.doing = `looking on the screens for "${query}".`
+    const screen = await this.world.screen()
+    const others = this.others()
+    const all = candidatesOf(screen, others)
+    const want = app?.trim().toLowerCase()
+    const inApp = (c: Candidate) => !want || ('flat' in c && (c.app ?? screen).title.toLowerCase().includes(want))
+    const candidates = all.filter(inApp)
+    if (this.relevance) {
+      const texts = candidates.flatMap(candidateTexts)
+      this.relevance.prepare(texts)
+      await Promise.race([this.relevance.idle(), new Promise((r) => setTimeout(r, FIND_WAIT_MS))])
+    }
+    const ranking = await rankingFor(this.relevance, this.config.ranking, query, all, FIND)
+    const found = stepOptions(screen, [], all.length, query, [], false, undefined, [], false, false, false, { others, ranking })
+    const names = Object.keys(found.criteria).filter((n) => {
+      const t = found.targets.get(n)
+      return t?.kind === 'element' && (!want || (t.app ?? screen).title.toLowerCase().includes(want))
+    })
+    const best = names.slice(0, FIND)
+    const result = best.length
+      ? `The best of ${names.length} on the screens${want ? ` in ${app}` : ''} for "${query}":\n${best.map((n) => `- [${n}] ${found.criteria[n] ?? ''}`.trimEnd()).join('\n')}`
+      : `Nothing on the screens${want ? ` in ${app}` : ''} for "${query}".`
+    this.events.debug?.({ type: 'think-step', tickId: id, option: 'find', text: query, result })
+    return result
   }
 
   /** A web search by thinking. It gets the full excerpts; Jev reads them cut to a line. */
@@ -1717,9 +1763,9 @@ export class Agent {
       outcome = `That failed: ${err instanceof Error ? err.message : String(err)}`
     }
     this.events.status?.('thinking')
-    const screen = await this.screenText()
-    const result = `${outcome}\n\n${screen}`
-    if (step) ran.set(toolCallId, { tool: 'open_page', input: { url: written }, output: { type: 'text', value: result }, result: { toolCallId, step }, screen })
+    const view = await this.screens()
+    const result = `${outcome}\n\n${viewText(view)}`
+    if (step) ran.set(toolCallId, { tool: 'open_page', input: { url: written }, output: { type: 'text', value: result }, result: { toolCallId, step }, view })
     this.events.debug?.({ type: 'think-step', tickId: id, option: 'open_page', text: written, result })
     return result
   }
@@ -1839,10 +1885,10 @@ export class Agent {
     const look = await this.world.look?.().catch(() => undefined)
     this.events.status?.('thinking')
     const printed = look?.console.length ? `Its console printed:\n${look.console.map((line) => `- ${line}`).join('\n')}` : 'Its console printed nothing.'
-    const screen = await this.screenText()
-    const text = `${outcome} ${shown}.\n${printed}${look?.image ? '\nA picture of the screen follows.' : ''}\n\n${screen}`
+    const view = await this.screens()
+    const text = `${outcome} ${shown}.\n${printed}${look?.image ? '\nA picture of the screen follows.' : ''}\n\n${viewText(view)}`
     const output: FileOutput = { text, image: look?.image }
-    ran.set(toolCallId, { tool, input, output: fileOutput(output), result: { toolCallId, file }, screen })
+    ran.set(toolCallId, { tool, input, output: fileOutput(output), result: { toolCallId, file }, view })
     this.events.debug?.({ type: 'think-step', tickId: id, option: tool, text: path, result: text })
     return output
   }
@@ -1944,9 +1990,15 @@ export class Agent {
     return { text }
   }
 
-  private async screenText(options?: OptionSet): Promise<string> {
+  /** The screens and their options as they are now, as thinking reads them after a step. */
+  private async screens(): Promise<ViewPart[]> {
     const screen = await this.world.screen()
-    return screenText(screen, options ?? (await this.thinkingOptions(screen)), this.others())
+    return viewParts(screen, await this.thinkingOptions(screen), this.others(), { more: true })
+  }
+
+  /** Every element on the screens, past thinking's limit, and the rest of its steps: what a step can be taken on. */
+  private everyOption(screen: Screen): OptionSet {
+    return stepOptions(screen, this.world.appList(), Infinity, '', [], !!this.world.lock, undefined, [], this.laysOut(), false, false, { others: this.others() })
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────────
@@ -2077,6 +2129,13 @@ export class Agent {
   private guessedEarly(): boolean {
     const words = fullText(this.transcript).trim().split(/\s+/).filter(Boolean).length
     return stepsOf(this.view()).some((e) => e.by !== 'user' && e.utteranceId === this.utteranceId && e.target.kind === 'element' && e.target.nodeKind === 'action' && (e.heardWords ?? words) < words)
+  }
+
+  /** A press made before the user finished, followed by a press of something else. */
+  private guessedThenPressed(): boolean {
+    const words = fullText(this.transcript).trim().split(/\s+/).filter(Boolean).length
+    const presses = stepsOf(this.view()).flatMap((e) => (e.by !== 'user' && e.utteranceId === this.utteranceId && e.target.kind === 'element' && e.target.nodeKind === 'action' ? [{ node: e.target.nodeId, early: (e.heardWords ?? words) < words }] : []))
+    return presses.some((p, i) => p.early && presses.slice(i + 1).some((later) => later.node !== p.node))
   }
 
   /** Jev's P(finished saying what's needed), if it has seen every word so far. */
@@ -2242,17 +2301,34 @@ const errorText = (err: unknown) => (err instanceof Error ? err.message : String
 /** A tool output as the SDK sends it: plain JSON. */
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as JSONValue
 
-/** The screen and its options, as thinking reads them. */
 /**
- * The screens and their options, as thinking reads them: the one Stanley works on, the other apps
- * in front of the user, and a line for each app in the background, as Jev reads them (`narrate`).
+ * How `candidates` are ranked by what the user is asking (`focus`, and `before`, what they said
+ * last before it; see options.ts): their meaning is scored only when it decides something, with
+ * more than `limit` of them or ordered by relevance. The agent's ranking, and its evals'.
  */
-function screenText(screen: Screen, options: OptionSet, others: Screen[] = []): string {
-  const where = screen.visible ? 'in front of the user' : 'in the background'
-  const shown = others.filter((o) => o.visible).map((o) => `\n<screen title="${o.title}" where="also in front of the user">\n${o.markdown}\n</screen>`)
-  const hidden = background(others)
-  return `<screen title="${screen.title}" where="${where}">\n${screen.markdown}\n</screen>${shown.join('')}${hidden.length ? `\n<background>\n${hidden.join('\n')}\n</background>` : ''}\n<options>\n${optionList(options)}\n</options>`
+export async function rankingFor(relevance: Relevance | undefined, config: AgentConfig['ranking'], focus: string, candidates: Candidate[], limit: number, before = ''): Promise<Ranking> {
+  const { order, weights, clear } = config
+  const decides = order === 'relevance' || candidates.length > limit
+  if (!decides || !relevance) return { weights, order, clear }
+  const texts = candidates.flatMap(candidateTexts)
+  const deadline = relevance.deadline()
+  const meaning = await relevance.score(focus, texts, wordMatches(focus, candidates).flatMap(candidateTexts), deadline)
+  // A request leaning on what was asked before ("archive it") is about that: an element close to
+  // it counts that much, discounted, when that is more than it has from the request itself. Only
+  // closeness counts: a score below nothing's (negative) says nothing about what was meant.
+  if (before.trim() && weights.before > 0 && meaning.size) {
+    const earlier = await relevance.score(before, texts, [], deadline)
+    for (const [t, m] of meaning) {
+      const e = earlier.get(t)
+      if (e !== undefined && e > 0 && weights.before * e > m) meaning.set(t, weights.before * e)
+    }
+  }
+  return { meaning, weights, order, clear }
 }
+
+/** How many steps `find` gives thinking, and how long it waits for what isn't embedded yet. */
+const FIND = 15
+const FIND_WAIT_MS = 1500
 
 /** How many of the user's turns the writer reads: enough for what goes in the step, few enough to answer at once. */
 const WRITER_TURNS = 3

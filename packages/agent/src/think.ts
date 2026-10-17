@@ -49,6 +49,8 @@ export interface ThinkRequest {
   cacheAt?: number
   /** Runs one option and returns what comes of it: the outcome, the screen and the new options. Absent without a screen (a background task). */
   act?(call: ActCall, toolCallId: string): Promise<string>
+  /** Finds steps on the screens beyond those listed, by `query` (in `app` alone, when given), and lists the best of them by name. Absent without a screen. */
+  find?(query: string, app: string | undefined, toolCallId: string): Promise<string>
   /** Searches the web in the background. Absent without web access. Throws when it fails. */
   search?(query: string, toolCallId: string): Promise<SearchOutput>
   /** Reads a web page in the background. Absent without web access. Throws when it fails. */
@@ -124,7 +126,7 @@ const FINISHED_LAID_OUT = 'When you finish, the screen is laid out for what the 
 export const THINKING_PROMPT = `# Stanley
 You are Stanley, a voice assistant that operates apps and websites on the user's computer. You act while the user is still talking, so the conversation shows each step where it happened: a step you took before the user finished comes before the words they said after it. When later words take back or change what you did, don't mention or apologise for it: undo it (untick, put back, retype) before anything else, then do what they meant. If everything you did matches what they asked and nothing is left to say, write only ${SILENT}.
 
-The user's words are their messages. Notes from the computer are in <note> tags: what the user did in the app themselves, being cut off, the user still speaking, what comes next. Each time you are needed, the screen you're working on and its options come in <screen> and <options>; <screen unchanged/> means it's the same as the last one you saw. ${OTHER_APPS} ${FINISHED}
+The user's words are their messages. Notes from the computer are in <note> tags: what the user did in the app themselves, being cut off, the user still speaking, what comes next. Each time you are needed, the screen you're working on comes in <screen> with its options after it in <options>, then each other app in front of the user the same way, each app in the background in <background> with its options, and the options that aren't on any app last. A part that is the same as when you last saw it is marked unchanged instead (<screen title="Tasks" unchanged/>, <background title="Music" unchanged/>, <options unchanged/>), and <screen unchanged/> alone means all of it is. ${OTHER_APPS} ${FINISHED}
 
 You act through the \`act\` tool, which runs one of the listed options: open an app, open a link, press a button, type into a field, go back, go to the home screen or lock the computer. Each result tells you what is on screen now and which options come next.
 
@@ -250,6 +252,22 @@ export function tools(req: ThinkRequest): ToolSet {
           additionalProperties: false,
         }),
         execute: (call: ActCall, { toolCallId }: { toolCallId: string }) => req.act!(call, toolCallId),
+      }),
+    }),
+    ...(req.find && {
+      find: tool({
+        description:
+          "Find steps on the screens that the options don't list: every element of every open app is searched, by what it is and by its words. Use your own words for what you're looking for, as a page would name it. Returns the best matches, each one an option for `act`. The screen doesn't change.",
+        inputSchema: jsonSchema<{ query: string; app?: string }>({
+          type: 'object',
+          properties: {
+            query: { type: 'string', description: 'What to look for: a name, or what it does ("descale", "the March invoice").' },
+            app: { type: 'string', description: 'Only in this app, by its name as the screens give it.' },
+          },
+          required: ['query'],
+          additionalProperties: false,
+        }),
+        execute: ({ query, app }: { query: string; app?: string }, { toolCallId }: { toolCallId: string }) => req.find!(query, app, toolCallId),
       }),
     }),
     ...(req.search && {

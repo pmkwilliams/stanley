@@ -107,7 +107,8 @@ export async function runScenario(scenario: Scenario, speak: Speak): Promise<Sce
   const shell = new Shell(apps, { env: process.env, fetch }, () => {})
   await scenario.setup?.(shell)
   const { files, root } = fixtureFiles()
-  const run = await drive(shell, scenario.utterances, speak, files)
+  // `--no-thinking`: Jev alone, to compare a change to Jev's side without paying for thinking.
+  const run = await drive(shell, scenario.utterances, speak, files, process.argv.includes('--no-thinking') ? { thinker: noThinking() } : {})
   const failures = [...run.turnFailures, ...scenario.checks.map((c: Check) => c(shell, run.agent, root)).filter((r): r is string => typeof r === 'string')]
   const t = run.result.thinking
   if (scenario.cache && t.inputTokens && t.cachedTokens / t.inputTokens < scenario.cache.minReadRatio) failures.push(`expected ≥ ${scenario.cache.minReadRatio * 100}% of thinking's input read from the cache, got ${Math.round((t.cachedTokens / t.inputTokens) * 100)}%`)
@@ -148,7 +149,7 @@ export interface TurnWatch {
  * Turn-taking is checked on every scenario: Stanley must never say anything before the user's last
  * word. Ending the turn early (a cut-in) is counted, not failed: the next words start a new turn.
  */
-export async function drive(world: World, utterances: string[], speak: Speak, files?: FileTools) {
+export async function drive(world: World, utterances: string[], speak: Speak, files?: FileTools, opts: { thinker?: Thinker; noWeb?: boolean } = {}) {
   const ticks: TickReport[] = []
   const said: string[] = []
   const saidAt: number[] = []
@@ -194,7 +195,7 @@ export async function drive(world: World, utterances: string[], speak: Speak, fi
       changedAt = Date.now()
     },
     turnEnd: () => (turn.endedAt = Date.now()),
-  }, files, await embedding)
+  }, files, await embedding, opts.thinker, opts.noWeb)
   const settleMs: number[] = []
   const endMs: number[] = []
   const firstStepMs: (number | null)[] = []
@@ -212,7 +213,8 @@ export async function drive(world: World, utterances: string[], speak: Speak, fi
     endMs.push(Math.max(0, (turn.endedAt ?? Date.now()) - delivery.lastWordAt))
     const deadline = Date.now() + MAX_SETTLE_MS
     while ((busy || Date.now() - changedAt < QUIET_MS) && Date.now() < deadline) await sleep(100)
-    if (busy) console.warn(`   still busy after ${MAX_SETTLE_MS / 1000}s: ${utterance}`)
+    // Never going quiet is a failure, not a warning: the user would still be waiting.
+    if (busy) turnFailures.push(`still busy ${MAX_SETTLE_MS / 1000}s after "${utterance}"`)
     settleMs.push(Math.max(0, changedAt - delivery.lastWordAt))
     const mine = stepsAt.slice(stepsBefore)
     firstStepMs.push(mine.length ? mine[0]! - delivery.lastWordAt : null)
@@ -235,8 +237,9 @@ const embedding = process.argv.includes('--no-embed')
       return false
     })
 
-function makeAgent(world: World, events: AgentDeps['events'], files?: FileTools, embed = false): Agent {
-  const key = process.env.PARALLEL_API_KEY
+function makeAgent(world: World, events: AgentDeps['events'], files?: FileTools, embed = false, thinker?: Thinker, noWeb = false): Agent {
+  // With thinking stood in for (Jev alone), nothing else paid either: no web search.
+  const key = thinker || noWeb ? undefined : process.env.PARALLEL_API_KEY
   // `STANLEY_DECIDER=subq`: SubQ Snap instead of Jev, with the config and notes tuned for it.
   const profile = deciderProfile(process.env.STANLEY_DECIDER)
   // `--jev-turns N`: how many user turns Jev reads, to compare its input and latency.
@@ -252,7 +255,12 @@ function makeAgent(world: World, events: AgentDeps['events'], files?: FileTools,
   // `--quick-effort none|minimal|low`: the quick model's reasoning.
   const k = process.argv.indexOf('--quick-effort')
   const quickEffort = k === -1 ? undefined : (process.argv[k + 1] as QuickEffort)
-  return new Agent({ world, jev: countedJev(createDecisionClient()), thinker: countedThinker(createThinker({ effort, quickModel, quickEffort })), web: key ? countedWeb(parallelWeb(key)) : undefined, files, events, config, jevNotes: profile.notes, embed: embed ? llamaEmbed() : undefined })
+  return new Agent({ world, jev: countedJev(createDecisionClient()), thinker: countedThinker(thinker ?? createThinker({ effort, quickModel, quickEffort })), web: key ? countedWeb(parallelWeb(key)) : undefined, files, events, config, jevNotes: profile.notes, embed: embed ? llamaEmbed() : undefined })
+}
+
+/** Thinking that does nothing: a turn handed to it ends there. Evals of Jev alone use it, so no paid model is called. */
+export function noThinking(): Thinker {
+  return { run: async () => ({ text: '', messages: [], sent: 0 }) }
 }
 
 export function overrides(config: AgentConfig): AgentConfig {

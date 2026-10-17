@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Metro News – Front page</title>
+<style>
+  body { font: 15px Georgia, serif; margin: 0 auto; max-width: 980px; padding: 16px; }
+  article { border-bottom: 1px solid #eee; padding: 6px 0; }
+  article h3 { margin: 0; font-size: 16px; }
+</style>
+</head>
+<body>
+<nav id="sections"></nav>
+<main id="app"></main>
+<script>
+/*SITE*/
+// A front page of many sections and headlines, generated the same way every time.
+seed = 23
+const sections = ['Local', 'Politics', 'Business', 'Technology', 'Science', 'Health', 'Education', 'Sports', 'Arts', 'Food', 'Transportation', 'Weather', 'Opinion']
+const who = ['City council', 'The school board', 'State lawmakers', 'A local startup', 'Researchers', 'The county', 'Residents', 'The mayor', 'Union leaders', 'Hospital officials', 'The transit agency', 'Volunteers', 'Police']
+const did = ['approve', 'reject', 'delay', 'debate', 'propose', 'fund', 'review', 'pause', 'expand', 'celebrate']
+const what = ['a new budget', 'the stadium plan', 'school start times', 'rent limits', 'a downtown park', 'water rates', 'a hiring freeze', 'the bond measure', 'late-night bus service', 'a ban on leaf blowers', 'the harbor cleanup', 'a youth jobs program', 'new speed cameras', 'the farmers market move']
+let n = 0
+const stories = sections.map((section) => ({ section, items: Array.from({ length: 14 }, () => ({ id: `s${n++}`, title: `${pick(who)} ${pick(did)} ${pick(what)}` })) }))
+// What the evals look for, deep in the page.
+stories[10].items.splice(9, 0, { id: 'ferry', title: 'Ferry service to Bainbridge Island resumes after repairs' })
+stories[6].items.splice(11, 0, { id: 'levy', title: 'Voters weigh library levy that would add Sunday hours' })
+stories[11].items.splice(4, 0, { id: 'heat', title: 'Heat wave prompts cooling centers to open early' })
+stories[3].items.splice(12, 0, { id: 'robots', title: 'Warehouse robots take over night shifts at the port' })
+function render() {
+  const id = opened()
+  const all = stories.flatMap((s) => s.items)
+  document.getElementById('sections').innerHTML = sections.map((s) => `<a href="#/section/${s}">${s}</a>`).join(' · ')
+  if (id) {
+    const s = all.find((x) => x.id === id)
+    document.title = `${s.title} – Metro News`
+    document.getElementById('app').innerHTML = `<article><h1>${s.title}</h1><p>By Staff Reporter</p><p>The story in full.</p><button data-act="share" data-id="${s.id}">Share</button> <button data-act="save" data-id="${s.id}">${isOn('save', s.id) ? 'Saved' : 'Save'}</button></article><a href="#/">Front page</a>`
+    return
+  }
+  document.title = 'Metro News – Front page'
+  document.getElementById('app').innerHTML = stories.map(({ section, items }) => `<section><h2>${section}</h2>${items.map((s) => `<article><h3><a href="#/open/${s.id}">${s.title}</a></h3><button data-act="share" data-id="${s.id}">${isOn('share', s.id) ? 'Shared' : 'Share'}</button> <button data-act="save" data-id="${s.id}">${isOn('save', s.id) ? 'Saved' : 'Save'}</button></article>`).join('')}</section>`).join('')
+}
+render()
+</script>
+</body>
+</html>

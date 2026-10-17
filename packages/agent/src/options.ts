@@ -33,6 +33,8 @@ export interface OptionSet {
   /** Option name → description, sent to Jev as one question's options. */
   criteria: Record<string, string | null>
   targets: Map<string, Target>
+  /** The options that clearly match what the user is asking (see `clearly`). */
+  clear: Set<string>
 }
 
 export const NAVIGATION = {
@@ -78,6 +80,8 @@ export interface Ranking {
   weights: RankWeights
   /** Steps in the order the screens list them, or the most relevant first. */
   order: 'screen' | 'relevance'
+  /** The meaning score (`Relevance.score`) at which a candidate clearly matches what the user is asking (`OptionSet.clear`). Without it, only words do. */
+  clear?: number
 }
 
 /**
@@ -87,6 +91,10 @@ export interface Ranking {
  */
 export interface RankWeights {
   meaning: number
+  /** How much an element's own name counts beside the item it is in ("Archive" beside the email it archives), as a share of the item's. */
+  own: number
+  /** How much what the user said before counts, against the request itself, for a request leaning on it ("archive it"). */
+  before: number
   word: number
   tier: Record<Tier, number>
   near: number
@@ -96,7 +104,7 @@ export interface RankWeights {
 export type Tier = 'focused' | 'visible' | 'background'
 
 /** Without a ranking: what matches the user's words, then what is in view, as before there were embeddings. */
-const WORDS_ONLY: Ranking = { weights: { meaning: 0, word: 2, tier: { focused: 0, visible: 0, background: 0 }, near: 1 }, order: 'screen' }
+const WORDS_ONLY: Ranking = { weights: { meaning: 0, own: 0, before: 0, word: 2, tier: { focused: 0, visible: 0, background: 0 }, near: 1 }, order: 'screen' }
 
 /**
  * The candidates to offer, at most `limit`: the most relevant to what the user is asking (`focus`)
@@ -104,34 +112,82 @@ const WORDS_ONLY: Ranking = { weights: { meaning: 0, word: 2, tier: { focused: 0
  * a control in another app is there when they ask for it. In screen order, or the most relevant
  * first (`ranking.order`).
  */
-function rank<T>(items: T[], limit: number, focus: string, text: (t: T) => string, meaningText: (t: T) => string, near: (t: T) => boolean, tier: (t: T) => Tier, ranking: Ranking): T[] {
+function rank<T>(items: T[], limit: number, focus: string, text: (t: T) => string, meaningTexts: (t: T) => string[], near: (t: T) => boolean, tier: (t: T) => Tier, ranking: Ranking): T[] {
   const byRelevance = ranking.order === 'relevance'
   if (items.length <= limit && !byRelevance) return items
   const want = words(focus)
   const w = ranking.weights
+  // What isn't embedded yet counts as no closer to the request than to a request for nothing (a
+  // score of 0, `Relevance.score`): it neither wins nor loses for that.
+  const neutral = 0
   const score = (t: T) => {
     const have = words(text(t))
     let overlap = 0
     for (const word of want) if (have.has(word)) overlap++
-    return w.meaning * (ranking.meaning?.get(meaningText(t)) ?? 0) + w.word * overlap + w.tier[tier(t)] + (near(t) ? w.near : 0)
+    return w.meaning * meaningOf(meaningTexts(t), ranking, neutral) + w.word * overlap + w.tier[tier(t)] + (near(t) ? w.near : 0)
   }
-  const ranked = items.map((t, i) => ({ t, i, s: score(t) })).sort((a, b) => b.s - a.s || a.i - b.i)
+  const scored = items.map((t, i) => ({ t, i, s: score(t) }))
+  const ranked = scored.sort((a, b) => b.s - a.s || a.i - b.i)
   const kept = ranked.slice(0, limit)
   return (byRelevance ? kept : kept.sort((a, b) => a.i - b.i)).map((r) => r.t)
+}
+
+
+/**
+ * A candidate's meaning from its texts' (`candidateTexts`): an element in an item, its item's and,
+ * `weights.own` as much, its own; `neutral` for a text not embedded yet.
+ */
+function meaningOf(texts: string[], ranking: Ranking, neutral: number): number {
+  const m = (t: string) => ranking.meaning?.get(t) ?? neutral
+  const own = ranking.weights.own
+  return texts.length === 2 ? (m(texts[0]!) + own * m(texts[1]!)) / (1 + own) : m(texts[0]!)
+}
+
+/** Whether a candidate clearly matches what the user is asking (`want`, their words): close in meaning, or sharing a word with its own name. */
+function clearly(c: Candidate, want: Set<string>, ranking: Ranking): boolean {
+  const texts = candidateTexts(c)
+  if (ranking.clear !== undefined && texts.every((t) => ranking.meaning?.has(t)) && meaningOf(texts, ranking, 0) >= ranking.clear) return true
+  return shared(c, want) > 0
+}
+
+/** How many of `want` a candidate's own name has: its containers' and its label's words, not its app's, which every element of the app has. */
+function shared(c: Candidate, want: Set<string>): number {
+  const own = words('flat' in c ? [...c.flat.path, c.flat.node.label].join(' ') : 'page' in c ? c.page.title : c.file.path.replace(/[/._-]+/g, ' '))
+  let n = 0
+  for (const w of want) if (own.has(w)) n++
+  return n
+}
+
+/** The candidates whose own name shares a word with `focus`, those sharing the most first. */
+export function wordMatches(focus: string, candidates: Candidate[]): Candidate[] {
+  const want = words(focus)
+  if (!want.size) return []
+  return candidates
+    .map((c, i) => ({ c, i, n: shared(c, want) }))
+    .filter((x) => x.n > 0)
+    .sort((a, b) => b.n - a.n || a.i - b.i)
+    .map((x) => x.c)
 }
 
 interface Flat {
   node: AgentNode
   /** Labels of the containers it sits in, outermost first. */
   path: string[]
+  /** Its container is one thing (a row, a card), not a section of the page (`role: 'section'`). */
+  inItem: boolean
 }
 
-function flatten(nodes: AgentNode[], path: string[] = [], out: Flat[] = []): Flat[] {
+function flatten(nodes: AgentNode[], path: string[] = [], out: Flat[] = [], inItem = false): Flat[] {
   for (const node of nodes) {
-    if (node.kind !== 'group') out.push({ node, path })
-    if (node.children) flatten(node.children, [...path, node.label], out)
+    if (node.kind !== 'group') out.push({ node, path, inItem })
+    if (node.children) flatten(node.children, [...path, node.label], out, node.role !== 'section')
   }
   return out
+}
+
+/** How many elements a screen has: what could be offered of it. */
+export function elementCount(screen: Screen): number {
+  return flatten(screen.elements).length
 }
 
 /** `"Lunch Friday?" › Archive`: the element's label after the containers that tell it apart. */
@@ -170,17 +226,79 @@ const tierOf = (c: Candidate): Tier => ('flat' in c && c.app ? (c.app.visible ? 
 /** An element's option name: in another app, after that app's title. */
 const nameOf = (c: { flat: Flat; app?: Screen }) => (c.app ? `${c.app.title} › ` : '') + elementName(c.flat.path, c.flat.node)
 
-/** What a candidate is, as the embedding model reads it: its name and how it reads to Jev, where it is included. */
+/**
+ * What a candidate is, as the embedding model reads it: an element by its name alone, and a link in
+ * running text with the sentence it is in, which says what it names (`AgentNode.about`). Where it is
+ * (which app, in view or not) is scored apart (`RankWeights`), and its state (a field's text,
+ * "out of view") would change the text as the page scrolls or the user types, so it would be
+ * embedded again and again; a thousand elements sharing "button, out of view" also read more alike.
+ */
 export function candidateText(c: Candidate): string {
-  if ('flat' in c) return `${nameOf(c)}, ${describeIn(c)}`
+  if ('flat' in c) return c.flat.node.about ? `${elementName(c.flat.path, c.flat.node)}: ${c.flat.node.about}` : elementName(c.flat.path, c.flat.node)
   if ('page' in c) return `open page: ${c.page.title}, web page on ${domainOf(c.page.url)}`
   return `${c.file.path.endsWith('/') ? 'folder' : 'file'} in the user's files: ${c.file.path}`
+}
+
+/**
+ * The texts a candidate's meaning comes from. An element in an item (a row, a card: the containers
+ * that tell repeated controls apart; not a section of the page), the item's name and its own: an email is embedded as itself,
+ * not once for each of its controls ("… › Archive", "… › Star"), and a page's thousand controls are
+ * a few hundred items and a handful of labels to embed. Anything else, as `candidateText` has it.
+ */
+export function candidateTexts(c: Candidate): string[] {
+  if ('flat' in c && c.flat.path.length && c.flat.inItem) {
+    const { node } = c.flat
+    return [c.flat.path.join(' › '), node.about ? `${node.label}: ${node.about}` : node.label]
+  }
+  return [candidateText(c)]
 }
 
 /** How an element reads to Jev: in another app, which app and whether the user can see it. */
 function describeIn(c: { flat: Flat; app?: Screen }): string {
   const own = describe(c.flat.node)
   return c.app ? `${own}, in ${c.app.title}, ${c.app.visible ? 'on screen' : 'in the background'}` : own
+}
+
+/**
+ * Each candidate's steps (an element one, a file up to two), named: unique over all of them in
+ * screen order, a clash getting a counter, and none taking a name in `taken`. A name that is a
+ * whole number ("2", a page or a footnote) is quoted: an object lists such keys first, whatever
+ * their place. Two pages with the same title are told apart by their site.
+ */
+function nameAll(candidates: Candidate[], taken: Set<string>): Map<Candidate, [string, string, Target][]> {
+  const used = new Set(taken)
+  const unique = (name: string) => {
+    const base = /^\d+$/.test(name) ? `"${name}"` : name
+    let n = 2
+    let out = base
+    while (used.has(out)) out = `${base} (${n++})`
+    used.add(out)
+    return out
+  }
+  const titles = new Map<string, number>()
+  for (const c of candidates) if ('page' in c) titles.set(c.page.title, (titles.get(c.page.title) ?? 0) + 1)
+  const out = new Map<Candidate, [string, string, Target][]>()
+  for (const c of candidates) {
+    const steps: [string, string, Target][] = []
+    if ('flat' in c) {
+      const { node } = c.flat
+      steps.push([nameOf(c), describeIn(c), { kind: 'element', node, role: roleOf(node), ...(c.app && { app: c.app }) }])
+    } else if ('file' in c) {
+      const { path } = c.file
+      if (path.endsWith('/')) steps.push([`list folder: ${path.slice(0, -1)}`, "folder in the user's files", { kind: 'folder', path: path.slice(0, -1) }])
+      else {
+        if (!c.file.read) steps.push([`read file: ${path}`, "file in the user's files", { kind: 'file', path }])
+        const { url } = c.file
+        if (url) steps.push([`open file: ${path}`, "file in the user's files, put on screen", { kind: 'page', url, title: path.split('/').at(-1)! }])
+      }
+    } else {
+      const { url, title } = c.page
+      const domain = domainOf(url)
+      steps.push([`open page: ${title}${titles.get(title)! > 1 ? ` (${domain})` : ''}`, `web page on ${domain}${c.page.open ? ', kept open' : ''}`, { kind: 'page', url, title }])
+    }
+    out.set(c, steps.map(([name, description, target]) => [unique(name), description, target]))
+  }
+  return out
 }
 
 /**
@@ -195,48 +313,42 @@ function describeIn(c: { flat: Flat; app?: Screen }): string {
  * again does nothing.
  */
 export function stepOptions(screen: Screen, apps: AppEntry[], limit: number, focus = '', pages: KnownPage[] = [], lock = false, files?: KnownFile[], skills: Skill[] = [], arrange = false, search = false, respond = false, more: { others?: Screen[]; ranking?: Ranking } = {}): OptionSet {
+  const ranking = more.ranking ?? WORDS_ONLY
+  const want = words(focus)
   const criteria: Record<string, string | null> = {}
   const targets = new Map<string, Target>()
-  const add = (name: string, description: string, target: Target) => {
-    let unique = name
-    for (let n = 2; unique in criteria; n++) unique = `${name} (${n})`
-    criteria[unique] = description
-    targets.set(unique, target)
-  }
+  const clear = new Set<string>()
+  // The steps that aren't on any app, by name: an element can't take one of their names.
+  const rest: [string, string, Target][] = [
+    ...skills.map((skill): [string, string, Target] => [`use skill: ${skill.name}`, `skill: ${skill.description}`, { kind: 'skill', skill }]),
+    ...apps.map((app): [string, string, Target] => [`open ${app.title}`, `app: ${app.description}`, { kind: 'app', app }]),
+    ['back', NAVIGATION.back, { kind: 'back' }],
+    ['home screen', NAVIGATION.home, { kind: 'home' }],
+    ...(arrange ? [['arrange the screen', NAVIGATION.arrange, { kind: 'arrange' }] as [string, string, Target]] : []),
+    ...(lock ? [['lock', NAVIGATION.lock, { kind: 'lock' }] as [string, string, Target]] : []),
+    ...(files ? [['list files', NAVIGATION.files, { kind: 'folder', path: '' }] as [string, string, Target]] : []),
+    ...(search ? [['search the web', NAVIGATION.search, { kind: 'search' }] as [string, string, Target]] : []),
+    ...(respond ? [['respond', NAVIGATION.respond, { kind: 'respond' }] as [string, string, Target]] : []),
+  ]
   const candidates = candidatesOf(screen, more.others, pages, files)
+  // Every candidate's steps are named over all of them, in screen order, before any is chosen: a
+  // name ("Download (2)") means the same element whatever is offered, so a step read earlier is
+  // still the step it was.
+  const named = nameAll(candidates, new Set(rest.map(([name]) => name)))
   const text = (c: Candidate) => ('flat' in c ? [...(c.app ? [c.app.title] : []), ...c.flat.path, c.flat.node.label].join(' ') : 'page' in c ? `${c.page.title} ${domainOf(c.page.url)}` : c.file.path.replace(/[/._-]+/g, ' '))
   const near = (c: Candidate) => ('flat' in c ? !c.flat.node.offscreen : 'page' in c ? c.page.latest : c.file.latest)
-  const chosen = rank(candidates, limit, focus, text, candidateText, near, tierOf, more.ranking ?? WORDS_ONLY)
-  // Two pages with the same title are told apart by their site.
-  const titles = new Map<string, number>()
-  for (const c of chosen) if ('page' in c) titles.set(c.page.title, (titles.get(c.page.title) ?? 0) + 1)
+  const chosen = rank(candidates, limit, focus, text, candidateTexts, near, tierOf, ranking)
   for (const c of chosen) {
-    if ('flat' in c) {
-      const { node } = c.flat
-      add(nameOf(c), describeIn(c), { kind: 'element', node, role: roleOf(node), ...(c.app && { app: c.app }) })
-    } else if ('file' in c) {
-      const { path } = c.file
-      const folder = path.endsWith('/')
-      if (folder) add(`list folder: ${path.slice(0, -1)}`, "folder in the user's files", { kind: 'folder', path: path.slice(0, -1) })
-      else {
-        if (!c.file.read) add(`read file: ${path}`, "file in the user's files", { kind: 'file', path })
-        const { url } = c.file
-        if (url) add(`open file: ${path}`, "file in the user's files, put on screen", { kind: 'page', url, title: path.split('/').at(-1)! })
-      }
-    } else {
-      const { url, title } = c.page
-      const domain = domainOf(url)
-      add(`open page: ${title}${titles.get(title)! > 1 ? ` (${domain})` : ''}`, `web page on ${domain}${c.page.open ? ', kept open' : ''}`, { kind: 'page', url, title })
+    const isClear = clearly(c, want, ranking)
+    for (const [name, description, target] of named.get(c)!) {
+      criteria[name] = description
+      targets.set(name, target)
+      if (isClear) clear.add(name)
     }
   }
-  for (const skill of skills) add(`use skill: ${skill.name}`, `skill: ${skill.description}`, { kind: 'skill', skill })
-  for (const app of apps) add(`open ${app.title}`, `app: ${app.description}`, { kind: 'app', app })
-  add('back', NAVIGATION.back, { kind: 'back' })
-  add('home screen', NAVIGATION.home, { kind: 'home' })
-  if (arrange) add('arrange the screen', NAVIGATION.arrange, { kind: 'arrange' })
-  if (lock) add('lock', NAVIGATION.lock, { kind: 'lock' })
-  if (files) add('list files', NAVIGATION.files, { kind: 'folder', path: '' })
-  if (search) add('search the web', NAVIGATION.search, { kind: 'search' })
-  if (respond) add('respond', NAVIGATION.respond, { kind: 'respond' })
-  return { criteria, targets }
+  for (const [name, description, target] of rest) {
+    criteria[name] = description
+    targets.set(name, target)
+  }
+  return { criteria, targets, clear }
 }

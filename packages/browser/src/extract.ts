@@ -18,10 +18,14 @@ export interface ExtractedElement {
   state?: string
   /** Names of the containers it sits in, outermost first, when its own name is not unique. */
   context: string[]
+  /** What the container named in `context` is: an item (a row, a card, an entry), or a section of the page. */
+  contextKind?: 'item' | 'section'
   /** Single-line text fields with text in them can be submitted with Enter. */
   submits?: boolean
   /** Scrolled out of view: a person would have to scroll to see it. */
   offscreen?: boolean
+  /** A link in running text: the text around it, which says what it is about (`AgentNode.about`). */
+  about?: string
 }
 
 export interface Extracted {
@@ -36,7 +40,9 @@ export interface Extracted {
 export const EXTRACT = String.raw`(function (opts) {
   var maxText = opts.maxText || 4000
   var SEL = 'a[href], button, input:not([type=hidden]), textarea, select, summary, [role=button], [role=link], [role=checkbox], [role=switch], [role=tab], [role=menuitem], [role=menuitemcheckbox], [role=option], [role=radio], [role=textbox], [role=searchbox], [contenteditable=""], [contenteditable=true]'
-  var CONTAINER = 'article, li, tr, [role=row], [role=listitem], [role=article], dialog, [role=dialog], form, fieldset, section, nav, aside, header, footer'
+  var CONTAINER = 'article, li, tr, dt, [role=row], [role=listitem], [role=article], dialog, [role=dialog], form, fieldset, section, nav, aside, header, footer'
+  // Containers that are one thing on the page (a row, a card, an entry), not a part of it (a section, a menu).
+  var ITEM = 'article, li, tr, dt, [role=row], [role=listitem], [role=article]'
 
   function clean(s) { return (s || '').replace(/\s+/g, ' ').trim() }
   function shown(el) {
@@ -111,11 +117,33 @@ export const EXTRACT = String.raw`(function (opts) {
     if (el.disabled || el.getAttribute('aria-disabled') === 'true') s.push('disabled')
     return s.join(', ')
   }
+  // The first line of text shown in el: the innermost block whose own text comes first (a label in it, "Title:", goes with it).
+  function firstLine(el) {
+    var walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+    var node
+    while ((node = walker.nextNode())) {
+      if (!clean(node.textContent) || !shown(node.parentElement)) continue
+      var block = node.parentElement
+      while (block && block !== el && getComputedStyle(block).display.indexOf('inline') === 0) block = block.parentElement
+      return block || el
+    }
+    return el
+  }
   function short(t) { return t.length > 60 ? t.slice(0, 59) + '…' : t }
   // A container's name: its label or heading, or for a row or card, its main link. Never a run of
   // its text, which reads as noise ("Home Sport Business…").
   function containerName(c, inner) {
     var v = c.getAttribute('aria-label'); if (clean(v)) return short(clean(v))
+    // A term in a definition list is named by what follows it: the first line of its description
+    // (a listing's links in the term, its title in the description).
+    if (c.tagName === 'DT') {
+      var dd = c.nextElementSibling
+      while (dd && dd.tagName !== 'DD' && dd.tagName !== 'DT') dd = dd.nextElementSibling
+      if (dd && dd.tagName === 'DD') {
+        var t = textOf(dd.querySelector('h1, h2, h3, h4, h5, h6, [role=heading]') || firstLine(dd))
+        if (t) return short(t)
+      }
+    }
     v = c.getAttribute('aria-labelledby'); if (v && byIds(v)) return short(byIds(v))
     var h = c.querySelector('h1, h2, h3, h4, h5, h6, [role=heading], legend, caption')
     if (h && textOf(h)) return short(textOf(h))
@@ -148,6 +176,18 @@ export const EXTRACT = String.raw`(function (opts) {
     var st = stateOf(el)
     if (el.tagName === 'SELECT') st = [st, 'options: ' + Array.from(el.options).slice(0, 12).map(function (o) { return clean(o.textContent) }).join(', ')].filter(Boolean).join(', ')
     if (st) item.state = st
+    // A link in running text names something; the sentence around it says what.
+    if (role === 'link') {
+      var block = el.closest('p, li, dd, td, blockquote, figcaption')
+      var around = block ? clean(block.textContent) : ''
+      if (around.length > name.length + 30) {
+        // The words around the link, not the start of a long paragraph it ends.
+        var at = around.indexOf(name)
+        var from = at > 100 ? at - 100 : 0
+        var to = at === -1 ? 200 : Math.min(around.length, at + name.length + 100)
+        item.about = (from ? '…' : '') + around.slice(from, to) + (to < around.length ? '…' : '')
+      }
+    }
     found.push(item)
   })
   document.documentElement.setAttribute('data-stanley-next', String(seen))
@@ -159,12 +199,12 @@ export const EXTRACT = String.raw`(function (opts) {
   found.forEach(function (f) { counts[f.name] = (counts[f.name] || 0) + 1 })
   found.forEach(function (f) {
     var d = f.el.closest(DIALOG)
-    if (d) { var dn = containerName(d, f.el) || 'dialog'; if (dn !== f.name) { f.context = [dn]; return } }
+    if (d) { var dn = containerName(d, f.el) || 'dialog'; if (dn !== f.name) { f.context = [dn]; f.contextKind = 'section'; return } }
     if (counts[f.name] < 2) return
     var c = f.el.parentElement && f.el.parentElement.closest(CONTAINER)
     while (c) {
       var n = containerName(c, f.el)
-      if (n && n !== f.name) { f.context = [n]; return }
+      if (n && n !== f.name) { f.context = [n]; f.contextKind = c.matches(ITEM) ? 'item' : 'section'; return }
       c = c.parentElement && c.parentElement.closest(CONTAINER)
     }
   })

@@ -1,0 +1,5340 @@
+<!-- arXiv: Computation and Language, recent: https://arxiv.org/list/cs.CL/recent, saved 2026-10-17. Listing metadata CC0. -->
+<!doctype html>
+<html lang="en" class="js"><head>  <title>Computation and Language  </title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/browse/0.3.4/images/icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/browse/0.3.4/images/icons/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/browse/0.3.4/images/icons/favicon-16x16.png">
+  <link rel="manifest" href="/static/browse/0.3.4/images/icons/site.webmanifest">
+  <link rel="mask-icon" href="/static/browse/0.3.4/images/icons/safari-pinned-tab.svg" color="#5bbad5">
+  <meta name="msapplication-TileColor" content="#da532c">
+  <meta name="theme-color" content="#ffffff">
+  <style>/****************************************
+ *  arXiv.org Cascading Style Sheet
+ *  $Date: 2024/12/06 $
+ *****************************************/
+/****************************************
+ *   General rules
+ *****************************************/
+body {
+  margin: 0;
+  padding: 0;
+  background-color: #fff;
+  color: #000;
+  font-family: 'Lucida Grande', helvetica, arial, verdana, sans-serif;
+}
+
+a:link, a:visited, a:active {
+  text-decoration: none;
+  /*font-weight: bold;*/
+  font-weight: normal;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+/* Underline links within prose content for accessibility (WCAG 1.4.1) */
+/* Only in contexts where links appear within running text, not navigation or link lists */
+.abstract a,
+blockquote:not(.abstract) a,
+figcaption a,
+.submission-history p a,
+#content .description a,
+.accordion-body p a {
+  text-decoration: underline;
+}
+
+abbr, acronym {
+  border-bottom: 0;
+}
+
+/* Following command not used by abs samples, but present in arXiv.css*/
+fieldset {
+  margin: 1em;
+}
+
+/* Following command not used by abs samples, but present in arXiv.css*/
+fieldset legend {
+  font-weight: bold;
+}
+
+/* Following command not used by abs samples, but present in arXiv.css*/
+hr, .hidden {
+  display: none;
+}
+
+/* Following command not used by abs samples, but present in arXiv.css*/
+hr.show {
+  display: block;
+}
+
+img {
+  border: 0;
+}
+
+/* Following command not used by abs samples, but present in arXiv.css*/
+em {
+  color: #c00;
+  font-weight: bold;
+  font-style: normal;
+}
+
+/* Used to display localtime in bright highlight */
+em.boxed {
+  color: #000;
+  background-color: #fff;
+  border: 3px;
+  border-color: #0c0;
+  border-style: solid;
+  padding: 5px;
+  font-weight: bold;
+  font-size: 150%;
+  font-style: normal;
+}
+
+.primary-subject {
+  font-weight: bold;
+}
+
+/****************************************
+ * Cornell Identity
+ *****************************************/
+#cu-identity {
+  font-family: verdana, arial, helvetica, sans-serif;
+  font-size: 63.125%;
+  color: #fff;
+  background-color: #222;
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+}
+
+#cu-logo {
+  position: relative;
+  /*	top: 0; */
+  left: 10px;
+  top: 2px;
+  width: 300px;
+  height: 49px;
+}
+
+#cu-logo a img {
+  width:200px;
+}
+#cu-identity .message-header {
+  align-items: center;
+  display: flex;
+  border-radius: .5em;
+  padding: .5em;
+  margin: .5em 0;
+}
+#cu-identity .message-header a {
+  color: #0012ef;
+}
+#cu-identity .message-header p {
+  margin:0;
+  color: #000000;
+  font-size: 1.25em;
+}
+#cu-identity .message-header img {
+  float:left;
+  margin-right:1em;
+  height: 4em;
+}
+#cu-identity .message-header .btn-slim {
+  background-color: #dddddd;
+  display: inline-block;
+  border: 2px solid #bbbbbb;
+  border-top: 1px solid white;
+  border-left: 1px solid white;
+  border-radius: 5px;
+  padding: 1px 5px;
+  color: #000000 !important;
+}
+#cu-identity .message-header.message-yellow {
+  background-color:#ffcc00;
+  border: 1px solid #8d7109;
+}
+#cu-identity .message-header.message-yellow p a {
+  color: #054169;
+  font-weight: bold;
+}
+#cu-identity .message-header.message-grey {
+  background-color:#dddddd;
+  border-bottom: 2px solid #b7b8b9;
+  border-right: 2px solid #757575;
+}
+
+#insignia-link {
+  width: 68px;
+  height: 50px;
+}
+
+#unit-signature-links a {
+  left: 68px;
+  width: 185px;
+}
+
+#cornell-link {
+  height: 38px;
+}
+
+#unit-link {
+  top: 38px;
+  height: 37px;
+}
+
+/*
+ * Support acknowledgement
+ * -----------------------
+ * */
+#support-ack {
+  top: 12px;
+  right: 0%;
+  margin: 0 12px 0 0;
+  padding: 8px 0;
+  text-align: right;
+  font-size: 120%;
+  font-weight: normal;
+  font-family: 'Lucida Grande', helvetica, arial, verdana, sans-serif;
+  color: #fff;
+  display:flex;
+  align-items:center;
+  gap: 1em;
+  justify-content: right;
+}
+#support-ack-url {
+  max-width: 400px;
+  float:right;
+  display: block;
+}
+#support-ack-url a {
+  color: #fff;
+  border: none;
+  text-decoration: underline;
+}
+#support-ack-url a:hover {
+  color: #1e8bc3;
+}
+#support-ack .btn-header-donate {
+  background-color: white;
+  border: 1px solid #b31b1b;
+  padding: .2em 1em 0 1em;
+  border-radius: .5em;
+  color: #b31b1b;
+  height: 1.5em;
+  font-size: 1.25em;
+  transition: all .5s ease-in-out;
+}
+#support-ack .btn-header-donate:hover {
+  background-color: #fb595a;
+  color: black;
+}
+
+/*
+ *   Local icon in place of Cornell Search Navigation
+ *     ------------------------------------------------
+ *     */
+#local-icon {
+  position: absolute;
+  top: 12px;
+  right: 0%;
+  margin-right: 12px;
+  color: #fff;
+}
+
+/****************************************
+ * arXiv.org Masthead
+ ****************************************/
+#header {
+  background-color: #b31b1b;
+  color: #fff;
+  margin: 0;
+  padding: 10px 0 10px 0;
+  border-bottom: 2px solid #ccc;
+  position: relative;
+  overflow: auto;
+  /* keep wrapping floats */
+}
+
+#header h1 {
+  margin: 0;
+  font-size: 1em;
+  padding: 10px 0 .2em 10px;
+  font-weight: bold;
+  font-style: normal;
+  /*	display: inline-block; */
+  float: left;
+}
+
+#header .header-breadcrumbs {
+  margin: 0;
+  font-size: 1em;
+  padding: 10px 0 .2em 10px;
+  font-style: normal;
+  float: left;
+  display: inline-flex;
+  align-items: center;
+}
+
+#header .header-breadcrumbs a {
+  /*font-weight: bold;*/
+}
+
+#header .header-breadcrumbs span {
+  margin-right:5px;
+  margin-left: 5px;
+}
+
+body#front #header h1 {
+  font-size: 2.5em;
+  font-weight: normal;
+}
+
+#header .classifications a {
+  color: #fff;
+  text-decoration: none;
+  font-size: 1em;
+  font-weight: bold;
+}
+
+#header a, #header a:visited {
+  color: #fff;
+  text-decoration: none;
+}
+
+#header a:hover {
+  text-decoration: underline;
+}
+
+/*
+ * Masthead Search
+ * ---------------
+ * /
+/* on thin red bar pages */
+#header form {
+  /*position: absolute;
+ * 	top: 4px;
+ * 		right: 0%;*/
+  margin: 0 12px 0 0;
+  padding: 0;
+  text-align: right;
+  font-size: .8em;
+  line-height: 100%;
+}
+
+/* on mirror front pages */
+body#front #header form {
+  top: 15px;
+}
+
+/* on CUL front page */
+body.with-cu-identity #header form {
+  /*	top: 80px; */
+}
+
+body#front.with-cu-identity #header form {
+  /*	top: 92px; */
+}
+
+#header form input, #header form select {
+  margin: 0;
+  padding: 0;
+}
+
+#header form .search-for {
+  font-size: 84%;
+  text-align: left;
+  float: left;
+}
+
+#header .login {
+  padding-bottom: .5em;
+  padding-right: 20px;
+  font-size: 84%;
+  float: right;
+}
+
+#header .login a {
+  text-decoration: underline;
+}
+
+#header form .links {
+  padding-bottom: .4em;
+  font-size: 84%;
+}
+
+#header form .links a {
+  text-decoration: underline;
+}
+@media screen and (max-width: 768px) {
+  #header h1 {
+    text-align: center;
+    float: none;
+    margin: 0;
+    padding: 0 0 .2em 0;
+  }
+  .search-block.level-right {
+    clear:both !important;
+  }
+  #header .header-breadcrumbs {
+    float: none;
+    text-align: center;
+  }
+}
+
+/****************************************
+ * Main
+ ****************************************/
+main {
+  flex-grow: 1;
+}
+
+/****************************************
+ * Footer
+ ****************************************/
+ .flex-wrap-footer {
+   display: flex;
+   min-height: 100vh;
+   flex-direction: column;
+ }
+ /* Spinout footer: span the page width like the abs-page #content (very minimal side
+    margins) instead of the centred 1200px grid. Browse-local override of the shared
+    chrome — the descendant selector beats it regardless of stylesheet order. */
+ .flex-wrap-footer .ds-site-footer { padding-left: 10px; padding-right: 10px; }
+ .flex-wrap-footer .ds-site-footer-grid { max-width: none; }
+ footer ul li {
+   display: flex;
+   align-items: center;
+   font-size:14px;
+ }
+ footer ul li a {
+   font-size: 13.5px;
+   /* padding-left: 3px; */
+ }
+
+#footer {
+  background-color: hsl(0, 0%, 95%);
+  color: #000;
+  margin: 1em 0 0 0;
+  padding: .7em;
+  border-top: 1px solid #ddd;
+  border-bottom: 1px solid #ddd;
+  font-size: 80%;
+  clear: both;
+  overflow: hidden;
+}
+
+#footer .footer-text {
+  width: 88%;
+  float: left;
+}
+
+#footer .social {
+  width: 10%;
+  float: right;
+  text-align: right;
+}
+
+#footer .social img {
+  max-width: 100%;
+  height: auto;
+}
+
+#footer a, #footer a:visited {
+  text-decoration: none;
+}
+
+#footer a:hover {
+  text-decoration: underline;
+}
+
+#footer address {
+  /*font-size: 90%;*/
+  margin: 5px;
+  font-style: normal;
+}
+
+#footer p, #footer h1, #footer h2, #footer h3, #footer h4, #footer h5,
+#footer h6 {
+  /*font-size: 90%;*/
+  margin: 5px;
+}
+
+#footer .a11y-text {
+  margin: 1em 0;
+  padding-top: 1em;
+  border-top: 1px solid #ccc;
+}
+
+footer {
+  background-color: hsl(0, 0%, 95%);
+  color: #000;
+  padding: 1em 2em;
+  font-size: 0.9rem; -webkit-font-smoothing: antialiased;
+  margin-top: 6rem;
+}
+
+footer a, footer a:visited {
+  color: #000;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  line-height: 1.75em;
+}
+
+footer a:hover, footer a:active {
+  color: #005e9d;
+  border-bottom: 1px dotted #005e9d;
+  text-decoration: none;
+}
+
+footer ul {
+  padding: 0;
+  margin: 0;
+}
+
+footer .columns.lower {
+  margin: -0.5em -0.75em -0.75em -0.75em;
+  border-top: 1px solid #979797;
+}
+footer .columns.lower .column .columns .column {
+  padding-top: 0;
+  padding-left: 0;
+  padding-bottom: 0;
+}
+footer .sorry-app-links .help {
+  font-size: 0.75rem;
+  margin-bottom: 0;
+  line-height: 1.75em;
+}
+footer .sorry-app-links .help a,
+footer .sorry-app-links .help a:visited {
+  border-bottom: 1px dotted #000;
+}
+footer .sorry-app-links .help a:hover,
+footer .sorry-app-links .help a:active {
+  border-bottom: 1px dotted #005e9d;
+}
+/* footer .sorry-app-links .button.is-link.is-outlined {
+  background-color: transparent;
+  border: 1px solid #c3c3c3;
+  border-radius: 5px;
+  padding: .35em;
+  height: auto;
+  margin-bottom: .35em;
+  display: inline-block;
+} */
+footer .sorry-app-links svg.icon,
+footer .sorry-app-links .button svg.icon,
+footer .sorry-app-links .button svg.icon:first-child:last-child {
+  margin-bottom: -2px !important;
+}
+footer .sorry-app-links .icon.filter-black:hover,
+footer .sorry-app-links .icon.filter-black:active,
+footer .sorry-app-links a:hover .icon.filter-black,
+footer .sorry-app-links a:hover .icon.filter-black {
+  fill: #005e9d !important;
+}
+footer .sorry-app-links .a11y-main-link {
+  font-size: 110%;
+  border-bottom: 1px solid transparent !important;
+  padding:0;
+  margin:0;
+}
+@media screen and (max-width: 768px) {
+  footer .sorry-app-links.column {
+    padding: 0;
+  }
+}
+
+.endorsers .help {
+  position: relative;
+  top: 4rem;
+}
+
+@media screen and (min-width: 990px) {
+  .endorsers .help { top: 5rem; } /* adjusts for endorsers and feedback being a single line instead of double, uses desktop breakpoint */
+}
+@media screen and (min-width: 769px) {
+  .columns { display: flex; flex-direction: row; }
+}
+.icon {
+  height:.9rem;
+  width:.9rem;
+  margin-right:.45em;
+  margin-top: -.15rem;
+}
+
+.help {
+  font-family: "Lucida Grande", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  display: block;
+  font-size: 0.75rem;
+  margin-top: 0.25rem;
+}
+
+/*
+ * Access Keys
+ * -----------
+ */
+.accesskey {
+  font-weight: bold;
+}
+
+.accesskey-info {
+  font-size: 80%;
+}
+
+/****************************************
+ * Content styles
+ *****************************************/
+#content, #content-inner {
+  margin: .7em;
+  font-size: 90%;
+}
+#content-inner {
+}
+.button-fancy {
+  border-radius: 4px;
+  background: linear-gradient(to right, #e9f2f6, #daecf6) !important;
+  color: #2f2f2f;
+  font-weight: bold;
+  text-align: center;
+  text-transform: uppercase;
+  font-size: 13px;
+  padding: 5px 0 8px 15px;
+  transition: all 0.4s;
+  cursor: pointer;
+  margin-bottom: 20px;
+  display: inline-block;
+  line-height: 13px;
+  border-width: 1px;
+  border-style: solid;
+  border-top-color: #cae0ec;
+  border-left-color: #cae0ec;
+  border-bottom-color: #f3fbff;
+  border-right-color: #f3fbff;
+  box-shadow: 2px 2px 3px 1px hsl(0, 0%, 80%);
+}
+.button-fancy:hover {
+  border-bottom: 1px solid #f3fbff;
+  color: black;
+}
+.button-fancy span {
+  cursor: pointer;
+  display: inline-block;
+  position: relative;
+  transition: 0.4s;
+}
+.button-fancy span:after {
+  content: '\00bb';
+  position: relative;
+  opacity: 0;
+  top: 1px;
+  right: -5px;
+  padding-left: 10px;
+  transition: 0.5s;
+  font-size: 20px;
+  color: #1772a0;
+}
+.button-fancy:hover span {
+  padding-right: 15px;
+}
+.button-fancy:hover span:after {
+  opacity: 1;
+  right: 0;
+}
+
+/****************************************
+ * Home styles
+ *****************************************/
+.message-special {
+  border: 2px solid #b31a1a;
+  border-radius: 10px;
+  background-color: #fef6f6;
+  padding: .5em 1em;
+  margin: 1em 1% 1em 1%;
+  width: 92%;
+}
+.message-special span.label {
+  display: block;
+  background-color: #b31a1a;
+  width: 160px;
+  text-align: center;
+  margin-top: -1.9em;
+  color: #ffffff;
+  padding: .25em 0;
+  font-size: 12px;
+}
+.message-special ul {
+  margin-bottom: 1em;
+  margin-top: 0;
+}
+.message-special p {
+  margin-bottom: .5em;
+}
+.message-special.dark {
+  border: 2px solid #000000;
+  background-color: #000000;
+  color: #949494;
+  margin-right: 0;
+}
+.message-special.dark a {
+  color: #ffffff;
+}
+.message-special.dark span.label {
+  background-color: #595959;
+  color: #ffffff;
+}
+.message-special.green {
+  border: 2px solid #c4d82e;
+  background-color: #f3f6dd;
+  color: #000;
+  margin-right: 0;
+}
+.message-special.green a {
+  color: #1b7cac;
+}
+.message-special.green span.label {
+  background-color: #c4d82e;
+  color: #000;
+}
+.homepage-news-title {
+  margin-bottom: .25em;
+}
+@media screen and (min-width: 768px) {
+  .message-special {
+    padding: .5em 1em;
+    width: 95%;
+    /* width: 44%; uncomment for side-by-side banners */
+    float: left;
+  }
+}
+@media screen and (max-width: 330px) {
+  .message-special {
+    width: 88%;
+  }
+}
+.banner-minimal {
+  width: auto;
+  display: flex;
+  align-items: center;
+  justify-content:center;
+}
+.banner-minimal a {
+  -webkit-box-shadow: 0px 3px 6px 0px #000000;
+  -moz-box-shadow: 0px 3px 6px 0px #000000;
+  box-shadow: 0px 3px 6px 0px #000000;
+  display: inline-block;
+  padding: .25em 1em;
+  border-radius: .3em;
+  font-size: 1.75em;
+  background-color: #1c1a17;
+  border: 2px solid #6b6459;
+  color: #f9f7f7;
+  text-decoration: none;
+  transition: all .5s ease-in-out;
+}
+.banner-minimal a:hover {
+  background-color: #1c1a17;
+  border-color: #dbc6c6;
+  color: #f9f7f7;
+}
+/* special header banner, dark override */
+.slider-wrapper.bps-banner.dark {
+  background-color: black;
+}
+/*style overrides for forum minimal banner homepage news with forum logo*/
+.columns .column.banner-minimal.forum {
+  border: 1px solid grey;
+  border-radius: 1em;
+  padding: .5em;
+  margin: 1em;
+}
+.columns .column.banner-minimal.forum a {
+  border-color: transparent;
+  background-color: transparent;
+  color: #c4d82e;
+  font-size: 1.35em;
+  text-decoration: underline;
+  box-shadow: none;
+  margin: 0;
+  padding: 0;
+}
+.columns .column.banner-minimal.forum a:hover {
+  border-color: transparent;
+  background-color: transparent;
+  color: #fff;
+  text-decoration: none;
+}
+.columns .column.banner-minimal.forum p {
+  font-size: 1.25em;
+  margin: 0;
+  font-style: italic;
+  color: #ababab;
+}
+.forum-logo {
+	width: 200px;
+	float: right;
+	margin: 1em;
+}
+@media screen and (max-width: 480px) {
+	.forum-logo {
+		width: 70%;
+		margin: 1em auto !important;
+		float: none;
+		display: block;
+	}
+}
+
+
+
+/****************************************
+ * Stats pages (/stats)
+ ****************************************/
+ .main-stats img.stat-thumb {
+     max-width: 50%;
+     border-radius: 25%;
+     box-shadow: 2px 3px 6px 1px rgba(0,0,0,.2);
+     border: 3px solid #e2ebf1;
+ }
+ .main-stats .column h3 a {
+   font-size: 14px;
+   color: #046baf;
+ }
+#chart_content {
+  background-color: #eef5f9;
+  text-align: center;
+  margin: 2em 0;
+  padding: 1em 0;
+  box-shadow: 0 0 3px 0 rgba(210, 210, 210, .5);
+}
+#chart_content .button {
+  color: #ffffff;
+  background-color: #1777bc;
+  border-color: #1777bc;
+  border-radius: 8px;
+  font-size: 13px;
+  margin-top: .5em;
+  margin-right: 1em;
+}
+#chart_content p a, .chart_text p a {
+  color: #1777bc;
+}
+.columns.stats-header {
+  margin: .7em .7em 3em .7em;
+  font-size: 90% !important;
+}
+.columns.stats-header h1 {
+  margin-bottom: 0;
+}
+.column.stats-nav {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+}
+.column.stats-nav .mobile-button {
+  margin-bottom: .5em;
+  border: 1px solid #2c8cd1;
+  padding: .25em .5em;
+  border-radius: .35em;
+  color: #046baf;
+}
+.chart_text p {
+  margin: .25em 1em;
+  text-align: left;
+  font-size: .9em;
+}
+.chart_text ol {
+  margin: .5em 3.75em;
+}
+.chart_text.chart_notes p, .chart_text.chart_notes ol {
+  font-style: italic;
+  font-size: .9em;
+}
+#chart_content .chart_text {
+  max-width: 950px;
+  margin-left: auto;
+  margin-right: auto;
+  text-align: left;
+}
+#chart_content .chart_text p {
+    margin: 0 0 1em 0;
+    padding: 1em;
+    font-size: 12px;
+    border-bottom: 1px solid #d6dce0;
+    margin-bottom: 1em;
+}
+.stats-nav .tabs {
+  align-items: flex-end;
+  height: 100%;
+}
+@media screen and (min-width: 769px) {
+  #chart_content .button {
+    margin-right: 0;
+  }
+  .main-stats img.stat-thumb {
+      max-width: 40%;
+  }
+  .main-stats {
+    max-width: 85%;
+    margin: 0 auto;
+  }
+}
+@media screen and (min-width: 550px) {
+  .chart_text p {
+    margin: .25em 5em;
+  }
+}
+
+/* Index page tagline and call to action */
+.tagline-wrapper {
+    float:left;
+    width:68%;
+}
+p.tagline {
+  margin: 0;
+  padding: 0 0 0.3em 0;
+}
+/* call to action near tagline */
+.tagline-cta {
+    float:right;
+    width:30%;
+    margin-bottom:2em;
+    transition: background-color 0.35s ease;
+    background-color: #ffcc00;
+    border-radius:30px;
+    height:60px;
+    align-items: center;
+    display: flex;
+    justify-content: center;
+    -webkit-box-shadow: 2px 2px 5px 0px rgba(177,142,15,0.25);
+    -moz-box-shadow: 2px 2px 5px 0px rgba(177,142,15,0.25);
+    box-shadow: 2px 2px 5px 0px rgba(177,142,15,0.25);
+}
+.tagline-cta:hover {
+    background-color: #d9af0c;
+    text-decoration: none;
+}
+.tagline-cta:hover p {
+    color: #ffffff;
+}
+.tagline-cta p {
+    margin:0 1em;
+    font-size: 12px;
+    transition: color 0.35s ease;
+    color: #8A4504;
+}
+.tagline-cta .cta-logo {
+  border-right: 1px solid white;
+  display: flex;
+  align-items: center;
+}
+.tagline-cta .cta-logo img {
+    float:left;
+    max-height: 25px;
+    margin-left: 1em;
+    margin-right: .2em;
+}
+.home-search {
+  clear:both;
+  border: 1px solid #dddddd;
+  padding: .5em;
+  margin-top: 1em;
+}
+.home-search label {
+  font-weight: bold;
+}
+@media screen and (max-width: 768px) {
+  .tagline-cta, .tagline-wrapper {
+    width: 100%;
+  }
+}
+
+
+
+/****************************************
+ * Auth pages (/auth)
+ ****************************************/
+.editbar {
+  background-color: #8080ff;
+  color: white;
+  font-family: monospace;
+  font-weight: bold;
+  line-height: 0.8;
+  text-decoration: none;
+}
+
+.errmsg {
+  color: #f00;
+  font-style: italic;
+}
+
+/****************************************
+ * Form interface (/form)
+ ****************************************/
+#form-interface {
+  background-color: #f0eee4;
+  color: #000;
+  font-size: 120%;
+  padding: 0.2em;
+}
+
+/****************************************
+ * Abstract styles (/abs)
+ ****************************************/
+#abs-outer, #abs {
+  margin: -0.7em;
+}
+#abs-outer .leftcolumn {
+  margin: 0 0 1em 0;
+  padding: 0px;
+  width:calc(100% - 18em);
+  float:left;
+}
+#abs-outer .mobile-submission-download {
+  display:none;
+}
+/*right column extra_services*/
+#abs-outer .extra-services {
+  float:right;
+  margin:0;
+  width:18em;
+}
+#abs-outer .extra-services .bib-sidebar {
+  border-left: .35em solid #ddd !important;
+}
+#abs-outer .extra-services button.bib-cite-button {
+  color: rgb(0, 0, 238);
+  text-transform: capitalize;
+  font-weight: bold;
+  padding: .35em;
+  display: block;
+  text-transform: capitalize;
+  background: none;
+  border: none;
+  font-size: inherit;
+  font-family: inherit;
+  text-align: left;
+}
+#abs-outer .extra-services button.bib-cite-button:hover, #abs-outer .extra-services button.bib-cite-button:focus {
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/*added by Scite*/
+.bib-modal {
+    position: fixed;
+    z-index: 10;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgb(0,0,20);
+    background-color: rgba(0,0,0,0.4);
+}
+.bib-modal-content {
+    position: absolute;
+    float: left;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    background-color: #fefefe;
+    padding: 20px;
+    border: 1px solid #888;
+    width: 80%;
+    max-width: 600px;
+}
+.bib-modal-content .bib-citation-content {
+  width: 100%;
+  min-height: 200px;
+}
+.bib-modal-title h2 {
+    margin-top: 0px;
+    margin-bottom: 0.3em;
+    display: inline-block;
+}
+
+.bib-modal-close {
+    color: #aaa;
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+}
+
+.bib-modal-close:hover,
+.bib-modal-close:focus {
+    color: black;
+    text-decoration: none;
+    cursor: pointer;
+}
+.modal h4 {
+    margin-top: 0.3em;
+    margin-bottom: 0em;
+}
+.modal textarea {
+    border-width: 2px;
+}
+/*END Scite css*/
+
+
+
+
+/* Added by CatalyzeX */
+
+#catalyzex-output {
+  padding: 7px;
+  margin-bottom: 10px;
+}
+
+#catalyzex-output .cx-icon {
+  width: 23px;
+  height: 23px;
+  position: relative;
+  top: 5px;
+  margin-left: 3px;
+  margin-right: 6px;
+}
+
+ #catalyzex-output svg#cx-logo {
+  top: 7px;
+  margin-left: 6px;
+  margin-right: 3px;
+}
+
+
+/*BEGIN Replicate CSS*/
+
+.replicate-model {
+  padding: 15px 0;
+  display: block;
+  display: flex;
+}
+
+.replicate-model-image {
+  width: 100px;
+  height: 100px;
+  object-position: center;
+  object-fit: cover;
+  flex-grow: 0;
+  flex-shrink: 0;
+}
+
+.replicate-model-details {
+  padding: 10px 15px;
+  vertical-align: top;
+}
+
+.replicate-model-details-heading {
+  margin: 0;
+  padding: 0;
+}
+
+.replicate-model-prediction-count {
+  opacity: 0.5;
+}
+
+.replicate-model-prediction-icon {
+  height:.9rem;
+  width:.9rem;
+  margin-right: 0;
+  margin-top: -.15rem;
+}
+
+/*END Replicate CSS*/
+
+/*BEGIN ScienceCast CSS*/
+
+.sciencecast-cast {
+  margin-bottom: 2rem;
+}
+
+.sciencecast-thumbnail {
+  border-radius: 0.5rem;
+  border: solid 1px #eee;
+}
+
+/*END ScienceCast CSS*/
+
+/*BEGIN Gotit.pub CSS*/
+
+.gotitpub-logo {
+  margin-left: 0pt;
+  font-weight: 500;
+  letter-spacing: normal;
+  line-height: 100%;
+  font-family: "EB Garamond", ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+}
+
+/*END Gotit.pub CSS*/
+
+/*BEGIN alphaXiv CSS*/
+.alphaXiv-logo {
+  margin-left: 0pt;
+  font-weight: 500;
+  letter-spacing: normal;
+  line-height: 100%;
+  font-family: "EB Garamond", ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+}
+/*END alphaXiv CSS*/
+
+/*BEGIN Spaces CSS*/
+
+.spaces-summary {
+  margin-bottom: 0.5em;
+}
+
+.spaces-model {
+  padding: 15px 0;
+  display: flex;
+}
+
+.spaces-thumbnail {
+  height: 5.5rem;
+  border-radius: 0.5rem;
+}
+
+.spaces-model-details {
+  padding: 0px 15px;
+  vertical-align: top;
+}
+
+.spaces-model-details-heading {
+  margin: 0;
+  padding: 0;
+}
+
+.spaces-model-subheader {
+  color: gray;
+}
+
+.spaces-load-all-link {
+  cursor: pointer;
+  padding: 0.75em;
+  background-color: #eef5f9;
+  border: none;
+  border-radius: 0.5rem;
+  margin: 0.5em 0;
+  display: inline-block;
+}
+
+/*END Spaces CSS*/
+
+/*LABS in TABS on ABS*/
+/*CSS-only, responsive tabbed display */
+#labstabs {
+  clear: both;
+  margin: 1em 1.5em;
+}
+
+#labstabs .labstabs {
+	display: flex;
+	flex-wrap: wrap;
+  white-space: normal;
+  justify-content: flex-start;
+}
+#labstabs .labstabs > label {
+	order: 1;
+	display: block;
+  padding: .75em 1.5em;
+  font-size: .85em;
+  color: #4a4a4a;
+	margin-right: 0.2rem;
+	cursor: pointer;
+  font-weight: bold;
+  transition: background ease 0.2s;
+  border-radius: 6px 6px 0 0;
+  background-color: #eef5f9;
+}
+/* Focus indicator for labs tab labels */
+#labstabs .labstabs > label:focus-within,
+#labstabs .labstabs > input:focus-visible + label {
+  outline: 2px solid #005ea2;
+  outline-offset: 2px;
+}
+/*mobile diplay area:*/
+#abs #labstabs .labstabs > label {
+  font-size: .88em;
+}
+#abs-outer #abs #labstabs blockquote.abstract {
+  margin-left: .5em;
+  margin-right: .5em;
+}
+#labstabs .labstabs .tab {
+  order: 99;
+  flex-grow: 1;
+	width: 100%;
+	display: none;
+  padding: 1rem;
+  border: 1px solid #828282;
+  z-index: 1;
+  top: -1px;
+  position: relative;
+}
+#labstabs .labstabs .tab h1 {
+  font-size: 1.25em;
+  font-weight: normal;
+}
+#labstabs .labstabs .tab p {
+  font-size: .85rem;
+}
+#labstabs .labstabs .tab #coreRecommenderOutput {
+  padding: 0;
+  margin: 0;
+}
+#labstabs .labstabs .tab .icon-labs {
+  text-align: center;
+}
+#labstabs .labstabs .tab .icon-labs svg {
+  width: 130px;
+}
+#labstabs .labstabs input[type="radio"] {
+	/* Visually hidden but still focusable for accessibility */
+	position: absolute;
+	opacity: 0;
+	width: 1px;
+	height: 1px;
+	margin: -1px;
+	padding: 0;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	border: 0;
+}
+#labstabs .labstabs input[type="radio"]:focus-visible + label {
+	outline: 2px solid #005ea2;
+	outline-offset: 2px;
+}
+#labstabs .labstabs input[type="radio"]:checked + label {
+  background: #ffffff;
+  border: 1px solid #828282;
+  border-bottom: 0;
+  z-index: 2;
+  color: black;
+}
+#labstabs .labstabs input[type="radio"]:checked + label + .tab {
+	display: block;
+}
+@media screen and (max-width: 768px) {
+  .column.is-full-mobile {
+    flex: none !important;
+    width: 100% !important;
+  }
+}
+@media (max-width: 45em) {
+  #labstabs {
+    padding-bottom: 1em;
+    margin: 1em;
+  }
+  #labstabs .labstabs .tab,
+  #labstabs .labstabs label {
+    order: initial;
+    width: 100%;
+    margin-right: 0;
+    margin-top: 0.2rem;
+    border-radius: 0;
+  }
+  #labstabs .labstabs > label {
+    font-size: .8em;
+  }
+  #labstabs .labstabs .tab {
+    border-top: 0;
+    margin-top: -10px !important;
+    border: 2px solid #b8b8b8;
+    border-top: 0px;
+    background-color: #ffffff;
+  }
+  #labstabs .labstabs label {
+    background-color: #eef5f9;
+    color: black;
+    padding: 1em .5em;
+  }
+  #labstabs .labstabs .labs-display-bib label {
+    background: transparent;
+    color: black;
+    padding: 0;
+  }
+  #labstabs .labstabs input[type="radio"]:checked + label {
+    background-color: #acd2e8;
+    color: black;
+    border: 2px solid #b8b8b8;
+    border-bottom: 0px;
+    padding: 1em .5em;
+  }
+  #labstabs .labstabs input[type="radio"]:hover, #labstabs .labstabs input[type="radio"]:active {
+    background-color: #abb4b9;
+  }
+  #abs-outer #abs #labstabs blockquote.abstract {
+    margin-left: .25em;
+    margin-right: .25em;
+  }
+}
+/*toggles*/
+#labstabs .toggle {
+  border: 1px dotted #c7d3db;
+  padding: .5em;
+  background-color: #eef5f9;
+}
+#labstabs .toggle .columns.lab-row {
+  align-items: center;
+}
+#labstabs .toggle .columns.lab-row .column {
+  padding: .5rem .25rem;
+}
+#labstabs .column.lab-name {
+  flex-basis: auto;
+  flex-grow: 0;
+  font-size: .75rem;
+}
+#labstabs .tab a {
+  display: inline;
+}
+#labstabs .column.lab-name em {
+  font-size: 11px;
+  color: black;
+}
+#labstabs .column.lab-name em a {
+  line-height: 18px;
+  text-decoration: none;
+  padding: 0;
+  border: 0;
+  font-style: normal;
+  font-size: 11px;
+}
+#labstabs .column.lab-switch {
+  flex-grow: 0;
+}
+#labstabs .toggle .lab-switch label.switch {
+  position: relative;
+  display: inline-block;
+  width: 38px;
+  height: 20px;
+  padding: 0;
+  background-color: transparent;
+  margin: 0;
+}
+/* Hide default HTML checkbox */
+#labstabs .toggle .lab-switch .switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+/* The slider element */
+#labstabs .toggle .lab-switch .slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 24px;
+  background-color: #ccc;
+  -webkit-transition: .4s;
+  transition: .4s;
+}
+#labstabs .toggle .lab-switch .slider:before {
+  position: absolute;
+  content: "";
+  height: 16px;
+  width: 16px;
+  left: 2px;
+  bottom: 2px;
+  border-radius: 50%;
+  background-color: white;
+  -webkit-transition: .4s;
+  transition: .4s;
+}
+#labstabs .toggle .lab-switch input.enabled + .slider {
+  background-color: #1c8bd6;
+}
+#labstabs .toggle .lab-switch input.enabled + .slider {
+  box-shadow: 0 0 1px #2196F3;
+}
+#labstabs .toggle .lab-switch input.enabled + .slider:before {
+  -webkit-transform: translateX(18px);
+  -ms-transform: translateX(86px);
+  transform: translateX(18px);
+}
+/* Focus indicator for toggle switches - show on the visible slider element */
+#labstabs .toggle .lab-switch input:focus-visible + .slider {
+  outline: 2px solid #005ea2;
+  outline-offset: 2px;
+}
+
+
+
+
+
+
+
+
+/* arXiv.org archive/subjclass info for abs pages... */
+#abs-outer .subheader {
+  background-color: #eee;
+  color: #000;
+  padding: .25em 0;
+  border-bottom: 1px solid #ccc;
+}
+
+#abs-outer .subheader h1 {
+  margin: 0;
+  font-size: 1.1em;
+  padding: 0 0 .2em 20px;
+  font-weight: bold;
+  font-style: normal;
+}
+
+#abs .descriptor {
+  display: none;
+}
+#abs-outer .extra-services .descriptor {
+  display: none;
+}
+
+#abs-outer #coreRecommenderOutput {
+  max-width: 100%;
+}
+
+#abs h1.title {
+  margin: .5em 0 .5em 20px;
+  font-size: x-large;
+  font-weight: bold;
+  line-height: 120%;
+}
+
+#abs .authors {
+  margin: .5em 0 .5em 20px;
+  font-size: medium;
+  line-height: 150%;
+}
+
+#abs .authors a {
+  font-size: medium;
+}
+
+div#long-author-list {
+  /* For javascript toggle of long author list display, default to hide */
+  margin: 0;
+  display: none;
+}
+
+#abs .dateline {
+  margin: .5em 0 .5em 20px;
+  font-style: italic;
+  font-size: small;
+}
+
+#abs blockquote.abstract {
+  line-height: 1.55;
+  font-size: 1.05em;
+  margin-bottom: 1.5em;
+}
+
+#abs .comments {}
+
+#abs .metatable {
+  font-size: 0.92em;
+  line-height: 1.5;
+  margin: 0 0 1.5em 20px;
+}
+
+#abs .tablecell {
+  padding: .1em .5em 0em 0em;
+  vertical-align: top;
+}
+
+#abs .tablecell .label {
+  text-align: left;
+}
+
+#abs .jref .descriptor, #abs .comments .descriptor, #abs .subjects .descriptor,
+#abs .acm-classes .descriptor, #abs .msc-classes .descriptor {
+  display: inline;
+}
+
+#abs .subjects {}
+
+#abs .acm-classes, #abs .msc-classes {
+  vertical-align: bottom;
+  font-family: courier;
+  font-size: 100%;
+}
+
+#abs .arxivid a {
+  /*font-weight: bold;*/
+  font-weight: normal;
+}
+
+#abs .arxividv {}
+
+#abs .jref {
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  -ms-word-break: break-all;
+  word-break: break-word;
+}
+
+#abs .error {
+    border: 2px solid #B31B1B;
+    background: #efefef;
+    padding: 3px;
+    margin: 20px 10px 10px 20px;
+    font-weight: bold;
+    /*min-height: 20px;*/
+    line-height: 150%;
+    font-size: 110%;
+    display: inline-block;
+}
+
+#abs-outer .submission-history {
+  margin: 1.5em 0 1.5em 20px;
+  font-size: 90%;
+  line-height: 1.5em;
+}
+
+#abs-outer .submission-history h2 {
+  font-size: 120%;
+  margin: 0 0 .25em 0;
+  font-weight: bold;
+}
+
+#abs-outer .submission-history pre {
+  font-family: 'Lucida Grande', helvetica, arial, verdana, sans-serif;
+  margin: 0;
+  line-height: 1.4em;
+  padding: 0;
+}
+
+#abs-outer .endorsers {
+  margin: 1em 0 1.5em 20px;
+  font-size: small;
+  font-style: italic;
+  clear:both;
+}
+
+
+/*** mobile friendly abs page styles ***/
+#abs-outer .header-breadcrumbs-mobile {
+  display: none;
+}
+#abs-outer #abs .dateline {
+  margin-top: 15px;
+  margin-bottom: 0;
+}
+#abs-outer #abs h1.title {
+  margin-top: .25em;
+}
+.endorsers .help {
+  display: inline-block;
+}
+@media screen and (max-width: 768px) {
+  #abs-outer .header-breadcrumbs-mobile {
+    display: block;
+    color: black;
+    font-size: .85em;
+    margin: .25em 0 .5em 1em;
+  }
+  #abs-outer #abs a.mobile-submission-download {
+    display: flex;
+    justify-content: center;
+    margin: .7em .25em;
+    border-radius: 10px;
+    background-color: #408bd0;
+    padding: .25em 1em;
+    font-weight: 800;
+    color: white;
+    text-decoration: none;
+    font-size: 20px;
+    text-align: center;
+  }
+  #abs-outer #abs a.mobile-download-grey {
+    background-color: #eeeeee;
+    color: #565656;
+  }
+  #abs-outer .extra-services h2 {
+    font-size:15px;
+    margin-bottom: .5em;
+  }
+  #abs-outer .extra-services h3 {
+    font-size:14px;
+  }
+  #abs-outer .leftcolumn, #abs-outer .extra-services {
+    width:100%;
+    float:left;
+  }
+  #abs-outer .extra-services, #abs-outer .extra-services .full-text, #abs-outer .extra-services .ancillary, #abs-outer .extra-services .browse, #abs-outer .extra-services .extra-ref-cite {
+    border:0px;
+    font-size:12px;
+  }
+  #abs-outer .extra-services {
+    -webkit-box-shadow: inset 0px 8px 15px 0px rgba(173,173,173,1);
+    -moz-box-shadow: inset 0px 8px 15px 0px rgba(173,173,173,1);
+    box-shadow: inset 0px 8px 15px 0px rgba(173,173,173,1);
+    background-color: #E6E6E6;
+    margin: 0 0 1em 0;
+    padding: 1em 0;
+  }
+  #abs-outer .extra-ref-cite ul li {
+    float: left;
+    height: 50px;
+  }
+  #abs-outer .extra-ref-cite ul li .inspire-links {
+    font-size: 9px;
+  }
+  #abs-outer .extra-ref-cite ul li .inspire-links a {
+    color: #046baf;
+    text-decoration: underline;
+  }
+  #abs-outer .extra-services .full-text ul, #abs-outer .extra-services .extra-ref-cite ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  #abs-outer .extra-services .full-text ul li, #abs-outer .extra-services .extra-ref-cite ul li {
+    display: inline-block;
+    margin: 0 0 .25em 0;
+    padding: 0;
+  }
+  #abs-outer .extra-services .bookmarks {
+    margin: 1em 0 0 0;
+    border-left: 0;
+    padding: .25em .5em 0 1em;
+    border-top: 2px solid #cccccc;
+    font-size: 1em;
+  }
+  #abs-outer .extra-services .bookmarks .abs-button-small {
+    margin-top: .25em;
+  }
+  #abs-outer .extra-services .browse {
+    margin-top: .5em;
+    border-top: 2px solid #cccccc;
+    padding-top: 1em;
+  }
+  #abs-outer .extra-services .prevnext {
+    margin-top: .5em;
+  }
+  #abs-outer .extra-services .browse .current {
+    color: #AB4B02;
+    display:inline;
+  }
+  .abs-switch-cat {
+    margin: 0 0 1em 0;
+  }
+  .browse .abs-switch-cat .switch {
+    display: inline;
+  }
+  .browse .abs-switch-cat .switch a {
+    font-weight: bold;
+  }
+  .browse .abs-switch-cat .switch .subclass {
+    padding: 0;
+    margin-left: -3px;
+  }
+  .abs-switch-cat .subclass:before {
+    content: ", ";
+  }
+  .abs-button {
+    display: inline-block;
+    border-radius: 5px;
+    border: 1px solid #046BAF;
+    font-size: 1.25em;
+    color: #046BAF !important;
+    padding: .5em;
+    background: #E6E6E6;
+    margin-right: .3em;
+  }
+  .abs-button-small {
+    font-size: 1em;
+    padding: .25em 1em;
+    margin: .75em .5em 0 0;
+  }
+  .beta-link {
+    font-size:x-small;
+    color:#b31b1b;
+  }
+  .abs-button-grey {
+    border: 1px solid #666666;
+    color: #666666 !important;
+  }
+  #abs-outer .extra-services .bib-sidebar {
+    border: 0 !important;
+  }
+  #abs-outer .extra-services .bib-sidebar a {
+    display: inline-block;
+    border-radius: 5px;
+    background: #E6E6E6;
+    border: 1px solid #666666;
+    color: #666666 !important;
+    font-size: 1em !important;
+    padding: .25em 1em;
+    margin: 0 .5em 0 0;
+  }
+  #abs-outer .extra-services .bib-sidebar .bib-sidebar-paper .bib-sidebar-authors a, #abs-outer .extra-services .bib-sidebar .bib-sidebar-paper .bib-sidebar-title a {
+    display: inline;
+    border-radius: none;
+    background: none;
+    border: 0;
+    color: #000000;
+    font-size: 1em !important;
+    padding: .25em 0;
+    margin: 0;
+  }
+  .bib-sidebar-authors{
+    list-style-type: none;
+  }
+  #abs-outer .extra-services .bib-sidebar .bib-sidebar-paper {
+    margin: 1em 0
+  }
+  #abs-outer .extra-services button.bib-cite-button {
+    margin: .5em .5em 0 0;
+    display: inline-block !important;
+    border-radius: 5px;
+    background: #E6E6E6;
+    border: 1px solid #046BAF;
+    font-size: 1em !important;
+    padding: .25em 1em;
+    font-weight: normal;
+    text-transform: capitalize;
+  }
+  #abs-outer .extra-services .extra-ref-cite ul li {
+    margin: .5em 0;
+    padding: 0;
+    height: auto;
+  }
+  #abs-outer .extra-services .extra-ref-cite ul li a {
+    margin: .25em .5em .25em 0;
+  }
+
+
+
+
+  #abs-outer .subheader {
+    background-color: #fefefe;
+    padding: .25em 0;
+    border-bottom: 1px solid #ccc;
+  }
+  #abs-outer .subheader h1 {
+    margin: 0;
+    font-size: .75em;
+    padding: .2em 0 .2em 1em;
+    font-weight: normal;
+    font-style: normal;
+    color: #b55c06;
+  }
+  #abs-outer #abs .dateline {
+    color: #767676;
+    font-size: .85em;
+    font-style: normal;
+    margin: 2em 0 0 1em;
+  }
+  #abs-outer .submission-history {
+    padding: 1em;
+    margin: 0;
+    background-color: #f5f5f5;
+    -webkit-box-shadow: inset 0px -6px 15px 0px rgba(219,219,219,1);
+    -moz-box-shadow: inset 0px -6px 15px 0px rgba(219,219,219,1);
+    box-shadow: inset 0px -6px 15px 0px rgba(219,219,219,1);
+  }
+  #abs-outer #abs h1.title {
+    margin: 0 .25em 0 .5em;
+    font-size: 1.5em;
+  }
+  #abs-outer #abs .authors {
+    margin: 1em .25em 0 1em;
+    font-size: .9em;
+    line-height: 1.5em;
+  }
+  #abs-outer #abs .authors a {
+    font-size: inherit;
+  }
+  #abs-outer #abs blockquote.abstract {
+    margin: 0 1em;
+  }
+  #abs-outer #abs .metatable {
+    margin: .75em 0 1.5em 1.5em;
+  }
+  #abs-outer #abs a, #abs-outer a, #abs-outer .endorsers a {
+  color: #1777bc;
+  }
+  #abs-outer .abs-license a, #abs-outer .submission-history a, #abs-outer .extra_services a, #abs-outer .extra_services .browse a, #abs-outer .abs-switch-cat .switch a, #abs-outer .extra-services .full-text .abs-license a {
+    color: #046BAF;
+  }
+  #abs-outer .endorsers {
+    display: block;
+    float: left;
+    border: 1px solid #eee;
+    padding: 1em;
+    margin: 1em;
+  }
+  #abs-outer .endorsers .help {
+    display:none;
+  }
+}
+
+
+
+/*** styles for mobile-friendly header ***/
+.mobile-header .toggle-target {
+  max-height: 0;
+  visibility: hidden;
+}
+.mobile-header .toggle-target.open {
+  max-height: 500px;
+  visibility: visible;
+}
+.mobile-header {
+  background-color: #b31b1b;
+}
+.mobile-header .columns {
+  height: 65px;
+  align-items: center;
+}
+.mobile-header .column {
+  border-left: 1px solid #fc5554;
+  border-right: 1px solid #731515;
+  height: 65px;
+  padding: 0 1em;
+  display: flex;
+  align-items: center;
+}
+.mobile-header .column:first-child {
+  border-left: 0;
+}
+.mobile-header .column:last-child {
+  border-right: 0;
+}
+.mobile-header .column.logo-arxiv {
+  width: 100px;
+  flex: none;
+}
+.mobile-header .column.logo-arxiv img {
+  height: 25px;
+}
+.mobile-header .column.logo-cornell {
+  display: flex;
+}
+.mobile-header .column.logo-cornell img {
+  height:45px;
+}
+.mobile-header .column.nav {
+  justify-content: flex-end;
+  align-self: flex-end;
+}
+.mobile-header #toggle-container button.toggle-control {
+  background-color: transparent;
+  border-radius: 0;
+  border: 0;
+  font-size: 25px;
+  padding: 3px;
+  margin-left: .5em;
+}
+.mobile-header #toggle-container button.toggle-control svg.icon {
+  width: 1.25rem;
+  margin: 0;
+}
+.mobile-header .mobile-toggle-block {
+  margin: 0;
+  width: 100%;
+  flex: none;
+  transition: max-height 3s;
+  position: absolute;
+  top:64px;
+  left:0;
+  background-color: #b31a1a;
+  overflow: hidden;
+}
+.mobile-header .mobile-toggle-block form.mobile-search-form {
+  margin: .5em 1em 1em 1em;
+}
+.mobile-header .mobile-toggle-block form.mobile-search-form input::-webkit-input-placeholder { /* Edge */
+  color: #94908c;
+}
+.mobile-header .mobile-toggle-block form.mobile-search-form input:-ms-input-placeholder { /* Internet Explorer 10-11 */
+  color: #94908c;
+}
+.mobile-header .mobile-toggle-block form.mobile-search-form input::placeholder {
+  color: #94908c;
+}
+.mobile-header .mobile-toggle-block form.mobile-search-form input {
+  width: calc(100% - 50px);
+  background: #fef6f6;
+  border-radius: 10px 0 0 10px;
+  border: 0;
+  padding: 5px;
+  color: black;
+  font-size: 1.5em;
+}
+.mobile-header .mobile-toggle-block form.mobile-search-form button.button {
+  width: 50px;
+  background: #fc5554;
+  border: 0;
+  border-left: 1px solid #b31b1b;
+  border-radius: 0 10px 10px 0;
+  padding: 3px;
+  font-size: 20px;
+  font-weight: bold;
+  color: #fffaf4;
+}
+.mobile-header .mobile-toggle-block nav.mobile-menu {
+  padding: .75em 1em;
+}
+.mobile-header .mobile-toggle-block nav.mobile-menu h2 {
+  margin: 0;
+  font-size: 12px;
+  color: #fcd7d7;
+  text-transform: uppercase;
+}
+.mobile-header .mobile-toggle-block nav.mobile-menu ul {
+  list-style: none;
+  margin: .75em 0 0 0;
+  padding: 0;
+}
+.mobile-header .mobile-toggle-block nav.mobile-menu ul li {
+  display: inline-flex;
+  align-items: stretch;
+  padding:.1em .2em;
+  margin:0 0 .5em 0;
+  border-top: 2px solid #fc5554;
+  margin-right: .75em;
+}
+.mobile-header .mobile-toggle-block nav.mobile-menu ul li a {
+  color: #fef6f6;
+  font-weight: normal;
+  font-size: 12px;
+}
+@media screen and (min-width: 769px) {
+  .mobile-header {
+    display: none;
+  }
+}
+@media screen and (max-width: 425px) {
+  .mobile-header .column.logo-cornell {
+    /* display:none; */
+  }
+}
+@media screen and (min-width: 426px) {
+  .mobile-header .column.nav {
+    flex: none;
+    width: 100px;
+  }
+}
+/*special styles for phone header only */
+@media screen and (max-width: 500px) {
+  .mobile-header .columns {
+    height: 80px;
+  }
+  .mobile-header .column {
+    height: 80px;
+    padding: 0 .5em;
+  }
+  .mobile-header .column.logo-arxiv {
+    border-right: 0 !important;
+  }
+  .mobile-header .column.logo-cornell {
+    justify-content: flex-end;
+    border-left: 0 !important;
+  }
+  .mobile-header .column.logo-cornell img {
+    height: 73px;
+  }
+  .mobile-header .column.nav {
+    width: 65px;
+    flex: none;
+  }
+  .mobile-header .mobile-toggle-block {
+    top: 80px;
+  }
+}
+@media screen and (min-width: 501px) {
+  .mobile-header .column {
+    height: 65px;
+  }
+  .mobile-header .column.logo-cornell img {
+    height: 45px;
+  }
+  .mobile-header .column.nav {
+    width: 65px;
+  }
+}
+
+
+
+
+
+
+/* Floating box on right for links to extra services */
+.extra-services {
+  border-bottom: .35em solid #ddd;
+}
+
+.extra-services h3 {
+  font-size: medium;
+  font-weight: normal;
+  margin: 0 0 0.3em 0;
+  padding-top:0.3em;
+}
+
+.full-text {
+  margin: 0;
+  padding: .5em 1em .5em 1em;
+  font-size: 110%;
+  font-weight: normal;
+  border-bottom: medium solid #ddd;
+  border-left: .35em solid #ddd;
+}
+
+.full-text h2 {
+  font-size: 140%;
+  font-weight: bold;
+  margin: 0.1em 0 0 0;
+}
+
+.full-text .preferred {
+  font-weight: bold;
+}
+
+.full-text ul {
+  margin: .3em 0 0 1em;
+  padding: 0;
+  list-style-type: none;
+}
+
+.ancillary {
+  margin: 0;
+  padding: .0em 0em .5em 1em;
+  font-size: 90%;
+  font-weight: normal;
+  border-bottom: medium solid #ddd;
+  border-left: .35em solid #ddd;
+}
+
+.ancillary h2 {
+  font-size: 120%;
+  font-weight: bold;
+  margin: 0.15em 0 0 0;
+}
+
+.ancillary ul {
+  margin: 0 0 0 1em;
+  padding: 0;
+}
+
+.ancillary .no-bullet li {
+  list-style-type: none;
+}
+
+div#long-anc-list {
+  /* For javascript toggle of long list display of ancillary files, default to hide */
+  margin: 0;
+  display: none;
+}
+
+div#long-dc-list {
+  /* For javascript toggle of long list display of dcs files, default to hide */
+  margin: 0;
+  display: none;
+}
+
+.extra-general {
+  margin: 0;
+  padding: 0 1em 0 1em;
+  font-size: 90%;
+  border-bottom: medium solid #ddd;
+  border-left: .35em solid #ddd;
+}
+
+.extra-third-party {
+  margin: 0;
+  padding:.5em 1em .5em 1em;
+  font-size: 90%;
+  border-bottom: medium solid #ddd;
+  border-left: .35em solid #ddd;
+}
+.extra-third-party ul {
+  margin: .3em 0 0 1em;
+  padding: 0;
+  list-style-type: none;
+}
+
+.extra-ref-cite {
+  margin: 0;
+  padding: 0 1em 0 1em;
+  font-size: 90%;
+  border-bottom: medium solid #ddd;
+  border-left: .35em solid #ddd;
+}
+
+.extra-ref-cite ul {
+  font-weight: normal;
+  margin: 0.3em 0 0 20px;
+  padding-left: 0;
+  padding-bottom: 0.3em;
+  list-style-type: none;
+}
+
+.browse {
+  padding: 0 1em 0 1em;
+  font-size: 90%;
+  border-bottom: medium solid #ddd;
+  border-left: .35em solid #ddd;
+}
+
+.browse .current {
+  padding: 0;
+  font-weight: bold;
+}
+
+.browse .prevnext {
+  padding: 0.2em 0 0 0;
+  /*font-weight: bold;*/
+}
+.browse .prevnext a {
+  /* hotfix: font-weight: bold; */
+}
+.browse .prevnext .nolink {
+  font-weight: bold;
+  color: #666;
+}
+
+.browse .list {
+  padding: 0.2em 0 0.5em 0;
+  font-weight: normal;
+}
+
+.browse .switch {
+  font-weight: normal;
+  padding: .2em 0em .7em 0em;
+}
+
+.browse .switch .subclass {
+  padding-left: 1.5em;
+}
+
+.dblp {
+  padding: 0 1em 0 1em;
+  font-size: 90%;
+  border-bottom: medium solid #ddd;
+  border-left: .35em solid #ddd;
+}
+
+.dblp .list {
+  font-weight: normal;
+  margin: 0.3em 0 0 20px;
+  padding-left: 0;
+  padding-bottom: 0.3em;
+}
+
+.bookmarks {
+  clear: both;
+  margin: 0;
+  padding: 0 1em .5em 1em;
+  font-size: 90%;
+  border-left: .35em solid #ddd;
+  /* no bottom border because this is last extra services block */
+}
+
+/* Style to put a small (what is this?) link after a header */
+.what-is-this {
+  /* margin: 0.5em 0 0 0; */
+  font-size: xx-small;
+  padding-bottom: 0.3em;
+}
+
+.what-is-this h3 {
+  display: inline;
+}
+
+.abs-license {
+  font-size: xx-small;
+  padding-top: 0.3em;
+}
+
+.abs-license .has_license {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/****************************************
+ * DL-list styles (/list/arch-ive/new|recent, search)
+ ****************************************/
+#dlpage .list-dateline {
+  font-style: italic;
+}
+
+#dlpage dd {
+  padding-bottom: 1em;
+}
+
+#dlpage .meta {
+  line-height: 130%;
+}
+
+#dlpage .list-identifier a, #dlpage dl#articles dt a {
+  font-weight: bold;
+}
+
+#dlpage .descriptor {
+  display: inline;
+}
+
+#dlpage .list-authors .descriptor {
+  display: none;
+}
+
+#dlpage .list-title .descriptor {
+  display: none;
+}
+
+#dlpage .list-title {
+  font-size: large;
+  font-weight: bold;
+  margin: .25em 0 0 0;
+  line-height: 120%;
+}
+
+#dlpage .list-authors {
+  font-weight: normal;
+  font-size: 110%;
+}
+
+#dlpage .list-comments {
+  font-weight: normal;
+  font-size: 90%;
+}
+
+#dlpage .list-journal-ref {
+  font-weight: normal;
+  font-size: 90%;
+}
+
+#dlpage .list-subjects {
+  font-size: 90%;
+}
+
+/****************************************
+ * Search in arXiv
+ ****************************************/
+/*.login {
+  position: absolute;
+  top: 5px;
+  right: 10px; }*/
+#header #search {
+  right: -10px;
+  width: 350px;
+  top: 30px;
+  margin-right: 0;
+  float: right;
+  clear: right;
+  /*to get it under login*/
+}
+
+#header #search-arxiv .wrapper-search-arxiv {
+  width: 340px;
+  float: left;
+}
+
+#header #search-arxiv .wrapper-search-arxiv .keyword-field {
+  float: left;
+  border: 1px solid #95989A;
+  border-right: none;
+  height: 28px;
+  width: 200px;
+  font-weight: bold;
+  font-size: 12px;
+  padding-left: 10px;
+  color: #222;
+}
+
+#header #search-arxiv .wrapper-search-arxiv ::-webkit-input-placeholder {
+  /* Chrome/Opera/Safari */
+  color: #222;
+}
+
+#header #search-arxiv .wrapper-search-arxiv ::-moz-placeholder {
+  /* Firefox 19+ */
+  color: #222;
+}
+
+#header #search-arxiv .wrapper-search-arxiv :-ms-input-placeholder {
+  /* IE 10+ */
+  color: #222;
+}
+
+#header #search-arxiv .wrapper-search-arxiv :-moz-placeholder {
+  /* Firefox 18- */
+  color: #222;
+}
+
+#header #search-arxiv .wrapper-search-arxiv .filter-field select {
+  background: transparent;
+  padding: 5px;
+  font-size: 16px;
+  line-height: 1;
+  border: none;
+  border-radius: 0;
+  height: 27px;
+  font-size: 12px;
+  -webkit-appearance: none;
+  border-left: none;
+  width: 110px;
+}
+
+#header #search-arxiv .wrapper-search-arxiv .filter-field {
+  float: left;
+  padding-right: 2px;
+  width: 88px;
+  height: 28px;
+  overflow: hidden;
+  background: #fff url("//static.arxiv.org/icons/arrow-down-select.png") no-repeat right 4px;
+  background-size: 20px auto;
+  border: 1px solid #ccc;
+}
+
+#header #search-arxiv .wrapper-search-arxiv .btn-search-arxiv {
+  float: left;
+  height: 30px;
+  width: 30px;
+  border: 1px solid #95989A;
+  border-left: none;
+  background-color: #fff;
+  color: #757575;
+  padding-right: 5px;
+  padding-top: 3px;
+  background: #fff url("//static.arxiv.org/icons/search-icon.png") no-repeat right 2px;
+  background-size: 25px auto;
+  cursor: pointer;
+}
+
+#header #search-arxiv .wrapper-search-arxiv .links {
+  float: left;
+  padding-top: 3px;
+}
+
+#header #search-semantic .wrapper-search-semantic {
+  width: 340px;
+  float: left;
+}
+
+#header #search-semantic .wrapper-search-semantic .keyword-field {
+  float: left;
+  border: 1px solid #95989A;
+  border-right: none;
+  height: 28px;
+  width: 290px;
+  font-weight: bold;
+  font-size: 12px;
+  padding-left: 10px;
+  background: #fff url("//static.arxiv.org/icons/semantic-scholar-logo-1.png") no-repeat right 8px;
+  background-size: 130px auto;
+  color: #264D71;
+}
+
+#header #search-semantic .wrapper-search-semantic ::-webkit-input-placeholder {
+  /* Chrome/Opera/Safari */
+  color: #264D71;
+}
+
+#header #search-semantic .wrapper-search-semantic ::-moz-placeholder {
+  /* Firefox 19+ */
+  color: #2B6195;
+}
+
+#header #search-semantic .wrapper-search-semantic :-ms-input-placeholder {
+  /* IE 10+ */
+  color: #264D71;
+}
+
+#header #search-semantic .wrapper-search-semantic :-moz-placeholder {
+  /* Firefox 18- */
+  color: #264D71;
+}
+
+#header #search-semantic .wrapper-search-semantic .btn-search-semantic {
+  float: left;
+  height: 30px;
+  width: 30px;
+  border: 1px solid #95989A;
+  background-color: #fff;
+  color: #757575;
+  padding-right: 5px;
+  padding-top: 3px;
+  background: #fff url("//static.arxiv.org/icons/search-icon.png") no-repeat right 2px;
+  background-size: 25px auto;
+  cursor: pointer;
+}
+
+/****************************************
+ * Search Semantic Scholar
+ ****************************************/
+#header.cs {
+  /* 	padding-bottom: 30px;*/
+  padding-top: 0;
+}
+
+#header.cs #search {
+  position: relative;
+  right: -10px;
+  width: 685px;
+  top: 9px;
+  margin-right: 0;
+  float: right;
+  clear: right;
+}
+
+#header.cs #search-arxiv .wrapper-search-arxiv {
+  width: 340px;
+  float: left;
+}
+
+#header.cs #search-arxiv .wrapper-search-arxiv .keyword-field {
+  float: left;
+  border: 1px solid #95989A;
+  border-right: none;
+  height: 28px;
+  width: 200px;
+  font-weight: bold;
+  font-size: 12px;
+  padding-left: 10px;
+  color: #222;
+}
+
+#header.cs #search-arxiv .wrapper-search-arxiv ::-webkit-input-placeholder {
+  /* Chrome/Opera/Safari */
+  color: #222;
+}
+
+#header.cs #search-arxiv .wrapper-search-arxiv ::-moz-placeholder {
+  /* Firefox 19+ */
+  color: #222;
+}
+
+#header.cs #search-arxiv .wrapper-search-arxiv :-ms-input-placeholder {
+  /* IE 10+ */
+  color: #222;
+}
+
+#header.cs #search-arxiv .wrapper-search-arxiv :-moz-placeholder {
+  /* Firefox 18- */
+  color: #222;
+}
+
+#header.cs #search-arxiv .wrapper-search-arxiv .filter-field select {
+  background: transparent;
+  padding: 5px;
+  font-size: 16px;
+  line-height: 1;
+  border: none;
+  border-radius: 0;
+  height: 27px;
+  font-size: 12px;
+  -webkit-appearance: none;
+  border-left: none;
+  width: 110px;
+}
+
+#header.cs #search-arxiv .wrapper-search-arxiv .filter-field {
+  float: left;
+  padding-right: 2px;
+  width: 88px;
+  height: 28px;
+  overflow: hidden;
+  background: #fff url("//static.arxiv.org/icons/arrow-down-select.png") no-repeat right 4px;
+  background-size: 20px auto;
+  border: 1px solid #ccc;
+}
+
+#header.cs #search-arxiv .wrapper-search-arxiv .btn-search-arxiv {
+  float: left;
+  height: 30px;
+  width: 30px;
+  border: 1px solid #95989A;
+  border-left: none;
+  background-color: #fff;
+  color: #757575;
+  padding-right: 5px;
+  padding-top: 3px;
+  background: #fff url("//static.arxiv.org/icons/search-icon.png") no-repeat right 2px;
+  background-size: 25px auto;
+  cursor: pointer;
+}
+
+#header.cs #search-arxiv .wrapper-search-arxiv .links {
+  float: left;
+  padding-top: 3px;
+}
+
+#header.cs #search-semantic .wrapper-search-semantic {
+  width: 330px;
+  float: left;
+}
+
+#header.cs #search-semantic .wrapper-search-semantic .keyword-field {
+  float: left;
+  border: 1px solid #95989A;
+  border-right: none;
+  height: 28px;
+  width: 280px;
+  font-weight: bold;
+  font-size: 12px;
+  padding-left: 10px;
+  background: #fff url("//static.arxiv.org/icons/semantic-scholar-logo-1.png") no-repeat right 7px;
+  background-size: 110px auto;
+  color: #264D71;
+}
+
+#header.cs #search-semantic .wrapper-search-semantic ::-webkit-input-placeholder {
+  /* Chrome/Opera/Safari */
+  color: #264D71;
+}
+
+#header.cs #search-semantic .wrapper-search-semantic ::-moz-placeholder {
+  /* Firefox 19+ */
+  color: #2B6195;
+}
+
+#header.cs #search-semantic .wrapper-search-semantic :-ms-input-placeholder {
+  /* IE 10+ */
+  color: #264D71;
+}
+
+#header.cs #search-semantic .wrapper-search-semantic :-moz-placeholder {
+  /* Firefox 18- */
+  color: #264D71;
+}
+
+#header.cs #search-semantic .wrapper-search-semantic .btn-search-semantic {
+  float: left;
+  height: 30px;
+  width: 30px;
+  border: 1px solid #95989A;
+  background-color: #fff;
+  color: #757575;
+  padding-right: 5px;
+  padding-top: 3px;
+  background: #fff url("//static.arxiv.org/icons/search-icon.png") no-repeat right 2px;
+  background-size: 25px auto;
+  cursor: pointer;
+}
+
+body.with-cu-identity #header #search {
+  top: 5px;
+}
+
+body.with-cu-identity #header.cs #search {
+  top: 10px;
+}
+
+body#front.with-cu-identity #header #search {
+  top: 30px;
+}
+
+@media screen and (max-width: 768px) {
+  #cu-identity {
+    flex-direction: column;
+  }
+
+  #support-ack, #cu-logo {
+    text-align: center;
+    width: 100%;
+    left: 0px;
+  }
+}
+
+/*extra bulma styles to bring -browse up to date*/
+@media screen and (max-width: 768px) {
+  .is-hidden-mobile {
+    display: none !important;
+  }
+  .columns.is-mobile {
+    display: flex;
+  }
+}
+@media screen and (max-width: 1023px) {
+  .is-hidden-touch {
+    display: none !important;
+  }
+}
+@media screen and (min-width: 1024px) {
+  .is-hidden-desktop {
+    display: none !important;
+  }
+}
+.is-pulled-left {
+  float: left !important;
+}
+.is-pulled-right {
+  float: right !important;
+}
+.is-sr-only {
+  border: none !important;
+  clip: rect(0, 0, 0, 0) !important;
+  height: 0.01em !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+  position: absolute !important;
+  white-space: nowrap !important;
+  width: 0.01em !important;
+}
+/* Inline fieldset for form grouping without visual border */
+.inline-fieldset {
+  border: none;
+  padding: 0;
+  margin: 0;
+}
+.inline-fieldset legend {
+  display: inline;
+  padding: 0;
+  font-weight: normal;
+}
+/* Browse context heading style */
+.browse-context-heading {
+  font-size: 1em;
+  font-weight: normal;
+  margin: 0;
+  display: inline;
+}
+.button {
+  border-width: 1px;
+  cursor: pointer;
+  justify-content: center;
+  padding-bottom: calc(0.5em - 1px);
+  padding-left: 1em;
+  padding-right: 1em;
+  padding-top: calc(0.5em - 1px);
+  text-align: center;
+  white-space: nowrap;
+}
+/*** limited bulma tab styles so browse can use them ***/
+.tabs {
+  -webkit-overflow-scrolling: touch;
+  align-items: stretch;
+  display: flex;
+  font-size: 1rem;
+  justify-content: space-between;
+  overflow: hidden;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.tabs a {
+  align-items: center;
+  border-bottom-color: #dbdbdb;
+  border-bottom-style: solid;
+  border-bottom-width: 1px;
+  color: #4a4a4a;
+  display: flex;
+  justify-content: center;
+  margin-bottom: -1px;
+  padding: 0.5em 1em;
+  vertical-align: top;
+}
+.tabs a:hover {
+  border-bottom-color: #363636;
+  color: #363636;
+}
+.tabs a:focus {
+  outline: none;
+}
+.tabs a:focus-visible {
+  outline: 2px solid #005ea2;
+  outline-offset: 2px;
+}
+.tabs li {
+  display: block;
+}
+.tabs li.is-active a {
+  border-bottom-color: #3273dc;
+  color: #3273dc;
+}
+.tabs ul {
+  align-items: center;
+  border-bottom-color: #dbdbdb;
+  border-bottom-style: solid;
+  border-bottom-width: 1px;
+  display: flex;
+  flex-grow: 1;
+  flex-shrink: 0;
+  justify-content: flex-start;
+}
+.tabs ul.is-left {
+  padding-right: 0.75em;
+}
+.tabs ul.is-center {
+  flex: none;
+  justify-content: center;
+  padding-left: 0.75em;
+  padding-right: 0.75em;
+}
+.tabs ul.is-right {
+  justify-content: flex-end;
+  padding-left: 0.75em;
+}
+.tabs .icon:first-child {
+  margin-right: 0.5em;
+}
+.tabs .icon:last-child {
+  margin-left: 0.5em;
+}
+.tabs.is-centered ul {
+  justify-content: center;
+}
+.tabs.is-right ul {
+  justify-content: flex-end;
+}
+.tabs.is-boxed a {
+  border: 1px solid transparent;
+  border-radius: 4px 4px 0 0;
+}
+.tabs.is-boxed a:hover {
+  background-color: whitesmoke;
+  border-bottom-color: #dbdbdb;
+}
+.tabs.is-boxed li.is-active a {
+  background-color: white;
+  border-color: #dbdbdb;
+  border-bottom-color: transparent !important;
+}
+/*** limited column styles copied from base so that browse can use bulma columns too ***/
+.column {
+  display: block;
+  flex-basis: 0;
+  flex-grow: 1;
+  flex-shrink: 1;
+  padding: 0.75rem;
+}
+#cu-identity .banner-minimal {
+  text-align: center;
+}
+.columns.is-mobile > .column.is-full {
+  flex: none;
+  width: 100%;
+}
+.columns.is-mobile > .column.is-three-quarters {
+  flex: none;
+  width: 75%;
+}
+.columns.is-mobile > .column.is-two-thirds {
+  flex: none;
+  width: 66.6666%;
+}
+.columns.is-mobile > .column.is-half {
+  flex: none;
+  width: 50%;
+}
+.columns.is-mobile > .column.is-one-third {
+  flex: none;
+  width: 33.3333%;
+}
+.columns.is-mobile > .column.is-one-quarter {
+  flex: none;
+  width: 25%;
+}
+.columns.is-mobile > .column.is-one-fifth {
+  flex: none;
+  width: 20%;
+}
+.columns.is-mobile > .column.is-two-fifths {
+  flex: none;
+  width: 40%;
+}
+.columns.is-mobile > .column.is-three-fifths {
+  flex: none;
+  width: 60%;
+}
+.columns.is-mobile > .column.is-four-fifths {
+  flex: none;
+  width: 80%;
+}
+.columns .column.is-full {
+  flex: none;
+  width: 100%;
+}
+.columns .column.is-three-quarters {
+  flex: none;
+  width: 75%;
+}
+.columns .column.is-two-thirds {
+  flex: none;
+  width: 66.6666%;
+}
+.columns .column.is-half {
+  flex: none;
+  width: 50%;
+}
+.columns .column.is-one-third {
+  flex: none;
+  width: 33.3333%;
+}
+.columns .column.is-one-quarter {
+  flex: none;
+  width: 25%;
+}
+.columns .column.is-one-fifth {
+  flex: none;
+  width: 20%;
+}
+.columns .column.is-two-fifths {
+  flex: none;
+  width: 40%;
+}
+.columns .column.is-three-fifths {
+  flex: none;
+  width: 60%;
+}
+.columns .column.is-four-fifths {
+  flex: none;
+  width: 80%;
+}
+.columns.is-vcentered {
+  align-items: center;
+}
+.columns.is-mobile > .column.is-narrow {
+  flex: none;
+}
+@media screen and (max-width: 768px) {
+  .column.is-narrow-mobile {
+    flex: none;
+  }
+}
+@media screen and (min-width: 769px), print {
+  .column.is-narrow, .column.is-narrow-tablet {
+    flex: none;
+  }
+  .columns:not(.is-desktop) {
+    display: flex;
+  }
+  .column.is-full, .column.is-full-tablet {
+    flex: none;
+    width: 100%;
+  }
+}
+@media screen and (min-width: 1024px) {
+  .column.is-narrow-desktop {
+    flex: none;
+  }
+  .column.is-full-desktop {
+    flex: none;
+    width: 100%;
+  }
+  .column.is-three-quarters-desktop {
+    flex: none;
+    width: 75%;
+  }
+  .column.is-two-thirds-desktop {
+    flex: none;
+    width: 66.6666%;
+  }
+  .column.is-half-desktop {
+    flex: none;
+    width: 50%;
+  }
+  .columns.is-desktop {
+    display: flex;
+  }
+}
+
+/*** base styles for vanilla accordion. Move to base for wider use? ***/
+.accordion-body {
+  display: none;
+}
+.accordion-body.open {
+  display: block;
+}
+/*** styles for the accordion large-data-list ***/
+.large-data-list .accordion-body {
+  margin-top: 1em;
+}
+/* Accordion toggle button - reset and inherit styles */
+.large-data-list .accordion-toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  display: flex;
+  align-items: center;
+}
+.large-data-list .accordion-toggle:focus {
+  outline: none;
+}
+.large-data-list .accordion-toggle:focus-visible {
+  outline: 2px solid #005ea2;
+  outline-offset: 2px;
+}
+.large-data-list .accordion-toggle .accordion-caret:before {
+  content: "\02C5";
+  padding-right: 0.5em;
+  font-size: 1.25em;
+  font-weight: 100;
+}
+.large-data-list .accordion-toggle[aria-expanded="true"] .accordion-caret:before {
+  content: "\02C4";
+  color: #b7b8b9;
+}
+/* Legacy support - keep old selector for backwards compatibility */
+.large-data-list .accordion-head:after {
+  content: "\02C5";
+  padding-left: 1em;
+  position: relative;
+  top: .25em;
+  font-size:1.25em;
+  font-weight:100;
+}
+.large-data-list .accordion-head.open:after {
+  content: "\02C4";
+  color: #b7b8b9;
+}
+/* Hide legacy pseudo-element when button is present */
+.large-data-list .accordion-head:has(.accordion-toggle):after {
+  display: none;
+}
+/*** styles for general large-data-list ***/
+.large-data-list {
+  border-bottom: 1px solid #b7b8b9;
+}
+.large-data-list a {
+  color: #1777bc;
+}
+.large-data-list p {
+  margin:1em 1em 1em 0;
+  font-size:.85em;
+  color: #000000;
+}
+.large-data-list .column {
+  padding: 0;
+}
+.large-data-list h2 {
+  border-top: 1px solid #e3e5e6;
+  padding: .75em 0;
+  margin: 0;
+  font-size: 1em;
+  cursor: pointer;
+}
+.large-data-list h2:first-child {
+  border-top: 1px solid #b7b8b9;
+}
+.large-data-list h3 {
+  margin:1em 1em 1em 0;
+  font-size: .9em;
+  font-weight: normal;
+  text-transform: uppercase;
+}
+.large-data-list h3 span {
+  font-size: .7em;
+}
+.large-data-list h4 {
+  margin:1em 1em 1em 0;
+  font-size: 1.1em;
+}
+.large-data-list h4 span {
+  font-size: .7em;
+  font-weight: normal;
+}
+.large-data-list .physics {
+  border-bottom: .5px dotted #ccc;
+}
+.large-data-list .physics:last-child {
+  border-bottom: 0px;
+}
+.large-data-list .columns.divided {
+  margin-left: .3em;
+  border-bottom: .5px dotted #ccc;
+}
+.large-data-list .columns.divided:last-child {
+  margin-bottom: 1.5em;
+  border-bottom: 0px;
+}
+.guide {
+  display:none;
+}
+.guide .columns.divided .column {
+  border-top: .5px dotted black;
+}
+.form-trackbacks {
+  padding: .5em 0;
+  border-top: 1px solid #cccccc;
+}
+.form-trackbacks .button {
+  background-color: #d3e1e6;
+}
+
+.trackback-styles {
+  border-top: 1px solid #eae9e7 !important;
+  padding: 1em !important;
+}
+.trackback-styles h2.trackback-heading {
+  margin-bottom: 1em;
+  font-size: 1.5em;
+}
+.trackback-styles h2.trackback-heading, .trackback-styles p {
+  margin-left:0 !important;
+  padding-left:0 !important;
+  border: 0 !important;
+}
+.trackback-styles h3.trackback-title {
+  font-size: 1.25em;
+  text-transform: none;
+  margin-bottom: 0;
+}
+.trackback-styles .trackback-source {
+  font-size: .85em;
+}
+.trackback-styles .trackback-source small {
+  font-style: italic;
+  font-size: .9em;
+}
+.trackback-styles .trackback-source a, .trackback-styles .trackback-source a:visited {
+  text-decoration: underline;
+  color: #6c6c6c;
+}
+.trackback-styles .trackback-source a:hover, .trackback-styles .trackback-source a:active {
+  text-decoration: underline;
+  color: #000000;
+}
+/** trackback metadata block **/
+.trackback-styles blockquote {
+  background-color: #f7f5f3;
+  margin: 1em 0;
+  padding: 1.25em 1em 1em 1em;
+}
+.trackback-styles #abs h1.title {
+  font-size: 1.1em !important;
+  margin-bottom: 5px;
+}
+.trackback-styles .authors {
+  line-height: 18px !important;
+  margin-top: 0 !important;
+}
+.trackback-styles .authors a {
+  font-size: .85em;
+}
+.trackback-styles .accordion-head {
+  font-weight: normal;
+  font-size: .85em;
+}
+#metadata_list.trackback-styles {
+  padding-top:0 !important;
+  padding-bottom:0 !important;
+}
+
+/*** styles for bold-divided-list ***/
+.bold-divided-list {
+  margin: 1em .5em;
+  padding: 0 0 .5em 0;
+}
+.bold-divided-list p {
+  margin-top: 0;
+}
+.bold-divided-list .bold-divided-column {
+  padding-left: 1.5em;
+  padding-top: 1em;
+  padding-bottom: 1.75em;
+  border-top: .5px dotted #ccc;
+}
+.bold-divided-list .bold-divided-column ul {
+  margin: 0;
+  padding: 0;
+  font-size: .85em;
+  list-style: none;
+}
+.bold-divided-list .bold-divided-column ul li {
+  color: black;
+}
+.bold-divided-list .bold-divided-column ul li a {
+  font-weight: bold;
+}
+.bold-divided-list .bold-divided-column ul li:before {
+  color: #000;
+  content: "\002D";
+  margin: 0 6px 0 0;
+  font-weight: bold;
+}
+.bold-divided-list .bold-divided-header {
+  margin-top: 0;
+  padding: 1em 0 0 0;
+  border-top: 1px solid black;
+}
+
+@media screen and (min-width: 769px) {
+  .trackback-styles {
+    padding: 2em  !important;
+  }
+  .large-data-list {
+    margin: 0 4em;
+  }
+  .large-data-list .accordion-body {
+    margin-left:2em;
+  }
+  .large-data-list h2 {
+    padding-left: 2em;
+  }
+  .guide {
+    display: block;
+    background: #eef5f9;
+    border-radius: 10px 0 0 0;
+    margin-bottom: 2em;
+    margin-top:2em;
+    margin-right: 4em;
+    padding-bottom: 1em;
+    color: black;
+    box-shadow: 0 0 3px 0 rgba(210, 210, 210, .5);
+  }
+  .guide p em {
+    color: #994D04;
+    font-style: italic;
+  }
+  .guide a {
+    color: #046BAF;
+  }
+  .guide h2 {
+    font-size: 1.1em;
+    color: #4c4c4c;
+  }
+  .form-trackbacks {
+    padding: 1em 0 2em 0;
+    text-align: right;
+  }
+  .bold-divided-list {
+    margin-top: 4em;
+    padding-bottom: 2em;
+  }
+}
+
+
+/**** Pendo Guide Badge Styles - when you only want a badge/text note and no corresponding guide ****/
+.intro-and-news .bb-text {
+    text-align: left !important;
+}
+.intro-and-news .\_pendo-badge\_ {
+  cursor: text !important;
+}
+
+
+/*icon styles*/
+svg.icon {
+  height: 1em !important;
+}
+.icon.filter-white {
+  fill: #FFFFFF;
+}
+.icon.filter-black {
+  fill: #000000;
+}
+.icon.filter-light_grey {
+  fill: #bfbfbf;
+}
+.icon.filter-grey {
+  fill: #f5f5f5;
+}
+.filter-dark_grey {
+  fill: #cccccc;
+}
+.icon.filter-blue {
+  fill: #1c8bd6;
+}
+.filter-dark_blue {
+  fill: #005e9d;
+}
+.icon.filter-red {
+  fill: #cd0200;
+}
+.icon.filter-light_red {
+  fill: #e30906;
+}
+.icon.filter-dark_red {
+  fill: #b31b1b;
+}
+.filter-dark_grey {
+  fill: #cccccc;
+}
+.filter-orange {
+  fill: #d47500;
+}
+.filter-dark_orange {
+  fill: #994d04;
+}
+.filter-light_orange {
+  fill: #d47500;
+}
+.filter-yellow {
+  fill: #d9af14;
+}
+.filter-dark_yellow {
+  fill: #8d7109;
+}
+.filter-green {
+  fill: #009917;
+}
+.filter-dark_green {
+  fill: #005909;
+}
+a .icon {
+    transition: fill 0.3s ease;
+}
+a:hover .icon.filter-white {
+    fill: #f5f5f5;
+}
+a:hover .icon.filter-black,
+a:hover .icon.filter-grey,
+a:hover .icon.filter-blue,
+a:hover .icon.filter-red {
+    fill: #ffffff;
+}
+
+/****************************************
+ * alert styles
+ ****************************************/
+ .alert {
+  display: block;
+  background-color: #fff5f5;
+  border: 1px solid #cd0200;
+  color: #970503;
+  border-radius: 1em;
+  font-size: 1em;
+  line-height: 1.5;
+  padding: .3em 1em;
+}
+
+.alert svg {
+  fill: #970503;
+}
+
+.alert button {
+  float: right;
+  margin-left: 1em;
+  margin-bottom: 1em;
+  border: none;
+  background-color: transparent;
+  border-radius: 4px;
+  padding: 0.5em;
+}
+
+
+#opt-in-status-button-container {
+  margin-left: 1rem;
+}
+.opt-in-status-wrapper {
+  text-align: right;
+  padding-right: 1rem;
+}
+</style>
+  <style>/****************************************
+ *  arXiv.org Cascading Style Sheet:: Print
+ *  $Date: 2019/11/20 $
+ *****************************************/
+/****************************************
+ *   Print rules
+ *****************************************/
+#cu-identity, .extra-services, .search-block, footer .columns {
+  display:none;
+}
+.header-breadcrumbs {
+  font-size:18px;
+}
+.subheader h1 {
+  font-size:14px;
+  font-weight: bold;
+}
+/* arXivLabs: interactive tools, nothing for paper (and its logo has no size here) */
+#labstabs {
+  display: none;
+}
+/* abs.css (every medium) indents the abstract block to the screen's left column; on
+   paper it starts at the margin like the rest, the abstract inset as on screen. The
+   ancestor outranks abs.css, which loads later. */
+#content-inner #abs h1.title,
+#content-inner #abs div.authors,
+#content-inner #abs div.dateline,
+#content-inner #abs div.metatable {
+  margin-left: 0;
+}
+#content-inner #abs blockquote.abstract {
+  margin-inline: 20px;
+}
+</style>
+  <style>.search-block.level-right {
+  display: flex;
+  justify-content: flex-end;
+  clear: right;
+}
+
+@media screen and (max-width: 768px) {
+  .search-block.level-right {
+    justify-content: center;
+    clear: left;
+  }
+  .search-block form.level-item {
+    margin-left:12px !important;
+  }
+}
+
+.search-block form.level-item,
+.field.has-addons {
+  display: flex;
+}
+
+.search-block p.help {
+  margin-bottom: 0;
+}
+
+.search-block .input,
+.search-block select,
+.search-block .button {
+  font-size: 0.75rem;
+  line-height: 1.5;
+  height: 2.25em;
+  border-radius: 2px;
+  border: 1px solid transparent;
+}
+
+.search-block .button {
+  margin-left:0;
+}
+
+.search-block .input {
+  border-color: transparent;
+  box-shadow: inset 0 1px 2px rgba(10, 10, 10, 0.1);
+  border-bottom-right-radius: 0;
+  border-top-right-radius: 0;
+  border: 0;
+  width: 100%;
+  max-width: 100%;
+  padding: 0 0.5em;
+}
+
+.search-block .control {
+  position: relative;
+}
+
+/* creates downward caret */
+ .search-block .select::after {
+  position: absolute;
+  display: block;
+  z-index: 4;
+  top: 50%;
+  right: .65em;
+  width: 0.5em;
+  height: 0.5em;
+  content: " ";
+  border: 3px solid #0068AC;
+  border-radius: 2px;
+  border-right: 0;
+  border-top: 0;
+  transform: rotate(-45deg);
+  transform-origin: center;
+  pointer-events: none;
+  margin-top: -1.125em;
+}
+/*hide default caret, style select*/
+.search-block .select.is-small select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;
+  max-width: 220px;
+  height: 27px;
+  float: right;
+  margin: 0px;
+  padding: 0px;
+  background-color: #ffffff;
+  background-image: none;
+  -ms-word-break: normal;
+  word-break: normal;
+  border-color: #ccc;
+  box-shadow: inset 0 1px 2px rgba(10, 10, 10, 0.1);
+  border-radius: 0;
+}
+/*fix caret in IE 11*/
+.search-block .select.is-small select::-ms-expand {
+     display: none;
+}
+
+
+
+
+.search-block .button {
+  background-color: #711111;
+  color: #FFF;
+  border-color: transparent;
+}
+
+.search-block .button:hover,
+.search-block .button:focus {
+  background-color: #440A0A;
+  color: #FFF;
+}
+
+#header form select, #header form input {
+  padding: 0 0.5em;
+}
+</style><style>/* arXiv shared site chrome (header + announcement + footer). Docs: docs/shared-chrome.md */
+
+/* IBM Plex Sans (self-hosted) */
+@font-face {
+  font-family: "IBM Plex Sans"; font-weight: 400; font-style: normal;
+  font-display: swap; src: url("../fonts/IBMPlexSans-Regular.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Sans"; font-weight: 500; font-style: normal;
+  font-display: swap; src: url("../fonts/IBMPlexSans-Medium.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Sans"; font-weight: 600; font-style: normal;
+  font-display: swap; src: url("../fonts/IBMPlexSans-SemiBold.woff2") format("woff2");
+}
+
+/* Tokens (design-system :root subset) */
+:root {
+  --arxiv-open-blue:       #a5d6fe;
+  --arxiv-link-blue:       #1565c0;
+  --arxiv-link-hover:      #1050a0;
+  --arxiv-grey-dis:        #b0aba6;
+  --arxiv-grey:            #6b6459;
+  --arxiv-ink:             #1c1a17;
+  --arxiv-warm-wash:       #f9f7f7;
+  --arxiv-card-grey:       #f0eeec;
+  --arxiv-active-bg:       #d6e8f7;
+  --arxiv-pill-border:     #e4e0db;
+  --arxiv-border-light:    #ddd8d2;
+  --arxiv-focus-ring-dark: #64b5f6;
+  --arxiv-font-sans:       "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+/* Screen-reader-only utility */
+.is-sr-only {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Site footer */
+.ds-site-footer {
+  clear: both;
+  border-top: 1px solid var(--arxiv-pill-border);
+  background: var(--arxiv-warm-wash);
+  padding: 24px 24px 28px;
+  margin: 0;
+  font-family: var(--arxiv-font-sans);
+}
+/* Neutralise host-page footer-link underline styling (e.g. browse arXiv.css's
+   `footer a:hover { border-bottom: 1px dotted }`) on all footer links. The funder
+   logo cards re-assert their own border at a higher specificity (below), so this
+   reset does not strip their bottom edge. */
+.ds-site-footer a,
+.ds-site-footer a:hover,
+.ds-site-footer a:active {
+  border-bottom: 0;
+}
+.ds-site-footer-grid {
+  display: flex;
+  row-gap: 24px;
+  column-gap: 32px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.ds-site-footer-main {
+  flex: 1 1 320px;
+  min-width: 280px;
+  max-width: 720px;
+}
+.ds-site-footer-ack {
+  font-size: 0.875rem;
+  color: var(--arxiv-ink);
+  margin-bottom: 14px;
+  line-height: 1.6;
+}
+.ds-site-footer-ack a {
+  font-size: 0.8125rem;
+  color: var(--arxiv-ink);
+  text-decoration: underline;
+}
+.ds-site-footer-ack a:hover { text-decoration-style: dotted; }
+.ds-site-footer-ack strong { color: var(--arxiv-ink); font-weight: 600; }
+.ds-site-footer-links {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 0.8125rem;
+  line-height: 1.8;
+}
+.ds-site-footer-links a {
+  font-size: 0.8125rem;
+  color: var(--arxiv-link-hover);
+  text-decoration: none;
+}
+.ds-site-footer-links a:hover {
+  color: var(--arxiv-ink);
+  text-decoration: underline;
+}
+.ds-site-footer-links a:focus-visible {
+  outline: 2px solid var(--arxiv-link-hover);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+.ds-site-footer-sep { color: var(--arxiv-grey); margin: 0 4px; }
+.ds-site-footer-funders {
+  flex-shrink: 0;
+  text-align: center;
+}
+.ds-site-footer-funders-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--arxiv-ink);
+  margin-bottom: 12px;
+  line-height: 1.4;
+}
+.ds-site-footer-funders-logos {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+/* The white card lives on the link wrapper (one place), identical whether the logo is
+   content-sized (desktop) or fixed-width (mobile, below). Scoped to `.ds-site-footer a`
+   (specificity 0-2-1) so the full four-side border out-specifies the footer-link
+   underline reset above and any host-page `footer a` border styling — otherwise those
+   win on the bottom edge only, leaving a stray dotted/absent bottom border. */
+.ds-site-footer a.ds-funder-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  border: 1px solid var(--arxiv-pill-border);
+  border-radius: 3px;
+  background: #fff;
+  transition: border-color 0.15s ease;
+}
+.ds-site-footer a.ds-funder-link:hover { border-color: var(--arxiv-link-blue); }
+.ds-site-footer a.ds-funder-link:focus-visible {
+  outline: 2px solid var(--arxiv-link-blue);
+  outline-offset: 2px;
+}
+.ds-funder-logo {
+  display: block;
+  height: 48px;
+  width: auto;
+  flex-shrink: 0;
+}
+@media (max-width: 720px) {
+  /* Mobile/tablet: fixed-width cards so the wrapped logos align into a tidy centred
+     column (phones) / even row (tablets) instead of a ragged stack of different-width
+     boxes. Card styling is inherited from .ds-funder-link; only the width and logo
+     height change here. */
+  .ds-site-footer-funders { width: 100%; margin-top: 8px; }
+  .ds-site-footer-funders-logos { gap: 10px; }
+  .ds-site-footer a.ds-funder-link { width: 220px; max-width: 100%; padding: 10px 14px; }
+  .ds-funder-logo { height: 44px; max-width: 100%; }
+}
+@media print {
+  .ds-site-footer { display: none !important; }
+}
+
+/* Site header unit: announcement + skip link + header bar + hamburger */
+
+/* Skip link */
+.ds-skip-link {
+  position: absolute;
+  top: -100px; left: 8px;
+  z-index: 200;
+  background: var(--arxiv-ink);
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 4px;
+  text-decoration: none;
+  font-family: var(--arxiv-font-sans);
+  font-weight: 600;
+}
+.ds-skip-link:focus-visible {
+  top: 8px;
+  outline: 3px solid var(--arxiv-focus-ring-dark, #64b5f6);
+  outline-offset: 2px;
+}
+
+/* Announcement band */
+.ds-announcement {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 24px;
+  background: var(--arxiv-open-blue);
+  color: var(--arxiv-ink);
+  font-family: var(--arxiv-font-sans);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  text-align: center;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+  position: relative;
+  z-index: 101;
+}
+.ds-announcement.is-dismissed { display: none; }
+.ds-announcement-glyph { height: 20px; width: auto; flex-shrink: 0; }
+.ds-announcement .ds-announcement-link {
+  color: var(--arxiv-ink);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.ds-announcement .ds-announcement-link:hover { text-decoration-style: dotted; }
+.ds-announcement-close {
+  flex-shrink: 0;
+  margin-left: 4px;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
+  color: var(--arxiv-ink);
+  font-size: 0.875rem;
+  line-height: 1;
+  padding: 1px 6px;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  transition: background 0.12s, box-shadow 0.12s;
+}
+.ds-announcement-close:hover {
+  background: rgba(255, 255, 255, 0.8);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+.ds-announcement-close:focus-visible {
+  outline: 2px solid var(--arxiv-link-blue);
+  outline-offset: 2px;
+}
+.ds-announcement-close:active {
+  transform: translateY(1px);
+  box-shadow: none;
+}
+@media (max-width: 520px) {
+  .ds-announcement { flex-wrap: wrap; }
+}
+
+/* Header bar */
+.ds-site-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 24px;
+  height: 52px;
+  background: var(--arxiv-ink);
+  font-family: var(--arxiv-font-sans);
+}
+.ds-site-header-logo {
+  display: flex;
+  align-items: center;
+  text-decoration: none;
+  flex-shrink: 0;
+  margin-right: auto;
+}
+.ds-site-header-logo img { height: 39px; width: auto; }
+.ds-site-header-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.ds-site-header-nav a,
+.ds-site-header-nav button {
+  font-family: var(--arxiv-font-sans);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--arxiv-grey-dis);
+  text-decoration: none;
+  padding: 6px 10px;
+  border-radius: 4px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, color 0.12s;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.ds-site-header-nav a:visited { color: var(--arxiv-grey-dis); }
+.ds-site-header-nav a:hover,
+.ds-site-header-nav button:hover { background: #302c28; color: var(--arxiv-card-grey); }
+.ds-site-header-nav a:focus-visible,
+.ds-site-header-nav button:focus-visible {
+  outline: 3px solid var(--arxiv-focus-ring-dark, #64b5f6);
+  outline-offset: 1px;
+}
+.ds-site-header-nav .ds-nav-icon { width: 16px; height: 16px; opacity: 0.65; flex-shrink: 0; }
+.ds-site-header-divider {
+  width: 1px; height: 20px;
+  background: #4a433d;
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+.ds-site-header-login {
+  font-weight: 600 !important;
+  color: var(--arxiv-card-grey) !important;
+}
+
+/* Hamburger (phone) */
+.ds-site-header-nav-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: none;
+  background: none;
+  border-radius: 4px;
+  color: var(--arxiv-grey-dis);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.12s, color 0.12s;
+}
+.ds-site-header-nav-toggle:hover { background: #302c28; color: var(--arxiv-card-grey); }
+.ds-site-header-nav-toggle:focus-visible {
+  outline: 3px solid var(--arxiv-focus-ring-dark, #64b5f6);
+  outline-offset: 1px;
+}
+.ds-site-header-nav-toggle svg { width: 22px; height: 22px; display: block; }
+
+/* Narrow viewport (≤599px) */
+@media (max-width: 599px) {
+  .ds-site-header {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 52px;
+    padding: 6px 12px;
+  }
+  .ds-site-header-nav { flex-wrap: wrap; row-gap: 2px; width: 100%; }
+  .ds-site-header-nav a,
+  .ds-site-header-nav button { padding: 6px 8px; }
+
+  .ds-site-header.is-collapsible {
+    flex-wrap: nowrap;
+    height: 52px;
+    position: relative;
+  }
+  .ds-site-header.is-collapsible .ds-site-header-nav-toggle { display: inline-flex; }
+  .ds-site-header.is-collapsible .ds-site-header-nav {
+    display: none;
+    position: absolute;
+    top: 52px;
+    left: 0;
+    right: 0;
+    flex-direction: column;
+    align-items: stretch;
+    flex-wrap: nowrap;
+    width: auto;
+    gap: 0;
+    padding: 0;
+    background: var(--arxiv-ink);
+    border-top: 1px solid #4a433d;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+    z-index: 60;
+  }
+  .ds-site-header.is-collapsible .ds-site-header-nav.is-open { display: flex; }
+  .ds-site-header.is-collapsible .ds-site-header-nav a,
+  .ds-site-header.is-collapsible .ds-site-header-nav button {
+    width: 100%;
+    justify-content: flex-start;
+    padding: 12px 16px;
+    min-height: 44px;
+    box-sizing: border-box;
+    border-radius: 0;
+    font-size: 0.875rem;
+    border-bottom: 1px solid #4a433d;
+  }
+  .ds-site-header.is-collapsible .ds-site-header-nav > :last-child { border-bottom: none; }
+  .ds-site-header.is-collapsible .ds-site-header-divider { display: none; }
+}
+
+/* Print keeps the logo, at a modest size, and none of the bar or its controls */
+@media print {
+  .ds-announcement,
+  .ds-skip-link,
+  .ds-site-header > :not(.ds-site-header-logo) { display: none !important; }
+  .ds-site-header { height: auto; padding: 0 0 16px; background: none; }
+  .ds-site-header-logo img { height: 28px; }
+}
+
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .ds-site-header-nav a, .ds-site-header-nav button, .ds-site-header-nav-toggle,
+  .ds-announcement-close { transition: none; }
+}
+
+/* Search overlay (progressive enhancement) */
+.arxiv-search-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(28, 26, 23, 0.3);
+  align-items: flex-start;
+  justify-content: center;
+}
+.arxiv-search-overlay.is-open { display: flex; }
+.arxiv-search-overlay[hidden] { display: none; }
+.arxiv-search-panel {
+  margin-top: 52px;
+  width: 100%;
+  max-width: 640px;
+  background: #fff;
+  border-radius: 0 0 8px 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+  padding: 20px 24px;
+}
+.arxiv-search-panel input[type="text"] {
+  width: 100%;
+  font-family: var(--arxiv-font-sans);
+  font-size: 16px;
+  padding: 10px 14px;
+  border: 2px solid var(--arxiv-pill-border);
+  border-radius: 6px;
+  outline: none;
+  color: var(--arxiv-ink);
+  box-sizing: border-box;
+}
+.arxiv-search-panel input[type="text"]:focus {
+  border-color: var(--arxiv-link-blue);
+  box-shadow: 0 0 0 3px rgba(21, 101, 192, 0.1);
+}
+.arxiv-search-panel input[type="text"]::placeholder { color: var(--arxiv-grey); }
+.arxiv-search-hint {
+  font-family: var(--arxiv-font-sans);
+  font-size: 12px;
+  color: var(--arxiv-grey);
+  margin-top: 8px;
+}
+.arxiv-search-hint a { color: var(--arxiv-link-blue); font-size: 12px; }
+</style>
+  
+  
+  
+  
+  
+<style type="text/css">.MathJax_Preview {color: #888}
+#MathJax_Message {position: fixed; left: 1px; bottom: 2px; background-color: #E6E6E6; border: 1px solid #959595; margin: 0px; padding: 2px 8px; z-index: 102; color: black; font-size: 80%; width: auto; white-space: nowrap}
+#MathJax_MSIE_Frame {position: absolute; top: 0; left: 0; width: 0px; z-index: 101; border: 0px; margin: 0px; padding: 0px}
+.MathJax_Error {color: #CC0000; font-style: italic}
+</style></head>
+
+<body><div id="MathJax_Message" style="display: none;"></div><div class="flex-wrap-footer">
+    <a href="#content" class="ds-skip-link">Skip to main content</a>
+  
+  
+  
+<header class="ds-site-header is-collapsible">
+  <a aria-hidden="true" tabindex="-1" href="https://arxiv.org/IgnoreMe" class="is-sr-only"></a>
+
+  <a href="https://arxiv.org/" class="ds-site-header-logo" aria-label="archive home">
+    <img src="/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="archive">
+  </a>
+
+  <button type="button" id="ds-nav-toggle" class="ds-site-header-nav-toggle" aria-label="Open menu" aria-controls="ds-site-header-nav" aria-expanded="false">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </button>
+
+  <nav class="ds-site-header-nav" id="ds-site-header-nav" aria-label="Main navigation"><a id="arxiv-search-toggle" href="https://arxiv.org/search" aria-controls="arxiv-search-overlay" aria-expanded="false">
+      <svg class="ds-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+        <circle cx="11" cy="11" r="8"></circle>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+      </svg>
+      Search
+    </a>
+    <a href="https://arxiv.org/user/create">Submit</a>
+    <a href="https://info.arxiv.org/about/donate.html">Donate</a>
+    <span class="ds-site-header-divider" aria-hidden="true"></span>
+      <a href="https://arxiv.org/login" class="ds-site-header-login">Log in</a>
+  </nav>
+</header>
+
+<div class="arxiv-search-overlay" id="arxiv-search-overlay" hidden="">
+  <div class="arxiv-search-panel" role="search">
+    <form method="GET" action="https://arxiv.org/search">
+      <label for="arxiv-search-input" class="is-sr-only">Search arXiv</label>
+      <input type="text" name="query" id="arxiv-search-input" autocomplete="off" placeholder="Search papers by title, author, abstract, or ID...">
+      <input type="hidden" name="searchtype" value="all">
+      <input type="hidden" name="source" value="header">
+    </form>
+    <div class="arxiv-search-hint">
+      Press Enter to search · <a href="https://arxiv.org/search/advanced">Advanced search</a>
+    </div>
+  </div>
+</div>
+    <main>
+      <div id="content">
+<div id="content-inner">
+<div id="dlpage">
+  <h1>Computation and Language</h1>
+
+<h2>Authors and titles for recent submissions</h2>
+  <ul>
+<li>
+        <a href="/list/cs.CL/recent?skip=0&amp;show=50">
+          Fri, 16 Oct 2026
+        </a>
+      </li><li>
+        <a href="/list/cs.CL/recent?skip=177&amp;show=50">
+          Thu, 15 Oct 2026
+        </a>
+      </li><li>
+        <a href="/list/cs.CL/recent?skip=359&amp;show=50">
+          Wed, 14 Oct 2026
+        </a>
+      </li><li>
+        <a href="/list/cs.CL/recent?skip=744&amp;show=50">
+          Mon, 12 Oct 2026
+        </a>
+      </li><li>
+        <a href="/list/cs.CL/recent?skip=860&amp;show=50">
+          Fri, 9 Oct 2026
+        </a>
+      </li></ul>
+  <p>See today's <a id="new-cs.CL" aria-labelledby="new-cs.CL" href="/list/cs.CL/new">new</a> changes</p>
+      <div class="paging">Total of 1004 entries :      <span>1-50</span>
+      <a href="/list/cs.CL/recent?skip=50&amp;show=50">51-100</a>
+      <a href="/list/cs.CL/recent?skip=100&amp;show=50">101-150</a>
+      <a href="/list/cs.CL/recent?skip=150&amp;show=50">151-200</a>
+      <span>...</span>
+      <a href="/list/cs.CL/recent?skip=1000&amp;show=50">1001-1004</a>
+
+    </div>
+    <div class="morefewer">Showing up to 50 entries per page:
+          <a href="/list/cs.CL/recent?skip=0&amp;show=25" rel="nofollow">
+      fewer</a>
+ |
+          <a href="/list/cs.CL/recent?skip=0&amp;show=100" rel="nofollow">
+      more</a>
+ |
+          <a href="/list/cs.CL/recent?skip=0&amp;show=2000" rel="nofollow">
+      all</a>
+
+    </div>
+
+
+
+      <dl id="articles">
+    <h3>Fri, 16 Oct 2026 (showing first 50 of 177 entries )</h3>
+
+
+    <dt>
+      <a name="item1">[1]</a>
+      <a href="/abs/2610.22355" title="Abstract" id="2610.22355">
+        arXiv:2610.22355
+      </a>
+      
+        [<a href="/pdf/2610.22355" title="Download PDF" id="pdf-2610.22355" aria-labelledby="pdf-2610.22355">pdf</a>, <a href="https://arxiv.org/html/2610.22355v1" title="View HTML" id="html-2610.22355" aria-labelledby="html-2610.22355" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.22355" title="Other formats" id="oth-2610.22355" aria-labelledby="oth-2610.22355">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          OmniVerifier-C1: Decomposed Graded Verifier for Rule-Governed Generative World Modeling
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Liu,+B">Bowei Liu</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Zhang,+X">Xinchen Zhang</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Li,+X">Xuhuan Li</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Zhang,+T">Tianlin Zhang</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Jiang,+K">Kaian Jiang</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Liu,+J">Jingwei Liu</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Zhao,+C">Congyang Zhao</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Qian,+Y">Yifei Qian</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Liu,+J">Junhong Liu</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Li,+Z">Zhiheng Li</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Yang,+Y">Yujiu Yang</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Cai,+Y">Yang Cai</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Yang,+L">Ling Yang</a></div>
+
+        <div class="list-comments mathjax"><span class="descriptor">Comments:</span>
+          NeurIPS 2026. Project: <a href="https://github.com/Cominclip/OmniVerifier" rel="external noopener nofollow" class="link-external link-https">this https URL</a>
+        </div>
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item2">[2]</a>
+      <a href="/abs/2610.22324" title="Abstract" id="2610.22324">
+        arXiv:2610.22324
+      </a>
+      
+        [<a href="/pdf/2610.22324" title="Download PDF" id="pdf-2610.22324" aria-labelledby="pdf-2610.22324">pdf</a>, <a href="https://arxiv.org/html/2610.22324v1" title="View HTML" id="html-2610.22324" aria-labelledby="html-2610.22324" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.22324" title="Other formats" id="oth-2610.22324" aria-labelledby="oth-2610.22324">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          Training Reasoning Models to Generate Diverse Scientific Ideas
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Wadhwa,+M">Manya Wadhwa</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Venkit,+P+N">Pranav Narayanan Venkit</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Hayashi,+H">Hiroaki Hayashi</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Li,+Y">Yu Li</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Chakrabarty,+T">Tuhin Chakrabarty</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Wu,+C">Chien-Sheng Wu</a></div>
+
+        <div class="list-comments mathjax"><span class="descriptor">Comments:</span>
+          Code and Data at:<a href="https://github.com/ManyaWadhwa/diverge_ideation" rel="external noopener nofollow" class="link-external link-https">this https URL</a> | Under Review
+        </div>
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item3">[3]</a>
+      <a href="/abs/2610.22314" title="Abstract" id="2610.22314">
+        arXiv:2610.22314
+      </a>
+      
+        [<a href="/pdf/2610.22314" title="Download PDF" id="pdf-2610.22314" aria-labelledby="pdf-2610.22314">pdf</a>, <a href="https://arxiv.org/html/2610.22314v1" title="View HTML" id="html-2610.22314" aria-labelledby="html-2610.22314" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.22314" title="Other formats" id="oth-2610.22314" aria-labelledby="oth-2610.22314">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          MindEval2: Clinically Grounded Patients and Rubrics for Evaluating Language Models in Mental Health Support
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Mendon%C3%A7a,+J">John Mendonça</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Tschernutter,+D">Daniel Tschernutter</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Pombal,+J">José Pombal</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Vassilopoulos,+A">Areti Vassilopoulos</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Botelho,+C">Catarina Botelho</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Sarasua,+I">Ignacio Sarasua</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=D'Eon,+M">Maya D'Eon</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Guerreiro,+N">Nuno Guerreiro</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Rei,+R">Ricardo Rei</a></div>
+
+        <div class="list-comments mathjax"><span class="descriptor">Comments:</span>
+          47 pages, 17 figures, 23 tables. Code, prompts, benchmark profiles and annotations: <a href="https://github.com/SWORDHealth/mind-eval" rel="external noopener nofollow" class="link-external link-https">this https URL</a>
+        </div>
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item4">[4]</a>
+      <a href="/abs/2610.22312" title="Abstract" id="2610.22312">
+        arXiv:2610.22312
+      </a>
+      
+        [<a href="/pdf/2610.22312" title="Download PDF" id="pdf-2610.22312" aria-labelledby="pdf-2610.22312">pdf</a>, <a href="https://arxiv.org/html/2610.22312v1" title="View HTML" id="html-2610.22312" aria-labelledby="html-2610.22312" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.22312" title="Other formats" id="oth-2610.22312" aria-labelledby="oth-2610.22312">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          Grid-Bench: Can LLMs Predict How Discrete Worlds Change?
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Xu,+Z">Zixiang Xu</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Song,+Z">Zirui Song</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Zheng,+W">Wanrong Zheng</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Zhang,+C">Chiyu Zhang</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Huang,+Y">Yue Huang</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Peng,+Y">Yuyang Peng</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Zhang,+K">Kexin Zhang</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Chen,+J">Jinkun Chen</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Chen,+X">Xiuying Chen</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Zhang,+X">Xiangliang Zhang</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Liu,+Y">Yan Liu</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Itti,+L">Laurent Itti</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Shyu,+F">Frank Shyu</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Luo,+X">Xiaoqiang Luo</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Pandey,+S">Sandeep Pandey</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Liu,+X">Xi Liu</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Simon,+L">Luke Simon</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Hu,+X">Xiyang Hu</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Zhao,+Y">Yue Zhao</a></div>
+
+        <div class="list-comments mathjax"><span class="descriptor">Comments:</span>
+          39 pages, 15 figures, 15 tables, including appendices. Project website: <a href="https://grid-bench.github.io/" rel="external noopener nofollow" class="link-external link-https">this https URL</a> ; Code: <a href="https://github.com/grid-bench/Grid-Bench" rel="external noopener nofollow" class="link-external link-https">this https URL</a> ; Data: <a href="https://huggingface.co/datasets/xzx34/Grid-Bench" rel="external noopener nofollow" class="link-external link-https">this https URL</a>
+        </div>
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item5">[5]</a>
+      <a href="/abs/2610.22300" title="Abstract" id="2610.22300">
+        arXiv:2610.22300
+      </a>
+      
+        [<a href="/pdf/2610.22300" title="Download PDF" id="pdf-2610.22300" aria-labelledby="pdf-2610.22300">pdf</a>, <a href="https://arxiv.org/html/2610.22300v1" title="View HTML" id="html-2610.22300" aria-labelledby="html-2610.22300" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.22300" title="Other formats" id="oth-2610.22300" aria-labelledby="oth-2610.22300">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          Knowledge That Is Linear Before Fine-Tuning Generalizes After It
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Mehri,+F">Faridoun Mehri</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Sch%C3%BCtze,+H">Hinrich Schütze</a></div>
+
+        <div class="list-comments mathjax"><span class="descriptor">Comments:</span>
+          25 pages, 8 figures, 7 tables. Code and data: <a href="https://github.com/NightMachinery/active-inert-facts" rel="external noopener nofollow" class="link-external link-https">this https URL</a>
+        </div>
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>; Artificial Intelligence (cs.AI); Machine Learning (cs.LG)
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item6">[6]</a>
+      <a href="/abs/2610.22298" title="Abstract" id="2610.22298">
+        arXiv:2610.22298
+      </a>
+      
+        [<a href="/pdf/2610.22298" title="Download PDF" id="pdf-2610.22298" aria-labelledby="pdf-2610.22298">pdf</a>, <a href="https://arxiv.org/html/2610.22298v1" title="View HTML" id="html-2610.22298" aria-labelledby="html-2610.22298" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.22298" title="Other formats" id="oth-2610.22298" aria-labelledby="oth-2610.22298">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          AI Consilium: a Benchmark of LLM Clinical Multidisciplinary Second Opinions
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Bokov,+A+A">Alexey A. Bokov</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Panin,+I+I">Ivan I. Panin</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Nechaev,+N+B">Nikolay B. Nechaev</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Valkov,+M+Y">Mikhail Yu. Valkov</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Chernina,+V+Y">Valeria Yu. Chernina</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Gombolevskaya,+N">Natalia Gombolevskaya</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Hussain,+A">Ayyaz Hussain</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Agafonov,+V+M">Vladimir M. Agafonov</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Gombolevskiy,+V+A">Victor A. Gombolevskiy</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Nesterov,+A+V">Aleksandr V. Nesterov</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Bespalov,+I+R">Iaroslav R. Bespalov</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Oseledets,+I+V">Ivan V. Oseledets</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Dylov,+D+V">Dmitry V. Dylov</a></div>
+
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>; Artificial Intelligence (cs.AI)
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item7">[7]</a>
+      <a href="/abs/2610.22294" title="Abstract" id="2610.22294">
+        arXiv:2610.22294
+      </a>
+      
+        [<a href="/pdf/2610.22294" title="Download PDF" id="pdf-2610.22294" aria-labelledby="pdf-2610.22294">pdf</a>, <a href="https://arxiv.org/html/2610.22294v1" title="View HTML" id="html-2610.22294" aria-labelledby="html-2610.22294" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.22294" title="Other formats" id="oth-2610.22294" aria-labelledby="oth-2610.22294">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          Multi-Target Few-Shot Prompting with Diffusion Language Models
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Xue,+A">Anton Xue</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Li,+A">Alan Li</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Saha,+R">Rahul Saha</a></div>
+
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item8">[8]</a>
+      <a href="/abs/2610.22249" title="Abstract" id="2610.22249">
+        arXiv:2610.22249
+      </a>
+      
+        [<a href="/pdf/2610.22249" title="Download PDF" id="pdf-2610.22249" aria-labelledby="pdf-2610.22249">pdf</a>, <a href="https://arxiv.org/html/2610.22249v1" title="View HTML" id="html-2610.22249" aria-labelledby="html-2610.22249" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.22249" title="Other formats" id="oth-2610.22249" aria-labelledby="oth-2610.22249">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          Not X, but When: Diagnosing a Mandarin LLM Writing Tic through Contextual Appropriateness
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Peng,+Y">Yihang Peng</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Jing,+Y">Yi Jing</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Liu,+D">Dewen Liu</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Meng,+W">Weihan Meng</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Liu,+Y">Ying Liu</a></div>
+
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item9">[9]</a>
+      <a href="/abs/2610.22209" title="Abstract" id="2610.22209">
+        arXiv:2610.22209
+      </a>
+      
+        [<a href="/pdf/2610.22209" title="Download PDF" id="pdf-2610.22209" aria-labelledby="pdf-2610.22209">pdf</a>, <a href="https://arxiv.org/html/2610.22209v1" title="View HTML" id="html-2610.22209" aria-labelledby="html-2610.22209" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.22209" title="Other formats" id="oth-2610.22209" aria-labelledby="oth-2610.22209">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          Beyond Downstream QA: Rethinking How We Evaluate Agent Memory
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Toma,+S">Sebastian-Antonio Toma</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=de+Kernier,+J">Jean de Kernier</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Ply,+M">Mike Ply</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Matei,+O">Oliviu Matei</a></div>
+
+        <div class="list-comments mathjax"><span class="descriptor">Comments:</span>
+          14 pages, 1 figure, code and data: <a href="https://github.com/amazon-science/feb-30-benchmark" rel="external noopener nofollow" class="link-external link-https">this https URL</a>
+        </div>
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>; Artificial Intelligence (cs.AI); Machine Learning (cs.LG)
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item10">[10]</a>
+      <a href="/abs/2610.22196" title="Abstract" id="2610.22196">
+        arXiv:2610.22196
+      </a>
+      
+        [<a href="/pdf/2610.22196" title="Download PDF" id="pdf-2610.22196" aria-labelledby="pdf-2610.22196">pdf</a>, <a href="https://arxiv.org/html/2610.22196v1" title="View HTML" id="html-2610.22196" aria-labelledby="html-2610.22196" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.22196" title="Other formats" id="oth-2610.22196" aria-labelledby="oth-2610.22196">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          Hy-Memory-30B-A3B: Attributed Reinforcement Learning for Long-Term Memory Writing
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Fei,+T">Tianxiang Fei</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Kang,+J">Jiazheng Kang</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Zheng,+M">Mao Zheng</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=He,+X">Xingyan He</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Yu,+X">Xiang Yu</a></div>
+
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item11">[11]</a>
+      <a href="/abs/2610.22187" title="Abstract" id="2610.22187">
+        arXiv:2610.22187
+      </a>
+      
+        [<a href="/pdf/2610.22187" title="Download PDF" id="pdf-2610.22187" aria-labelledby="pdf-2610.22187">pdf</a>, <a href="https://arxiv.org/html/2610.22187v1" title="View HTML" id="html-2610.22187" aria-labelledby="html-2610.22187" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.22187" title="Other formats" id="oth-2610.22187" aria-labelledby="oth-2610.22187">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          Change the Number, Change the Answer: Assessing Rating Scale Sensitivity in LLM-Based Text Scoring
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Jo,+W">Wonjeong Jo</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Kim,+G">Gyuwan Kim</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Hee,+M+S">Ming Shan Hee</a></div>
+
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>; Artificial Intelligence (cs.AI); Numerical Analysis (math.NA)
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item12">[12]</a>
+      <a href="/abs/2610.22174" title="Abstract" id="2610.22174">
+        arXiv:2610.22174
+      </a>
+      
+        [<a href="/pdf/2610.22174" title="Download PDF" id="pdf-2610.22174" aria-labelledby="pdf-2610.22174">pdf</a>, <a href="https://arxiv.org/html/2610.22174v1" title="View HTML" id="html-2610.22174" aria-labelledby="html-2610.22174" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.22174" title="Other formats" id="oth-2610.22174" aria-labelledby="oth-2610.22174">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          Mosaic: Multi-Session Agentic Reinforcement Learning
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Xu,+Y">Yilong Xu</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Xu,+M">Minrui Xu</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Zhou,+X">Xinyu Zhou</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Long,+X">Xiang Long</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Tan,+H">Haochen Tan</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Guo,+Z">Zhijiang Guo</a></div>
+
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>; Artificial Intelligence (cs.AI); Machine Learning (cs.LG)
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item13">[13]</a>
+      <a href="/abs/2610.22169" title="Abstract" id="2610.22169">
+        arXiv:2610.22169
+      </a>
+      
+        [<a href="/pdf/2610.22169" title="Download PDF" id="pdf-2610.22169" aria-labelledby="pdf-2610.22169">pdf</a>, <a href="https://arxiv.org/html/2610.22169v1" title="View HTML" id="html-2610.22169" aria-labelledby="html-2610.22169" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.22169" title="Other formats" id="oth-2610.22169" aria-labelledby="oth-2610.22169">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          Lexical Reference Frames: Interpreting LM Residual Streams in Native Semantics
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Gu,+J">Jian Gu</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Zhang,+H">Hongyu Zhang</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Chen,+C">Chunyang Chen</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Aleti,+A">Aldeida Aleti</a></div>
+
+        <div class="list-comments mathjax"><span class="descriptor">Comments:</span>
+          Code: <a href="https://github.com/jianguda/lexframe" rel="external noopener nofollow" class="link-external link-https">this https URL</a>
+        </div>
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>; Machine Learning (cs.LG)
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item14">[14]</a>
+      <a href="/abs/2610.22167" title="Abstract" id="2610.22167">
+        arXiv:2610.22167
+      </a>
+      
+        [<a href="/pdf/2610.22167" title="Download PDF" id="pdf-2610.22167" aria-labelledby="pdf-2610.22167">pdf</a>, <a href="https://arxiv.org/html/2610.22167v1" title="View HTML" id="html-2610.22167" aria-labelledby="html-2610.22167" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.22167" title="Other formats" id="oth-2610.22167" aria-labelledby="oth-2610.22167">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          CLUE: Uncovering Social Context for Pragmatic Understanding
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Wu,+C">Chengfei Wu</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Wu,+Z">Zhaoqing Wu</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Goldwasser,+D">Dan Goldwasser</a></div>
+
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item15">[15]</a>
+      <a href="/abs/2610.22160" title="Abstract" id="2610.22160">
+        arXiv:2610.22160
+      </a>
+      
+        [<a href="/pdf/2610.22160" title="Download PDF" id="pdf-2610.22160" aria-labelledby="pdf-2610.22160">pdf</a>, <a href="https://arxiv.org/html/2610.22160v1" title="View HTML" id="html-2610.22160" aria-labelledby="html-2610.22160" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.22160" title="Other formats" id="oth-2610.22160" aria-labelledby="oth-2610.22160">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          EMO: A Closed-Loop Test-Time Computation Framework via Alternating Context Optimization and Logits Steering
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Xia,+W">Wei Xia</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Tang,+Y">Yehui Tang</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Deng,+Z">Zhi-Hong Deng</a></div>
+
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>; Artificial Intelligence (cs.AI)
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item16">[16]</a>
+      <a href="/abs/2610.22158" title="Abstract" id="2610.22158">
+        arXiv:2610.22158
+      </a>
+      
+        [<a href="/pdf/2610.22158" title="Download PDF" id="pdf-2610.22158" aria-labelledby="pdf-2610.22158">pdf</a>, <a href="https://arxiv.org/html/2610.22158v1" title="View HTML" id="html-2610.22158" aria-labelledby="html-2610.22158" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.22158" title="Other formats" id="oth-2610.22158" aria-labelledby="oth-2610.22158">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          PremiseSQL: Evaluating Premise Critique and Abstention in Text-to-SQL Systems
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Lin,+S">Shuo Lin</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Li,+J">Jinzhe Li</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Guo,+C">Chenlu Guo</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Li,+Y">Yanhan Li</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Wu,+Y">Yuan Wu</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Chang,+Y">Yi Chang</a></div>
+
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item17">[17]</a>
+      <a href="/abs/2610.22131" title="Abstract" id="2610.22131">
+        arXiv:2610.22131
+      </a>
+      
+        [<a href="/pdf/2610.22131" title="Download PDF" id="pdf-2610.22131" aria-labelledby="pdf-2610.22131">pdf</a>, <a href="https://arxiv.org/html/2610.22131v1" title="View HTML" id="html-2610.22131" aria-labelledby="html-2610.22131" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.22131" title="Other formats" id="oth-2610.22131" aria-labelledby="oth-2610.22131">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          Intern-Decision: Efficient Multimodal Decision Making with Autoregressive Masked Language Modeling
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Zhu,+T">Tong Zhu</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Xu,+Z">Zhe Xu</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=He,+Z">Zefeng He</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Chai,+Y">Yunkai Chai</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Hu,+X">Xuyang Hu</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Zheng,+D">Dehong Zheng</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Luo,+Y">Yun Luo</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Li,+Y">Yafu Li</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Zhang,+Q">Qi Zhang</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Cheng,+Y">Yu Cheng</a></div>
+
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item18">[18]</a>
+      <a href="/abs/2610.22127" title="Abstract" id="2610.22127">
+        arXiv:2610.22127
+      </a>
+      
+        [<a href="/pdf/2610.22127" title="Download PDF" id="pdf-2610.22127" aria-labelledby="pdf-2610.22127">pdf</a>, <a href="https://arxiv.org/html/2610.22127v1" title="View HTML" id="html-2610.22127" aria-labelledby="html-2610.22127" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.22127" title="Other formats" id="oth-2610.22127" aria-labelledby="oth-2610.22127">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          Explaining the Roles of Experts in Mixture-of-Experts LLMs for Personalization
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Islam,+S+M">Sekh Mainul Islam</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Atanasova,+P">Pepa Atanasova</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Augenstein,+I">Isabelle Augenstein</a></div>
+
+        <div class="list-comments mathjax"><span class="descriptor">Comments:</span>
+          Under review
+        </div>
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>; Artificial Intelligence (cs.AI)
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item19">[19]</a>
+      <a href="/abs/2610.22110" title="Abstract" id="2610.22110">
+        arXiv:2610.22110
+      </a>
+      
+        [<a href="/pdf/2610.22110" title="Download PDF" id="pdf-2610.22110" aria-labelledby="pdf-2610.22110">pdf</a>, <a href="https://arxiv.org/html/2610.22110v1" title="View HTML" id="html-2610.22110" aria-labelledby="html-2610.22110" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.22110" title="Other formats" id="oth-2610.22110" aria-labelledby="oth-2610.22110">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          Unfragmenting Nawatl NMT: Single-Variant Specialization for Masewalkopa
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Mercado-Campos,+L+A">Luis A. Mercado-Campos</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Palmer,+A">Alexis Palmer</a></div>
+
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item20">[20]</a>
+      <a href="/abs/2610.22100" title="Abstract" id="2610.22100">
+        arXiv:2610.22100
+      </a>
+      
+        [<a href="/pdf/2610.22100" title="Download PDF" id="pdf-2610.22100" aria-labelledby="pdf-2610.22100">pdf</a>, <a href="https://arxiv.org/html/2610.22100v1" title="View HTML" id="html-2610.22100" aria-labelledby="html-2610.22100" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.22100" title="Other formats" id="oth-2610.22100" aria-labelledby="oth-2610.22100">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          Patch where the text is new: a compression view of where byte-level models should spend compute
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Z%C3%BA%C3%B1iga,+N+V">Nicolás Vera Zúñiga</a></div>
+
+        <div class="list-comments mathjax"><span class="descriptor">Comments:</span>
+          10 pages, 2 figures, 5 tables. Code, logs and results: <a href="https://github.com/nicoveraz/segresearch" rel="external noopener nofollow" class="link-external link-https">this https URL</a>
+        </div>
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>; Machine Learning (cs.LG)
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item21">[21]</a>
+      <a href="/abs/2610.22086" title="Abstract" id="2610.22086">
+        arXiv:2610.22086
+      </a>
+      
+        [<a href="/pdf/2610.22086" title="Download PDF" id="pdf-2610.22086" aria-labelledby="pdf-2610.22086">pdf</a>, <a href="https://arxiv.org/html/2610.22086v1" title="View HTML" id="html-2610.22086" aria-labelledby="html-2610.22086" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.22086" title="Other formats" id="oth-2610.22086" aria-labelledby="oth-2610.22086">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          Multi-SFT: Permissively-Licensed Multilingual Instruction-Following
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Baiamonte,+D">Daniela Baiamonte</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Zeinalipour,+K">Kamyar Zeinalipour</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Fano,+E">Elena Fano</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Simonazzi,+S">Stefano Simonazzi</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Zugarini,+A">Andrea Zugarini</a></div>
+
+        <div class="list-comments mathjax"><span class="descriptor">Comments:</span>
+          13 pages, 7 tables
+        </div>
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>; Artificial Intelligence (cs.AI)
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item22">[22]</a>
+      <a href="/abs/2610.22071" title="Abstract" id="2610.22071">
+        arXiv:2610.22071
+      </a>
+      
+        [<a href="/pdf/2610.22071" title="Download PDF" id="pdf-2610.22071" aria-labelledby="pdf-2610.22071">pdf</a>, <a href="https://arxiv.org/html/2610.22071v1" title="View HTML" id="html-2610.22071" aria-labelledby="html-2610.22071" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.22071" title="Other formats" id="oth-2610.22071" aria-labelledby="oth-2610.22071">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          The Right Byte First: How UTF-16 Helps Multilingual Boundary Prediction
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Kim,+H">Hyunsik Kim</a></div>
+
+        <div class="list-comments mathjax"><span class="descriptor">Comments:</span>
+          32 pages, 5 figures, 29 tables
+        </div>
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>; Machine Learning (cs.LG)
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item23">[23]</a>
+      <a href="/abs/2610.22067" title="Abstract" id="2610.22067">
+        arXiv:2610.22067
+      </a>
+      
+        [<a href="/pdf/2610.22067" title="Download PDF" id="pdf-2610.22067" aria-labelledby="pdf-2610.22067">pdf</a>, <a href="https://arxiv.org/html/2610.22067v1" title="View HTML" id="html-2610.22067" aria-labelledby="html-2610.22067" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.22067" title="Other formats" id="oth-2610.22067" aria-labelledby="oth-2610.22067">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          Beyond Context Length: Characterising the Difficulty of Long-Context Reasoning
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Qin,+S">Shiwen Qin</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Barker,+C">Cameron Barker</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Gouk,+H">Henry Gouk</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Crowley,+E+J">Elliot J. Crowley</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Cohen,+S+B">Shay B. Cohen</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Lapata,+M">Mirella Lapata</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Li,+M">Miao Li</a></div>
+
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item24">[24]</a>
+      <a href="/abs/2610.22053" title="Abstract" id="2610.22053">
+        arXiv:2610.22053
+      </a>
+      
+        [<a href="/pdf/2610.22053" title="Download PDF" id="pdf-2610.22053" aria-labelledby="pdf-2610.22053">pdf</a>, <a href="https://arxiv.org/html/2610.22053v1" title="View HTML" id="html-2610.22053" aria-labelledby="html-2610.22053" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.22053" title="Other formats" id="oth-2610.22053" aria-labelledby="oth-2610.22053">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          Name-Bias in Large Language Models
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Bhetwal,+K">Kalyan Bhetwal</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Mert,+C">Ceren Mert</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Whitehouse,+I">Ian Whitehouse</a></div>
+
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item25">[25]</a>
+      <a href="/abs/2610.22019" title="Abstract" id="2610.22019">
+        arXiv:2610.22019
+      </a>
+      
+        [<a href="/pdf/2610.22019" title="Download PDF" id="pdf-2610.22019" aria-labelledby="pdf-2610.22019">pdf</a>, <a href="https://arxiv.org/html/2610.22019v1" title="View HTML" id="html-2610.22019" aria-labelledby="html-2610.22019" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.22019" title="Other formats" id="oth-2610.22019" aria-labelledby="oth-2610.22019">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          Priming Base Models for Agentic Post-Training: An Open Midtraining Recipe
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Singhal,+S">Soumye Singhal</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Jennings,+J">Joseph Jennings</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Shum,+K+S">Ka Shun Shum</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Bukharin,+A">Alexander Bukharin</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Bhardwaj,+K">Khushi Bhardwaj</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Liu,+Z">Zirui Liu</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Venkat">Venkat Srinivasan</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Li,+J">Jonathan Li</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Jain,+Y">Yash Jain</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Kong,+K">Kezhi Kong</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Kliegl,+M">Markus Kliegl</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Delalleau,+O">Olivier Delalleau</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Satheesh,+S">Sanjeev Satheesh</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Patwary,+M">Mostofa Patwary</a></div>
+
+        <div class="list-comments mathjax"><span class="descriptor">Comments:</span>
+          19 pages
+        </div>
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>; Artificial Intelligence (cs.AI); Machine Learning (cs.LG)
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item26">[26]</a>
+      <a href="/abs/2610.21941" title="Abstract" id="2610.21941">
+        arXiv:2610.21941
+      </a>
+      
+        [<a href="/pdf/2610.21941" title="Download PDF" id="pdf-2610.21941" aria-labelledby="pdf-2610.21941">pdf</a>, <a href="https://arxiv.org/html/2610.21941v1" title="View HTML" id="html-2610.21941" aria-labelledby="html-2610.21941" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.21941" title="Other formats" id="oth-2610.21941" aria-labelledby="oth-2610.21941">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          Learning Speech Attribute Representations via Multi-Teacher Distillation
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Bouziane,+M">Maryem Bouziane</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Mdhaffar,+S">Salima Mdhaffar</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Est%C3%A8ve,+Y">Yannick Estève</a></div>
+
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item27">[27]</a>
+      <a href="/abs/2610.21900" title="Abstract" id="2610.21900">
+        arXiv:2610.21900
+      </a>
+      
+        [<a href="/pdf/2610.21900" title="Download PDF" id="pdf-2610.21900" aria-labelledby="pdf-2610.21900">pdf</a>, <a href="https://arxiv.org/html/2610.21900v1" title="View HTML" id="html-2610.21900" aria-labelledby="html-2610.21900" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.21900" title="Other formats" id="oth-2610.21900" aria-labelledby="oth-2610.21900">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          TEM: Temporal State Tracking Memory for Large Language Model Agents
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Song,+P">Pengfeng Song</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Zhuang,+Y">Yunkai Zhuang</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Shi,+L">Liye Shi</a></div>
+
+        <div class="list-comments mathjax"><span class="descriptor">Comments:</span>
+          16 pages, 5 figures, 8 tables
+        </div>
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item28">[28]</a>
+      <a href="/abs/2610.21862" title="Abstract" id="2610.21862">
+        arXiv:2610.21862
+      </a>
+      
+        [<a href="/pdf/2610.21862" title="Download PDF" id="pdf-2610.21862" aria-labelledby="pdf-2610.21862">pdf</a>, <a href="https://arxiv.org/html/2610.21862v1" title="View HTML" id="html-2610.21862" aria-labelledby="html-2610.21862" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.21862" title="Other formats" id="oth-2610.21862" aria-labelledby="oth-2610.21862">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          Dynamic ordering in sequence generation in Transformers: experiments on low-resource Tagging scenarios
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Bais,+G">Giacomo Bais</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Deoskar,+T">Tejaswini Deoskar</a></div>
+
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item29">[29]</a>
+      <a href="/abs/2610.21807" title="Abstract" id="2610.21807">
+        arXiv:2610.21807
+      </a>
+      
+        [<a href="/pdf/2610.21807" title="Download PDF" id="pdf-2610.21807" aria-labelledby="pdf-2610.21807">pdf</a>, <a href="/format/2610.21807" title="Other formats" id="oth-2610.21807" aria-labelledby="oth-2610.21807">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          Content associations with answer selection and engagement in supply chain community question answering
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Naganawa,+H">Hisatoshi Naganawa</a></div>
+
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>; Social and Information Networks (cs.SI)
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item30">[30]</a>
+      <a href="/abs/2610.21799" title="Abstract" id="2610.21799">
+        arXiv:2610.21799
+      </a>
+      
+        [<a href="/pdf/2610.21799" title="Download PDF" id="pdf-2610.21799" aria-labelledby="pdf-2610.21799">pdf</a>, <a href="https://arxiv.org/html/2610.21799v1" title="View HTML" id="html-2610.21799" aria-labelledby="html-2610.21799" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.21799" title="Other formats" id="oth-2610.21799" aria-labelledby="oth-2610.21799">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          Behavioral Forgetting Is Not Privacy in Machine Unlearning
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Lizzo,+T">Tyler Lizzo</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Heck,+L">Larry Heck</a></div>
+
+        <div class="list-comments mathjax"><span class="descriptor">Comments:</span>
+          Accepted as a poster at the PriLOM Workshop at NeurIPS 2026
+        </div>
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item31">[31]</a>
+      <a href="/abs/2610.21789" title="Abstract" id="2610.21789">
+        arXiv:2610.21789
+      </a>
+      
+        [<a href="/pdf/2610.21789" title="Download PDF" id="pdf-2610.21789" aria-labelledby="pdf-2610.21789">pdf</a>, <a href="https://arxiv.org/html/2610.21789v1" title="View HTML" id="html-2610.21789" aria-labelledby="html-2610.21789" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.21789" title="Other formats" id="oth-2610.21789" aria-labelledby="oth-2610.21789">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          In the Guise of Correction: How Framing and Cultural Adaptation Erode LLM Safety on Real-World Criminal Cases
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Kabir,+M">Mohsinul Kabir</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Tariquzzaman,+M">Md. Tariquzzaman</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Elradie,+K+S+R">Karam S. R. Elradie</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Giannouris,+P">Polydoros Giannouris</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Jiang,+Y">Yuechen Jiang</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Ji,+S">Shaoxiong Ji</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Ananiadou,+S">Sophia Ananiadou</a></div>
+
+        <div class="list-comments mathjax"><span class="descriptor">Comments:</span>
+          Under Review
+        </div>
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>; Artificial Intelligence (cs.AI); Computers and Society (cs.CY)
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item32">[32]</a>
+      <a href="/abs/2610.21763" title="Abstract" id="2610.21763">
+        arXiv:2610.21763
+      </a>
+      
+        [<a href="/pdf/2610.21763" title="Download PDF" id="pdf-2610.21763" aria-labelledby="pdf-2610.21763">pdf</a>, <a href="https://arxiv.org/html/2610.21763v1" title="View HTML" id="html-2610.21763" aria-labelledby="html-2610.21763" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.21763" title="Other formats" id="oth-2610.21763" aria-labelledby="oth-2610.21763">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          Bias Mitigation in Audio-Enabled LLMs through Adversarial Training and Distillation Methods
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Ali,+A+A">Adnan Al Ali</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Libovick%C3%BD,+J">Jindřich Libovický</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Lauscher,+A">Anne Lauscher</a></div>
+
+        <div class="list-comments mathjax"><span class="descriptor">Comments:</span>
+          Submitted to ARR (October 2026)
+        </div>
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>; Sound (cs.SD)
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item33">[33]</a>
+      <a href="/abs/2610.21739" title="Abstract" id="2610.21739">
+        arXiv:2610.21739
+      </a>
+      
+        [<a href="/pdf/2610.21739" title="Download PDF" id="pdf-2610.21739" aria-labelledby="pdf-2610.21739">pdf</a>, <a href="https://arxiv.org/html/2610.21739v1" title="View HTML" id="html-2610.21739" aria-labelledby="html-2610.21739" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.21739" title="Other formats" id="oth-2610.21739" aria-labelledby="oth-2610.21739">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          Reliable Knowledge Acquisition for Continual Learning Agents
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Huang,+Y">Yixu Huang</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Ma,+J+W">Jiaqi W. Ma</a></div>
+
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>; Artificial Intelligence (cs.AI); Machine Learning (cs.LG)
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item34">[34]</a>
+      <a href="/abs/2610.21737" title="Abstract" id="2610.21737">
+        arXiv:2610.21737
+      </a>
+      
+        [<a href="/pdf/2610.21737" title="Download PDF" id="pdf-2610.21737" aria-labelledby="pdf-2610.21737">pdf</a>, <a href="https://arxiv.org/html/2610.21737v1" title="View HTML" id="html-2610.21737" aria-labelledby="html-2610.21737" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.21737" title="Other formats" id="oth-2610.21737" aria-labelledby="oth-2610.21737">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          SceneWeave: Audience-Guided Scene Exploration for Dramatic Adaptation
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Li,+A">Aolin Li</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Xu,+X">Xiao Xu</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Xie,+H">Haihua Xie</a></div>
+
+        <div class="list-comments mathjax"><span class="descriptor">Comments:</span>
+          13 pages, 2 figures, 3 tables
+        </div>
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item35">[35]</a>
+      <a href="/abs/2610.21731" title="Abstract" id="2610.21731">
+        arXiv:2610.21731
+      </a>
+      
+        [<a href="/pdf/2610.21731" title="Download PDF" id="pdf-2610.21731" aria-labelledby="pdf-2610.21731">pdf</a>, <a href="https://arxiv.org/html/2610.21731v1" title="View HTML" id="html-2610.21731" aria-labelledby="html-2610.21731" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.21731" title="Other formats" id="oth-2610.21731" aria-labelledby="oth-2610.21731">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          Retrieved but Not Read: Understanding Why Search-Augmented LLMs Fail to Use Available Evidence
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Walters,+O">Owen Walters</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Chen,+L">Lihu Chen</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Toni,+F">Francesca Toni</a></div>
+
+        <div class="list-comments mathjax"><span class="descriptor">Comments:</span>
+          14 pages, 4 figures, 16 tables. Code and data: <a href="https://github.com/ojwwalters/retrieved-but-not-read" rel="external noopener nofollow" class="link-external link-https">this https URL</a>
+        </div>
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>; Artificial Intelligence (cs.AI); Information Retrieval (cs.IR)
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item36">[36]</a>
+      <a href="/abs/2610.21690" title="Abstract" id="2610.21690">
+        arXiv:2610.21690
+      </a>
+      
+        [<a href="/pdf/2610.21690" title="Download PDF" id="pdf-2610.21690" aria-labelledby="pdf-2610.21690">pdf</a>, <a href="https://arxiv.org/html/2610.21690v1" title="View HTML" id="html-2610.21690" aria-labelledby="html-2610.21690" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.21690" title="Other formats" id="oth-2610.21690" aria-labelledby="oth-2610.21690">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          Abstracts or full text? Evaluating input scope and computational efficiency in biomedical lay summarization
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Evgin,+E+%C3%87">Egecan Çelik Evgin</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Karadeniz,+%C4%B0">İlknur Karadeniz</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Y%C4%B1ld%C4%B1z,+O+T">Olcay Taner Yıldız</a></div>
+
+        <div class="list-comments mathjax"><span class="descriptor">Comments:</span>
+          26 pages, 2 figures
+        </div>
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item37">[37]</a>
+      <a href="/abs/2610.21681" title="Abstract" id="2610.21681">
+        arXiv:2610.21681
+      </a>
+      
+        [<a href="/pdf/2610.21681" title="Download PDF" id="pdf-2610.21681" aria-labelledby="pdf-2610.21681">pdf</a>, <a href="https://arxiv.org/html/2610.21681v1" title="View HTML" id="html-2610.21681" aria-labelledby="html-2610.21681" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.21681" title="Other formats" id="oth-2610.21681" aria-labelledby="oth-2610.21681">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          Data Strategies for Large Language Models: A Unified Perspective on the Training Lifecycle
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Xu,+Y">Yuanjian Xu</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Hao,+J">Jianing Hao</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Sun,+T">Tianze Sun</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Duan,+Y">Yongyao Duan</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Chen,+S">Sam Chen</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Han,+J">Jinyi Han</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Zhang,+W">Wanbo Zhang</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Sun,+Y">Yuxuan Sun</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Zhang,+G">Guang Zhang</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Li,+Z">Zhong Li</a></div>
+
+        <div class="list-comments mathjax"><span class="descriptor">Comments:</span>
+          21 pages, 5 figures
+        </div>
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item38">[38]</a>
+      <a href="/abs/2610.21679" title="Abstract" id="2610.21679">
+        arXiv:2610.21679
+      </a>
+      
+        [<a href="/pdf/2610.21679" title="Download PDF" id="pdf-2610.21679" aria-labelledby="pdf-2610.21679">pdf</a>, <a href="https://arxiv.org/html/2610.21679v1" title="View HTML" id="html-2610.21679" aria-labelledby="html-2610.21679" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.21679" title="Other formats" id="oth-2610.21679" aria-labelledby="oth-2610.21679">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          No Single Tokenizer Feature Reliably Predicts Downstream Language Model Performance
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Lopardo,+A">Antonio Lopardo</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Salim,+L+F">Luis Frentzen Salim</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Shikhar">Shikhar Srivastava</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Jiang,+K">Kevin Jiang</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Sharma,+M">Mridul Sharma</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Arnett,+C">Catherine Arnett</a></div>
+
+        <div class="list-comments mathjax"><span class="descriptor">Comments:</span>
+          10 pages, accepted to Findings of EMNLP 2026
+        </div>
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item39">[39]</a>
+      <a href="/abs/2610.21671" title="Abstract" id="2610.21671">
+        arXiv:2610.21671
+      </a>
+      
+        [<a href="/pdf/2610.21671" title="Download PDF" id="pdf-2610.21671" aria-labelledby="pdf-2610.21671">pdf</a>, <a href="https://arxiv.org/html/2610.21671v1" title="View HTML" id="html-2610.21671" aria-labelledby="html-2610.21671" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.21671" title="Other formats" id="oth-2610.21671" aria-labelledby="oth-2610.21671">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          Enhancing Multimodal RLVR with Pairwise Token Contrast and Adaptive Trajectory Confidence
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Zhang,+Y">Yiran Zhang</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Huang,+H">Hanbo Huang</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Li,+J">Jielan Li</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Zhao,+Z">Zhen Zhao</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Liang,+S">Shiyu Liang</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Hao,+H">Hongxia Hao</a></div>
+
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item40">[40]</a>
+      <a href="/abs/2610.21633" title="Abstract" id="2610.21633">
+        arXiv:2610.21633
+      </a>
+      
+        [<a href="/pdf/2610.21633" title="Download PDF" id="pdf-2610.21633" aria-labelledby="pdf-2610.21633">pdf</a>, <a href="https://arxiv.org/html/2610.21633v1" title="View HTML" id="html-2610.21633" aria-labelledby="html-2610.21633" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.21633" title="Other formats" id="oth-2610.21633" aria-labelledby="oth-2610.21633">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          ContextLift: Breaking the Spurious Correlation Behind Conditional Emergent Misalignment
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Mai,+F">Florian Mai</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Kacz%C3%A9r,+D">David Kaczér</a></div>
+
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>; Machine Learning (cs.LG)
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item41">[41]</a>
+      <a href="/abs/2610.21571" title="Abstract" id="2610.21571">
+        arXiv:2610.21571
+      </a>
+      
+        [<a href="/pdf/2610.21571" title="Download PDF" id="pdf-2610.21571" aria-labelledby="pdf-2610.21571">pdf</a>, <a href="https://arxiv.org/html/2610.21571v1" title="View HTML" id="html-2610.21571" aria-labelledby="html-2610.21571" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.21571" title="Other formats" id="oth-2610.21571" aria-labelledby="oth-2610.21571">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          Rethinking the Role of Tool Graph Memory in Multi-Turn Tool Use
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Hwang,+U">Uiji Hwang</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Xuan,+R">Richeng Xuan</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Kim,+T">Taeuk Kim</a></div>
+
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>; Artificial Intelligence (cs.AI)
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item42">[42]</a>
+      <a href="/abs/2610.21561" title="Abstract" id="2610.21561">
+        arXiv:2610.21561
+      </a>
+      
+        [<a href="/pdf/2610.21561" title="Download PDF" id="pdf-2610.21561" aria-labelledby="pdf-2610.21561">pdf</a>, <a href="https://arxiv.org/html/2610.21561v1" title="View HTML" id="html-2610.21561" aria-labelledby="html-2610.21561" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.21561" title="Other formats" id="oth-2610.21561" aria-labelledby="oth-2610.21561">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          DialFork: Going Beyond Factuality to Evaluate Procedural Hallucination in Conversational Agents
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Burdisso,+S">Sergio Burdisso</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Villatoro-Tello,+E">Esaú Villatoro-Tello</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=S%C3%A1nchez-Cort%C3%A9s,+D">Dairazalia Sánchez-Cortés</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Labrak,+Y">Yanis Labrak</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Luque,+J">Jordi Luque</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Cernak,+M">Milos Cernak</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Motlicek,+P">Petr Motlicek</a></div>
+
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>; Artificial Intelligence (cs.AI); Machine Learning (cs.LG)
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item43">[43]</a>
+      <a href="/abs/2610.21553" title="Abstract" id="2610.21553">
+        arXiv:2610.21553
+      </a>
+      
+        [<a href="/pdf/2610.21553" title="Download PDF" id="pdf-2610.21553" aria-labelledby="pdf-2610.21553">pdf</a>, <a href="https://arxiv.org/html/2610.21553v1" title="View HTML" id="html-2610.21553" aria-labelledby="html-2610.21553" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.21553" title="Other formats" id="oth-2610.21553" aria-labelledby="oth-2610.21553">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          Writability and the Pathway: A Controlled Study of Knowledge Injection into Addressed Memory
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Gao,+W">Wei Gao</a> (1), <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Tian,+C">Cheng Tian</a> (1), <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Yang,+D">Duan Yang</a> (2), <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Yin,+J">Jianqing Yin</a> (1) ((1) Shibei Qiyuan AI Technology, (2) Xi'an Jiaotong University)</div>
+
+        <div class="list-comments mathjax"><span class="descriptor">Comments:</span>
+          22 pages, 2 figures
+        </div>
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item44">[44]</a>
+      <a href="/abs/2610.21496" title="Abstract" id="2610.21496">
+        arXiv:2610.21496
+      </a>
+      
+        [<a href="/pdf/2610.21496" title="Download PDF" id="pdf-2610.21496" aria-labelledby="pdf-2610.21496">pdf</a>, <a href="https://arxiv.org/html/2610.21496v1" title="View HTML" id="html-2610.21496" aria-labelledby="html-2610.21496" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.21496" title="Other formats" id="oth-2610.21496" aria-labelledby="oth-2610.21496">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          OPRD: On-Policy Reminder Distillation for Long-Horizon Coding Agents
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Luo,+Y">Yuechen Luo</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Lai,+Z">Zhiyi Lai</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Ziqi,+M">Miao Ziqi</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Xu,+Z">Zihang Xu</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Xu,+J">Jingxuan Xu</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Yu,+S">Songwei Yu</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Zhu,+W">Wenqiang Zhu</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Li,+W">Weihao Li</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Fan,+J">Junhao Fan</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Huang,+H">Haoyang Huang</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Wu,+Y">Yanan Wu</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Deng,+K">Ken Deng</a></div>
+
+        <div class="list-comments mathjax"><span class="descriptor">Comments:</span>
+          19 pages, including appendix
+        </div>
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item45">[45]</a>
+      <a href="/abs/2610.21468" title="Abstract" id="2610.21468">
+        arXiv:2610.21468
+      </a>
+      
+        [<a href="/pdf/2610.21468" title="Download PDF" id="pdf-2610.21468" aria-labelledby="pdf-2610.21468">pdf</a>, <a href="https://arxiv.org/html/2610.21468v1" title="View HTML" id="html-2610.21468" aria-labelledby="html-2610.21468" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.21468" title="Other formats" id="oth-2610.21468" aria-labelledby="oth-2610.21468">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          Can LLMs Tell Stories Out of Order? A Corpus and Benchmark for Nonlinear Narrative Generation
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Raiyan,+S+R">Syed Rifat Raiyan</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Tariquzzaman,+M">Md. Tariquzzaman</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Ishmam,+M+F">Md Farhan Ishmam</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Huang,+T">Tenghao Huang</a></div>
+
+        <div class="list-comments mathjax"><span class="descriptor">Comments:</span>
+          Under review, 36 pages, 13 figures, 15 tables. Code and data: <a href="https://github.com/Starscream-11813/LLM-nonlinear-storytelling" rel="external noopener nofollow" class="link-external link-https">this https URL</a>. Project page: <a href="https://nonlinear-narrative.github.io" rel="external noopener nofollow" class="link-external link-https">this https URL</a>
+        </div>
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>; Artificial Intelligence (cs.AI)
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item46">[46]</a>
+      <a href="/abs/2610.21463" title="Abstract" id="2610.21463">
+        arXiv:2610.21463
+      </a>
+      
+        [<a href="/pdf/2610.21463" title="Download PDF" id="pdf-2610.21463" aria-labelledby="pdf-2610.21463">pdf</a>, <a href="https://arxiv.org/html/2610.21463v1" title="View HTML" id="html-2610.21463" aria-labelledby="html-2610.21463" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.21463" title="Other formats" id="oth-2610.21463" aria-labelledby="oth-2610.21463">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          Trajectory-Level Speculation with Semantic Verification for Tool-Using Agents
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Wang,+Z">Zilin Wang</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Liu,+Y">Yinhong Liu</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Chen,+C">Chao Chen</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Liu,+Q">Qun Liu</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Guo,+Z">Zhijiang Guo</a></div>
+
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>; Artificial Intelligence (cs.AI); Machine Learning (cs.LG)
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item47">[47]</a>
+      <a href="/abs/2610.21456" title="Abstract" id="2610.21456">
+        arXiv:2610.21456
+      </a>
+      
+        [<a href="/pdf/2610.21456" title="Download PDF" id="pdf-2610.21456" aria-labelledby="pdf-2610.21456">pdf</a>, <a href="https://arxiv.org/html/2610.21456v1" title="View HTML" id="html-2610.21456" aria-labelledby="html-2610.21456" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.21456" title="Other formats" id="oth-2610.21456" aria-labelledby="oth-2610.21456">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          Translation Circuit Discovery and Targeted Optimization for Low-Resource Multilingual Translation
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Khan,+A+W">Atai Waris Khan</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Mazhar,+A">Abdullah Mazhar</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Kumar,+R">Raghu Kumar</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Akhtar,+M+S">Md Shad Akhtar</a></div>
+
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item48">[48]</a>
+      <a href="/abs/2610.21440" title="Abstract" id="2610.21440">
+        arXiv:2610.21440
+      </a>
+      
+        [<a href="/pdf/2610.21440" title="Download PDF" id="pdf-2610.21440" aria-labelledby="pdf-2610.21440">pdf</a>, <a href="https://arxiv.org/html/2610.21440v1" title="View HTML" id="html-2610.21440" aria-labelledby="html-2610.21440" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.21440" title="Other formats" id="oth-2610.21440" aria-labelledby="oth-2610.21440">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          SITAR: A Situational Distortion Metric for Automatic Speech Recognition Evaluation
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Lu,+M">Mingzhe Lu</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Liu,+J">Jinhao Liu</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Li,+Y">Yunpeng Li</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Su,+H">Hang Su</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Fan,+L">Lichun Fan</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Luan,+J">Jian Luan</a></div>
+
+        <div class="list-comments mathjax"><span class="descriptor">Comments:</span>
+          33 pages, 4 figures, including appendices
+        </div>
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item49">[49]</a>
+      <a href="/abs/2610.21436" title="Abstract" id="2610.21436">
+        arXiv:2610.21436
+      </a>
+      
+        [<a href="/pdf/2610.21436" title="Download PDF" id="pdf-2610.21436" aria-labelledby="pdf-2610.21436">pdf</a>, <a href="https://arxiv.org/html/2610.21436v1" title="View HTML" id="html-2610.21436" aria-labelledby="html-2610.21436" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.21436" title="Other formats" id="oth-2610.21436" aria-labelledby="oth-2610.21436">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          HyCo: Hybrid Drafting for Cost-Efficient Mobile-Cloud Speculative Decoding
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Bae,+H">Hanbin Bae</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Choi,+H">Heejin Choi</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Lee,+J">Joohyung Lee</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Choi,+B+J">Byoung Jin Choi</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Park,+S">Sangjun Park</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Cho,+H">Hoon-Young Cho</a></div>
+
+        <div class="list-comments mathjax"><span class="descriptor">Comments:</span>
+          Under review at ACL Rolling Review (October 2026)
+        </div>
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>; Distributed, Parallel, and Cluster Computing (cs.DC); Machine Learning (cs.LG)
+        </div>
+
+      </div>
+    </dd>
+    <dt>
+      <a name="item50">[50]</a>
+      <a href="/abs/2610.21407" title="Abstract" id="2610.21407">
+        arXiv:2610.21407
+      </a>
+      
+        [<a href="/pdf/2610.21407" title="Download PDF" id="pdf-2610.21407" aria-labelledby="pdf-2610.21407">pdf</a>, <a href="https://arxiv.org/html/2610.21407v1" title="View HTML" id="html-2610.21407" aria-labelledby="html-2610.21407" rel="noopener noreferrer" target="_blank">html</a>, <a href="/format/2610.21407" title="Other formats" id="oth-2610.21407" aria-labelledby="oth-2610.21407">other</a>]
+    </dt>
+    <dd>
+      <div class="meta">
+        <div class="list-title mathjax"><span class="descriptor">Title:</span>
+          Identifying Effective Strategies in Prompt Evolution for Stress and Emotion Prediction
+        </div>
+        <div class="list-authors"><a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Yi,+S">SeungHyun Yi</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Yi,+S">Seungjun Yi</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Sattiraju,+S">Sriram Sattiraju</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Park,+H">Haeun Park</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Nguyen,+J">Joakim Nguyen</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Lim,+T">Terence Lim</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Skrovan,+J">Joseph Skrovan</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Beri,+M">Mehak Beri</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Modi,+H">Hitakshi Modi</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Carrion,+E">Eloy Carrion</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Well,+A">Andrew Well</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Mery,+C+M">Carlos M. Mery</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Rasgon,+A">Alexander Rasgon</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Markey,+M+K">Mia K Markey</a>, <a href="https://arxiv.org/search/cs?searchtype=author&amp;query=Ding,+Y">Ying Ding</a></div>
+
+        <div class="list-comments mathjax"><span class="descriptor">Comments:</span>
+          4 figures, 2 tables. Submitted to the 2027 IEEE International Conference on Healthcare Informatics (ICHI 2027)
+        </div>
+
+
+        <div class="list-subjects"><span class="descriptor">Subjects:</span>
+          <span class="primary-subject">Computation and Language (cs.CL)</span>
+        </div>
+
+      </div>
+    </dd>
+</dl>
+
+
+      <div class="paging">Total of 1004 entries :      <span>1-50</span>
+      <a href="/list/cs.CL/recent?skip=50&amp;show=50">51-100</a>
+      <a href="/list/cs.CL/recent?skip=100&amp;show=50">101-150</a>
+      <a href="/list/cs.CL/recent?skip=150&amp;show=50">151-200</a>
+      <span>...</span>
+      <a href="/list/cs.CL/recent?skip=1000&amp;show=50">1001-1004</a>
+
+    </div>
+    <div class="morefewer">Showing up to 50 entries per page:
+          <a href="/list/cs.CL/recent?skip=0&amp;show=25" rel="nofollow">
+      fewer</a>
+ |
+          <a href="/list/cs.CL/recent?skip=0&amp;show=100" rel="nofollow">
+      more</a>
+ |
+          <a href="/list/cs.CL/recent?skip=0&amp;show=2000" rel="nofollow">
+      all</a>
+
+    </div>
+
+</div>
+</div>      </div>
+    </main>
+
+<footer class="ds-site-footer">
+  <div class="ds-site-footer-grid">
+    <div class="ds-site-footer-main">
+      <div class="ds-site-footer-ack">
+        We gratefully acknowledge support from
+        our <strong>major funders</strong>,
+        <a href="https://info.arxiv.org/about/ourmembers.html"><strong>member institutions</strong></a><span class="ack-member-inline" hidden="">, <strong></strong></span>,
+        and all contributors.
+      </div>
+      <nav class="ds-site-footer-links" aria-label="Site navigation">
+        <a href="https://info.arxiv.org/about">About</a>
+        <span class="ds-site-footer-sep" aria-hidden="true">·</span>
+        <a href="https://info.arxiv.org/help">Help</a>
+        <span class="ds-site-footer-sep" aria-hidden="true">·</span>
+        <a href="https://info.arxiv.org/help/contact.html">Contact</a>
+        <span class="ds-site-footer-sep" aria-hidden="true">·</span>
+        <a href="https://info.arxiv.org/help/subscribe">Subscribe</a>
+        <span class="ds-site-footer-sep" aria-hidden="true">·</span>
+        <a href="https://info.arxiv.org/help/license/index.html">Copyright</a>
+        <span class="ds-site-footer-sep" aria-hidden="true">·</span>
+        <a href="https://info.arxiv.org/help/policies/privacy_policy.html">Privacy</a>
+        <span class="ds-site-footer-sep" aria-hidden="true">·</span>
+        <a href="https://info.arxiv.org/help/web_accessibility.html">Accessibility</a>
+        <span class="ds-site-footer-sep" aria-hidden="true">·</span>
+        <a href="https://status.arxiv.org" target="_blank" rel="noopener noreferrer">Operational Status<span class="is-sr-only"> (opens in new tab)</span></a>
+      </nav>
+    </div>
+
+    <div class="ds-site-footer-funders" aria-label="Major funders">
+      <div class="ds-site-footer-funders-label">Major funding support from</div>
+      <div class="ds-site-footer-funders-logos">
+        <a class="ds-funder-link" href="https://www.simonsfoundation.org/" target="_blank" rel="noopener noreferrer">
+          <img class="ds-funder-logo" src="/static/base/1.0.1/images/funders/simons-foundation.png" alt="Simons Foundation">
+        </a>
+        <a class="ds-funder-link" href="https://www.sfi.org.bm/" target="_blank" rel="noopener noreferrer">
+          <img class="ds-funder-logo" src="/static/base/1.0.1/images/funders/simons-foundation-international.png" alt="Simons Foundation International">
+        </a>
+        <a class="ds-funder-link" href="https://www.schmidtsciences.org/" target="_blank" rel="noopener noreferrer">
+          <img class="ds-funder-logo" src="/static/base/1.0.1/images/funders/schmidt-sciences.png" alt="Schmidt Sciences">
+        </a>
+      </div>
+    </div>
+  </div>
+</footer>  </div>
+
+  
+
+
+
+</body></html>

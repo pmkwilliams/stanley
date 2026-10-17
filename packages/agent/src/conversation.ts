@@ -1,5 +1,6 @@
 import type { ModelMessage, ToolResultPart } from 'ai'
 import type { FileMeta } from './files'
+import type { ViewPart } from './view'
 import type { WebResult } from './web'
 
 export interface DecisionMeta {
@@ -143,8 +144,8 @@ export interface Ran {
   input: unknown
   output: ToolResultPart['output']
   result: ResultMeta
-  /** The screen it returned, if it returned one. */
-  screen?: string
+  /** The screens it returned, if it returned them, part by part (view.ts). */
+  view?: ViewPart[]
 }
 
 const wordsOf = (text: string) => text.trim().split(/\s+/).filter(Boolean)

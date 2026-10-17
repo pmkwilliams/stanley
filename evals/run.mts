@@ -9,7 +9,9 @@
  *   pnpm eval tasks --trace        # also print what the models read at the end of each run
  *
  * Options: --runs N (default 1), --concurrency N (default 4), --trace (every run), --verbose
- * (every run's ticks; by default only failed runs print them), --jev-turns N (user turns Jev reads).
+ * (every run's ticks; by default only failed runs print them), --jev-turns N (user turns Jev reads),
+ * --no-thinking (Jev alone: a turn handed to thinking does nothing, and nothing else paid is
+ * called; to compare a change to Jev's side between two runs, not as a pass rate of its own).
  */
 import { flag, loadEnv, median, pool, printUsage, report, runScenario, select, typeUtterance, type ScenarioResult } from './harness.mts'
 import { scenarios, type Scenario } from './scenarios.mts'

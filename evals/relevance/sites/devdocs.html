@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Array – DevDocs</title>
+<style>
+  body { font: 14px system-ui, sans-serif; margin: 0; display: grid; grid-template-columns: 260px 1fr; }
+  nav { height: 100vh; overflow: auto; border-right: 1px solid #ddd; padding: 8px; }
+  main { padding: 16px; }
+</style>
+</head>
+<body>
+<nav id="sidebar"></nav>
+<main id="app"></main>
+<script>
+/*SITE*/
+// The reference's sidebar: every page of every built-in, as listed.
+const builtins = {
+  Array: ['at', 'concat', 'copyWithin', 'entries', 'every', 'fill', 'filter', 'find', 'findIndex', 'findLast', 'findLastIndex', 'flat', 'flatMap', 'forEach', 'from', 'fromAsync', 'includes', 'indexOf', 'isArray', 'join', 'keys', 'lastIndexOf', 'map', 'of', 'pop', 'push', 'reduce', 'reduceRight', 'reverse', 'shift', 'slice', 'some', 'sort', 'splice', 'toLocaleString', 'toReversed', 'toSorted', 'toSpliced', 'toString', 'unshift', 'values', 'with'],
+  String: ['at', 'charAt', 'charCodeAt', 'codePointAt', 'concat', 'endsWith', 'fromCharCode', 'includes', 'indexOf', 'isWellFormed', 'lastIndexOf', 'localeCompare', 'match', 'matchAll', 'normalize', 'padEnd', 'padStart', 'raw', 'repeat', 'replace', 'replaceAll', 'search', 'slice', 'split', 'startsWith', 'substring', 'toLowerCase', 'toUpperCase', 'trim', 'trimEnd', 'trimStart'],
+  Object: ['assign', 'create', 'defineProperties', 'defineProperty', 'entries', 'freeze', 'fromEntries', 'getOwnPropertyDescriptor', 'getOwnPropertyNames', 'getPrototypeOf', 'groupBy', 'hasOwn', 'is', 'isExtensible', 'isFrozen', 'isSealed', 'keys', 'preventExtensions', 'seal', 'setPrototypeOf', 'values'],
+  Promise: ['all', 'allSettled', 'any', 'catch', 'finally', 'race', 'reject', 'resolve', 'then', 'try', 'withResolvers'],
+  Map: ['clear', 'delete', 'entries', 'forEach', 'get', 'groupBy', 'has', 'keys', 'set', 'values'],
+  Set: ['add', 'clear', 'delete', 'difference', 'entries', 'forEach', 'has', 'intersection', 'isDisjointFrom', 'isSubsetOf', 'isSupersetOf', 'keys', 'symmetricDifference', 'union', 'values'],
+  Math: ['abs', 'acos', 'asin', 'atan', 'atan2', 'cbrt', 'ceil', 'clz32', 'cos', 'exp', 'floor', 'fround', 'hypot', 'imul', 'log', 'log10', 'log2', 'max', 'min', 'pow', 'random', 'round', 'sign', 'sin', 'sqrt', 'tan', 'trunc'],
+  Number: ['isFinite', 'isInteger', 'isNaN', 'isSafeInteger', 'parseFloat', 'parseInt', 'toExponential', 'toFixed', 'toLocaleString', 'toPrecision', 'toString'],
+  Date: ['getDate', 'getDay', 'getFullYear', 'getHours', 'getMilliseconds', 'getMinutes', 'getMonth', 'getSeconds', 'getTime', 'getTimezoneOffset', 'now', 'parse', 'setDate', 'setFullYear', 'setHours', 'toDateString', 'toISOString', 'toJSON', 'toLocaleDateString', 'toLocaleTimeString', 'UTC'],
+  JSON: ['parse', 'stringify'],
+  RegExp: ['exec', 'test', 'toString', 'flags', 'global', 'lastIndex', 'source', 'sticky', 'unicode'],
+}
+const statics = new Set(['from', 'fromAsync', 'isArray', 'of', 'fromCharCode', 'raw', 'all', 'allSettled', 'any', 'race', 'reject', 'resolve', 'try', 'withResolvers', 'groupBy', 'now', 'parse', 'UTC', 'stringify'])
+const name = (b, m) => (b === 'Math' || b === 'JSON' || b === 'Object' || statics.has(m) ? `${b}.${m}()` : `${b}.prototype.${m}()`)
+document.getElementById('sidebar').innerHTML = Object.entries(builtins).map(([b, ms]) => `<h3>${b}</h3>` + ms.map((m) => `<a href="#/open/${b}.${m}">${name(b, m)}</a><br>`).join('')).join('')
+function render() {
+  const id = opened()
+  document.title = id ? `${id} – DevDocs` : 'Array – DevDocs'
+  document.getElementById('app').innerHTML = id ? `<h1>${id}</h1><p>The reference page.</p>` : '<h1>Array</h1><p>The Array object enables storing a collection of multiple items under a single variable name.</p><h2>Constructor</h2><p><a href="#/open/Array.Array">Array()</a></p>'
+}
+render()
+</script>
+</body>
+</html>

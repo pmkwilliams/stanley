@@ -54,6 +54,30 @@ describe.skipIf(!executablePath)('page extraction', () => {
     expect(names.filter((n) => n.startsWith('Home'))).toEqual(['Home', 'Home (2)'])
   })
 
+  it('gives a link in running text the sentence it is in, and a link that says what it is nothing more', async () => {
+    const { screen } = await screenOf(`
+      <nav><a href="#home">Home</a></nav>
+      <p>The running machine, known as the <a href="#d">Draisine</a>, had no pedals: riders pushed along the ground with their feet.</p>
+      <ul><li><a href="#s">Ferry service resumes after repairs</a></li></ul>`)
+    const about = Object.fromEntries(screen.elements.map((e) => [e.label, e.about]))
+    expect(about.Draisine).toBe('The running machine, known as the Draisine, had no pedals: riders pushed along the ground with their feet.')
+    expect(about.Home).toBeUndefined()
+    expect(about['Ferry service resumes after repairs']).toBeUndefined()
+  })
+
+  it('names the controls of a definition term by the first line of its description', async () => {
+    const { screen } = await screenOf(`
+      <dl>
+        <dt><a href="#a1">arXiv:1</a> [<a href="#p1">pdf</a>]</dt>
+        <dd><div class="meta"><div><span>Title:</span> Attention is all you need</div><div><a href="#x">A. Author</a></div></div></dd>
+        <dt><a href="#a2">arXiv:2</a> [<a href="#p2">pdf</a>]</dt>
+        <dd><div class="meta"><div><span>Title:</span> Deep residual learning</div></div></dd>
+      </dl>`)
+    const names = Object.keys(stepOptions(screen, [], 50).criteria)
+    expect(names).toContain('Title: Attention is all you need › pdf')
+    expect(names).toContain('Title: Deep residual learning › pdf')
+  })
+
   it('reads a data table row with its column headers, and a layout table as it is', async () => {
     const { screen } = await screenOf(`
       <table>

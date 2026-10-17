@@ -13,6 +13,8 @@
     "eval:working": "tsx working.mts",
     "eval:answer": "tsx answer.mts",
     "eval:layout": "tsx layout.mts",
+    "eval:relevance": "tsx relevance.mts",
+    "eval:large": "tsx large.mts",
     "smoke:desktop": "tsx desktop-smoke.mts",
     "eval:dictate": "tsx dictate.mts"
   },

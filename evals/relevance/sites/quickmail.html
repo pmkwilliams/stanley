@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Inbox – Quickmail</title>
+<style>
+  body { font: 14px system-ui, sans-serif; margin: 0; }
+  article { display: flex; gap: 8px; border-bottom: 1px solid #eee; padding: 4px 12px; }
+</style>
+</head>
+<body>
+<header><button>Compose</button> <input type="search" aria-label="Search mail" placeholder="Search mail"></header>
+<nav><a href="#/">Inbox</a> <a href="#/starred">Starred</a> <a href="#/sent">Sent</a> <a href="#/drafts">Drafts</a> <a href="#/archive">Archive</a> <a href="#/spam">Spam</a></nav>
+<main id="app"></main>
+<script>
+/*SITE*/
+// A long inbox, generated the same way every time.
+seed = 31
+const senders = ['Alex Romero', 'Jordan Lee', 'Sam Patel', 'Morgan Diaz', 'Taylor Brooks', 'Casey Nguyen', 'Riley Chen', 'Jamie Ford', 'Avery Kim', 'Quinn Murphy', 'GitHub', 'Calendar', 'Bank of the West', 'Airline Rewards', 'School District', 'Pharmacy', 'Newsletter', 'Landlord']
+const topics = ['Weekly update', 'Invoice', 'Meeting notes', 'Quick question', 'Your order has shipped', 'Reminder', 'Re: plans for Saturday', 'Statement ready', 'Password reset', 'Receipt', 'Agenda for Monday', 'Photos from the trip', 'Re: project timeline', 'Security alert', 'Survey', 'Re: dinner']
+const mail = Array.from({ length: 230 }, (_, i) => ({ id: `m${i}`, from: pick(senders), subject: `${pick(topics)} #${100 + Math.floor(rand() * 900)}` }))
+// What the evals look for, deep in the inbox.
+mail.splice(183, 0, { id: 'okafor', from: 'Dana Okafor', subject: 'Plumber quote for the upstairs bathroom' })
+mail.splice(141, 0, { id: 'priya', from: 'Priya Shah', subject: 'Venue deposit is due Friday' })
+mail.splice(206, 0, { id: 'concert', from: 'Marcus Bell', subject: 'Tickets for the Thursday concert' })
+mail.splice(167, 0, { id: 'dentist', from: 'Lakeside Dental', subject: 'Your cleaning is booked for March 3' })
+function render() {
+  const id = opened()
+  if (id) {
+    const m = mail.find((x) => x.id === id)
+    document.title = `${m.subject} – Quickmail`
+    document.getElementById('app').innerHTML = `<h1>${m.subject}</h1><p>From ${m.from}</p><p>The message.</p><button data-act="star" data-id="${m.id}">${isOn('star', m.id) ? 'Starred' : 'Star'}</button> <button data-act="archive" data-id="${m.id}">Archive</button> <a href="#/">Back to inbox</a>`
+    return
+  }
+  // Search finds the messages with every word searched for, as a mail app's does.
+  const q = decodeURIComponent(/^\/search\/(.+)$/.exec(route())?.[1] ?? '')
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean)
+  const shown = mail.filter((m) => !isOn('archive', m.id) && words.every((w) => `${m.from} ${m.subject}`.toLowerCase().includes(w)))
+  document.title = q ? `Search results – Quickmail` : 'Inbox – Quickmail'
+  document.querySelector('input[type=search]').value = q
+  if (!shown.length) return void (document.getElementById('app').innerHTML = `<p>No messages match “${q}”.</p>`)
+  document.getElementById('app').innerHTML = shown.map((m) => `<article aria-label="${m.from}: ${m.subject}"><input type="checkbox" aria-label="Select" data-act="select" data-id="${m.id}" ${isOn('select', m.id) ? 'checked' : ''}><button data-act="star" data-id="${m.id}">${isOn('star', m.id) ? 'Starred' : 'Star'}</button><a href="#/open/${m.id}">${m.from}: ${m.subject}</a><button data-act="archive" data-id="${m.id}">Archive</button></article>`).join('')
+}
+document.querySelector('input[type=search]').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') location.hash = e.target.value.trim() ? `#/search/${encodeURIComponent(e.target.value.trim())}` : '#/'
+})
+render()
+</script>
+</body>
+</html>

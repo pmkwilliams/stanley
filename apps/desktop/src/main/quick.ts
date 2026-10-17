@@ -6,7 +6,7 @@ import { EMBED_URL, QUICK_URL } from '@stanley/agent'
 /** The quick model's weights and llama.cpp's server, in ./models (`pnpm models`). */
 export const QUICK_GGUF = 'gemma-4-E4B-it-Q4_K_M.gguf'
 /** The embedding model's weights, which rank the steps on offer (relevance.ts). */
-export const EMBED_GGUF = 'bge-small-en-v1.5-q8_0.gguf'
+export const EMBED_GGUF = 'bge-base-en-v1.5-q8_0.gguf'
 const SERVER = join('llama.cpp', 'llama-server')
 
 /**
@@ -52,8 +52,10 @@ export async function startEmbedModel(modelsDir: string): Promise<(() => void) |
   }
   if (await fetch(`${EMBED_URL}/health`).then((r) => r.ok, () => false)) return () => {}
   const port = new URL(EMBED_URL).port
-  // bge pools on its first token; a batch holds every element of the open apps at once.
-  const child: ChildProcess = spawn(server, ['-m', gguf, '--embedding', '--pooling', 'cls', '--host', '127.0.0.1', '--port', port, '-ngl', '99', '-c', '8192', '-b', '8192', '-ub', '8192'], { stdio: ['ignore', 'ignore', 'pipe'] })
+  // bge pools on its first token. Sixteen slots of 512 tokens (an element's text is far shorter):
+  // the background embeds several batches at once and a request isn't kept waiting behind them,
+  // about twice as fast as one slot taking a batch at a time.
+  const child: ChildProcess = spawn(server, ['-m', gguf, '--embedding', '--pooling', 'cls', '--host', '127.0.0.1', '--port', port, '-ngl', '99', '-np', '16', '-c', '8192', '-b', '8192', '-ub', '8192'], { stdio: ['ignore', 'ignore', 'pipe'] })
   let log = ''
   child.stderr?.on('data', (chunk: Buffer) => (log = (log + chunk.toString()).slice(-4000)))
   child.on('exit', (code) => {

@@ -15,6 +15,8 @@
     "eval:working": "pnpm --filter @stanley/evals eval:working",
     "eval:answer": "pnpm --filter @stanley/evals eval:answer",
     "eval:layout": "pnpm --filter @stanley/evals eval:layout",
+    "eval:relevance": "pnpm --filter @stanley/evals eval:relevance",
+    "eval:large": "pnpm --filter @stanley/evals eval:large",
     "eval:dictate": "pnpm --filter @stanley/evals eval:dictate",
     "smoke:desktop": "pnpm build && pnpm --filter @stanley/evals smoke:desktop",
     "eval:stt": "pnpm --filter @stanley/evals eval:stt",
