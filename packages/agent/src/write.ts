@@ -51,9 +51,9 @@ const FIELD_TURNS: { conversation: string[]; field: string; value?: string; text
 
 /** Searches that find what is true now carry the month and year: `today`'s, so they agree with the instructions. */
 const SEARCH_TURNS = (month: string): { conversation: string[]; text: string }[] => [
-  { conversation: ['User: how tall is the eiffel tower'], text: 'Eiffel Tower height' },
+  { conversation: ['User: how high is Kilimanjaro'], text: 'Kilimanjaro height' },
   { conversation: ['User: who directed Oppenheimer', 'You said: "Christopher Nolan directed it."', 'User: what else has he made'], text: 'Christopher Nolan films' },
-  { conversation: ["User: who's the mayor of Toronto"], text: `Mayor of Toronto ${month}` },
+  { conversation: ['User: who coaches the Chicago Bulls'], text: `Chicago Bulls head coach ${month}` },
   { conversation: ['User: can you look up when the Louvre(?) closes on Fridays'], text: 'Louvre Friday opening hours' },
   { conversation: ['User: what is bitcoin at right now'], text: `bitcoin price ${month}` },
   { conversation: ['User: search for um'], text: '' },
